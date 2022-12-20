@@ -249,16 +249,9 @@ def school():
             return render_template('python程式設計與資料分析.html',TEXT='錯誤',answer = ans)
 
 
-    score1 = scores[0]
-    score2 = scores[1]
-    score3 = scores[2]
-    score4 = scores[3]
-    score5 = scores[4]
-    user1 = users[0]
-    user2 = users[1]
-    user3 = users[2]
-    user4 = users[3]
-    user5 = users[4]
+
+    [score1,score2,score3,score4,score5] = scores[0:4]
+    [user1,user2,user3,user4,user5] = users[0:4]
     image_name = images[random.randint(0,len(images))-1]
     image = 'https://henry010125.github.io/animal-plant-illu/'+image_name+'.jpg'
     y = [images[random.randint(0,len(images))-1],images[random.randint(0,len(images))-1],images[random.randint(0,len(images))-1],images[random.randint(0,len(images))-1]]
