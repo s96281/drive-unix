@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+
+<head>
+
+</head>
+
+<body>
+    <textarea readonly id="copyText" style="position:absolute;left:-9999px">{{command}}</textarea><button type="button" onclick="copyEvent('copyText')">COPY</button>
+    </br>按下按鈕複製指令後，至命令視窗中貼上並執行即可下載
+    </br>如果使用Powershell指令下載，將不會顯示進度以提升下載效率
+    <script>
+        function copyEvent(id) {
+            var str = document.getElementById(id);
+            window.getSelection().selectAllChildren(str);
+            document.execCommand("Copy")
+        }
+    </script>
+</body>

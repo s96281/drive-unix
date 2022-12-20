@@ -1,0 +1,6 @@
+psutil
+redis
+ansi2html
+flask
+chardet
+archey4

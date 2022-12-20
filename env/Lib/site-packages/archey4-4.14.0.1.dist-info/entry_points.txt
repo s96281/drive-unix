@@ -1,0 +1,3 @@
+[console_scripts]
+archey = archey.__main__:main
+
