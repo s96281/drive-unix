@@ -1,6 +1,6 @@
 from flask import Flask,redirect,request,render_template,url_for,make_response
 from ansi2html import Ansi2HTMLConverter
-from concurrent.futures import as_completed
+from lib.get_cookie import get_cookie
 #from requests_futures.sessions import FuturesSession
 import random, json, os, time, redis, subprocess, requests, archey
 
@@ -17,7 +17,7 @@ class data:
         self.cookie_dict = {}
         self.url_dict = {}
         self.galgame_file_ID_dict = {}
- 
+
 
 #讀取環境變數
 def read_data() -> data:
