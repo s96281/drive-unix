@@ -13,6 +13,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+
 #設定資料庫
 REDIS = redis.Redis(
   host= 'usw2-stable-sunfish-30320.upstash.io',
@@ -53,7 +54,6 @@ authXmlManaged = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope
 </s:Envelope>
 """
 
-
 authXmlFederated = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:a="http://www.w3.org/2005/08/addressing"
       xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
@@ -92,7 +92,6 @@ authXmlFederated = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelo
 </s:Envelope>
 """
 
-
 authXmlFederated2 = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:o="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
       xmlns:p="http://schemas.xmlsoap.org/ws/2004/09/policy"
@@ -123,7 +122,6 @@ authXmlFederated2 = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envel
 </s:Envelope>
 """
 
-
 def discover_sts(username):
     request = urlopen("https://login.microsoft.com/GetUserRealm.srf", "login={}&xml=1".format(username).encode('utf-8'))
     resp = ET.parse(request)
@@ -138,10 +136,8 @@ def discover_sts(username):
     else:
         return None
 
-
 def buildAuthXmlManaged(username, password, endpoint):
     return authXmlManaged.format(username, password, endpoint)
-
 
 def getSecurityTokenManaged(username, password, endpoint):
     authReq = buildAuthXmlManaged(username, password, endpoint)
@@ -171,7 +167,6 @@ def getSecurityTokenManaged(username, password, endpoint):
         authToken = tokenElm.text
     return authToken
 
-
 def buildAuthXmlFederated(username, password, stsurl):
     timestamp = time.time()
     ctime = time.gmtime(timestamp)
@@ -181,10 +176,8 @@ def buildAuthXmlFederated(username, password, stsurl):
     nonce = base64.standard_b64encode(bytearray(random.getrandbits(8) for _ in range(32)))
     return authXmlFederated.format(stsurl, ctime_str, etime_str, username, password, nonce.decode('utf-8'))
 
-
 def buildAuthXmlFederated2(assertion):
     return authXmlFederated2.format(assertion)
-
 
 def getSecurityTokenFederated(username, password, endpoint, stsurl):
     authReq = buildAuthXmlFederated(username, password, stsurl)
@@ -228,7 +221,6 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
     else:
         authToken = tokenElm.text
     return authToken
-
 
 def get_cookie(endpoint, username, password):
     # if len(sys.argv) < 3:
@@ -355,17 +347,6 @@ def sizeof_fmt(num, suffix="B") -> str:
             return f"{num:3.1f}{unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
-
-def get_SharePointFileList(url, SharePointFileList, sharepointsite, username, header, loginpassword):
-    r = json.loads(requests.get(url, headers = header).text)
-    for i in r['value']:
-        if 'folder' in i:
-            SharePointFileList.append([i['name'], i['createdDateTime'].replace('T',' ').replace('Z',' '), sizeof_fmt(i['size']), '/api/onedrive?sharepointsite=' + sharepointsite +'&password=' + loginpassword + '&folder=' + '/drives/' + i['parentReference']['driveId'] + '/items/' + i['id']])
-        else:
-            SharePointFileList.append([i['name'], i['createdDateTime'].replace('T',' ').replace('Z',' '), sizeof_fmt(i['size']), '/api/onedrive?site='+sharepointsite+'&file='+urllib.parse.quote(i['parentReference']['path']+'/'+i['name'])+'&account='+username])
-    if '@odata.nextLink' in r:
-        SharePointFileList = get_SharePointFileList(r['@odata.nextLink'], SharePointFileList, sharepointsite, username, header, loginpassword)
-    return SharePointFileList
 
 def getdownloadlink(account, site, file) -> str:
     url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1/sites/'+ account.split('@')[1].replace('.','') +'.sharepoint.com:/sites/'+ site +':/drive/root:/'+file
@@ -513,7 +494,7 @@ def api_onedrive():
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
-    def previousdirectory(url):
+    def previousdirectory(url) -> str:
         url = urllib.parse.unquote(url)
         if 'path' in url:
             if len(url.split('&')[2].split('/')) == 2:
@@ -526,16 +507,17 @@ def api_onedrive():
             new_url = url.split('?')[0]
         return new_url
 
+    # 讀取網站設定等資料
+    data = read_data()
+    BackgroundImageList = json.loads(data['ApiOnedriveSetting']['backgroud_image_list'])
+    BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
+
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
     account = request.args.get('account')
     site = request.args.get('site')
     path = request.args.get('path')
     path = urllib.parse.unquote(path) if path else path
     download = request.args.get('download')
-
-    # 讀取網站設定等資料
-    data = read_data()
-    
 
     if checkpermissionornot(data) and checkpermission(request):
         response = redirect('/api/onedrive/login')
@@ -563,7 +545,7 @@ def api_onedrive():
                     SharePointFileList.append([name, time, size, request.url + '/' + urllib.parse.quote(name)])
                 else:
                     SharePointFileList.append([name, time, size, request.url + '/'  + urllib.parse.quote(name) + '&download=1'])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, SharePointFileList = SharePointFileList))
+            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
         elif site or path == '/':
             # 列出SharePoint網站根目錄
             SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
@@ -576,20 +558,20 @@ def api_onedrive():
                     SharePointFileList.append([name, time, size, request.url + '&path=/' + urllib.parse.quote(name)])
                 else:
                     SharePointFileList.append([name, time, size, request.url + '&path=/' + urllib.parse.quote(name) + '&download=1'])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, SharePointFileList = SharePointFileList))
+            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
         elif account:
             # 列出SharePoint帳號的網站
             SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
             for i in sharepointsites(data, account):
                 detail = sharepointsite_details(data, account, i)
                 SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), request.url + '&site=' + i])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, SharePointFileList = SharePointFileList))
+            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
         else:
             # 列出SharePoint帳號列表
             SharePointFileList = []
             for i in sharepointaccounts(data):
                 SharePointFileList.append([i, '', '', request.url + '?account=' + i])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, SharePointFileList = SharePointFileList))
+            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
 @app.route("/api/onedrive/setting", methods=['POST', 'GET'])
@@ -669,6 +651,9 @@ def api_onedrive_setting():
             return True
         except:
             return False
+    def UpdateBackgroundImage(list) -> bool:
+        pass
+
 
     data = read_data()
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])

@@ -11,7 +11,7 @@
         integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
 </head>
 
-<body style="background-color: #2b3035;background-image: url('https://files.catbox.moe/4fdl2s.png');background-size:cover; background-attachment:fixed;">
+<body style="background-color: #2b3035;background-image: url('{{ BackgroundImage }}');background-size:cover; background-attachment:fixed;">
     {% if function == "inputaccount" %}
     <div style="width: 600px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -300px">
         <p style="color: red;text-align: center;">{{ warning }}</p>
@@ -39,7 +39,7 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
-                <a href="/api/onedrive/setting" class="btn btn-outline-success" role="button" data-bs-toggle="button" style="margin-right: 5px;">setting</a>
+                <a href="/api/onedrive/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">setting</a>
                 <form class="d-flex" role="search">
                     <button class="btn btn-outline-success" type="submit" name="logout">Logout</button>
                 </form>
