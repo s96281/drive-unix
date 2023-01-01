@@ -13,6 +13,12 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+if os.name == 'nt':
+    data_location = './data'
+    cookies_location = './cookies'
+else:
+    data_location = '/tmp/data'
+    cookies_location = '/tmp/cookies'
 
 #設定資料庫
 REDIS = redis.Redis(
@@ -268,9 +274,9 @@ def get_cookie(endpoint, username, password):
 def read_data() -> dict:
     DatasNeedRead = ['SharePointAccountList','ApiOnedriveSetting']
     print('讀取資料中...')
-    if os.path.isfile('/tmp/data'):
+    if os.path.isfile(data_location):
         print('存在緩存資料...')
-        f = open('/tmp/data')
+        f = open(data_location)
         data = json.loads(f.read())
         print('讀取緩存資料...')
         f.close()
@@ -282,7 +288,7 @@ def read_data() -> dict:
             print('線上取得資料...')
             T = time.time()
             data['TIME']= T
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 print('寫入緩存...')
                 f.write(json.dumps(data))
         print('成功讀取資料')
@@ -294,7 +300,7 @@ def read_data() -> dict:
         print('線上取得資料...')
         T = time.time()
         data['TIME']= T
-        with open('/tmp/data', 'w') as f:
+        with open(data_location, 'w') as f:
             print('寫入緩存...')
             f.write(json.dumps(data))
         print('成功讀取資料')
@@ -302,9 +308,9 @@ def read_data() -> dict:
 
 def read_cookie(endpoint, username, password) -> str:
     print('讀取憑證中...')
-    if os.path.isfile('/tmp/cookies'):
+    if os.path.isfile(cookies_location):
         print('存在憑證資料...')
-        f = open('/tmp/cookies')
+        f = open(cookies_location)
         cookies = json.loads(f.read())
         print('讀取憑證資料...')
         f.close()
@@ -316,7 +322,7 @@ def read_cookie(endpoint, username, password) -> str:
                 T = time.time()
                 cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
                 print('線上取得憑證...')
-                with open('/tmp/cookies', 'w') as f:
+                with open(cookies_location, 'w') as f:
                     f.write(json.dumps(cookies))
                     print('寫入憑證...')
             print('成功讀取憑證')
@@ -325,7 +331,7 @@ def read_cookie(endpoint, username, password) -> str:
             T = time.time()
             cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
             print('線上取得憑證...')
-            with open('/tmp/cookies', 'w') as f:
+            with open(cookies_location, 'w') as f:
                 f.write(json.dumps(cookies))
                 print('寫入憑證...')
             print('成功讀取憑證')
@@ -335,7 +341,7 @@ def read_cookie(endpoint, username, password) -> str:
         T = time.time()
         cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
         print('線上取得憑證...')
-        with open('/tmp/cookies', 'w') as f:
+        with open(cookies_location, 'w') as f:
             f.write(json.dumps(cookies))
             print('寫入憑證...')
         print('成功讀取憑證')
@@ -352,7 +358,7 @@ def getdownloadlink(account, site, file) -> str:
     url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1/sites/'+ account.split('@')[1].replace('.','') +'.sharepoint.com:/sites/'+ site +':/drive/root:/'+file
     if 'root:' in url:
         url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1'+ urllib.parse.quote(file)  
-    with open('/tmp/cookies', 'r') as f:
+    with open(cookies_location, 'r') as f:
         cookie = json.loads(f.read())[account]['cookie']
     header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
     r = json.loads(requests.get(url, headers = header).text)
@@ -369,22 +375,25 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    conv = Ansi2HTMLConverter()
-    ansi = "".join(subprocess.check_output('archey',text=True))
-    #print(subprocess.check_output('archey',text=True))
-    html = conv.convert(ansi)
-    return html
+    if os.name == 'nt':
+        return ''
+    else:
+        conv = Ansi2HTMLConverter()
+        ansi = "".join(subprocess.check_output('archey',text=True))
+        #print(subprocess.check_output('archey',text=True))
+        html = conv.convert(ansi)
+        return html
 
 @app.route("/clc")
 def clc():
     print('刪除中...')
-    os.remove('/tmp/data')
-    os.remove('/tmp/cookies')
+    os.remove(data_location)
+    os.remove(cookies_location)
     print('已刪除')
     data = read_data()
     print('變數已更新')
     data['TIME'] = time.time()
-    with open('/tmp/data', 'w') as f:
+    with open(data_location, 'w') as f:
         f.write(json.dumps(data))
     print('已重新儲存')
     return 'success'
@@ -590,7 +599,7 @@ def api_onedrive_setting():
         try:
             data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
             REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
@@ -602,7 +611,7 @@ def api_onedrive_setting():
             sites.append(site)
             data['SharePointAccountList'][account] = json.dumps([endpoint, username, password, " ".join(sites)])
             REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
@@ -611,7 +620,7 @@ def api_onedrive_setting():
         try:
             data['SharePointAccountList'].pop(account, None)
             REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
@@ -622,7 +631,7 @@ def api_onedrive_setting():
             sites.remove(site)
             data['SharePointAccountList'][account] = json.dumps([endpoint, username, password, " ".join(sites)])
             REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
@@ -636,7 +645,7 @@ def api_onedrive_setting():
         try:
             data['ApiOnedriveSetting']['user_hash'][user] = json.dumps(hashlib.sha256(password.encode()).hexdigest())
             REDIS.hset('ApiOnedriveSetting', 'user_hash', data['ApiOnedriveSetting']['user_hash'])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
@@ -646,7 +655,7 @@ def api_onedrive_setting():
             user_hash = json.loads(data['ApiOnedriveSetting']['user_hash']).pop(user, None)
             data['ApiOnedriveSetting']['user_hash'] = json.dumps(user_hash)
             REDIS.hset('ApiOnedriveSetting', 'user_hash', data['ApiOnedriveSetting']['user_hash'])
-            with open('/tmp/data', 'w') as f:
+            with open(data_location, 'w') as f:
                 f.write(json.dumps(data))
             return True
         except:
