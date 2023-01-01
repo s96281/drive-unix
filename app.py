@@ -1,16 +1,12 @@
 from __future__ import print_function
 from flask import Flask,redirect,request,render_template,url_for,make_response
+from flask_caching import Cache
 from ansi2html import Ansi2HTMLConverter
-import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime
+import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime, sys, re, base64
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
-import base64
-import random
-import re
-import sys
-import time
 import xml.etree.ElementTree as ET
 
 if os.name == 'nt':
@@ -27,6 +23,15 @@ REDIS = redis.Redis(
   password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
   decode_responses=True
 )
+
+CacheConfig = {
+    "DEBUG": True,
+    "CACHE_TYPE": "FileSystemCache",
+    "CACHE_DEFAULT_TIMEOUT": 86400,
+    "CACHE_IGNORE_ERRORS": False,
+    "CACHE_DIR": "./cache",
+    "CACHE_THRESHOLD": 500
+}
 
 authXmlManaged = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:a="http://www.w3.org/2005/08/addressing"
@@ -372,6 +377,8 @@ def utc_local_convert(time) -> str:
     return localtime.ctime()
 
 app = Flask(__name__)
+app.config.from_mapping(CacheConfig)
+cache = Cache(app)
 
 @app.route("/")
 def index():
@@ -386,9 +393,11 @@ def index():
 
 @app.route("/clc")
 def clc():
+    import shutil
     print('刪除中...')
     os.remove(data_location)
     os.remove(cookies_location)
+    shutil.rmtree('./cache')
     print('已刪除')
     data = read_data()
     print('變數已更新')
@@ -427,6 +436,7 @@ def api_onedrive_login():
     return response
 
 @app.route("/api/onedrive", methods=['POST','GET'])
+@cache.cached(timeout=500, query_string=True)
 def api_onedrive():
     headings = ['Name', 'Last edit time', 'Size', 'Link']
     def checkpermissionornot(data) -> bool:

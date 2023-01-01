@@ -28,7 +28,10 @@
         "ENV{,/**}",
         "env.bak{,/**}",
         "venv.bak{,/**}",
-        ".vscode{,/**}"
+        ".vscode{,/**}",
+        "cache{,/**}",
+        "data",
+        "cookies"
     ],
     "appService.defaultWebAppToDeploy": "/subscriptions/7fa72387-dd30-42da-b621-78f6af7f6690/AppServices/subscriptions/7fa72387-dd30-42da-b621-78f6af7f6690/resourceGroups/webapp/providers/Microsoft.Web/sites/henryapi",
     "appService.deploySubpath": ".",

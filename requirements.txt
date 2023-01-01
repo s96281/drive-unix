@@ -5,3 +5,4 @@ flask
 chardet
 archey4
 requests
+flask_caching
