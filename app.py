@@ -24,14 +24,6 @@ REDIS = redis.Redis(
   decode_responses=True
 )
 
-CacheConfig = {
-    "DEBUG": True,
-    "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DEFAULT_TIMEOUT": 86400,
-    "CACHE_IGNORE_ERRORS": False,
-    "CACHE_DIR": "./cache",
-    "CACHE_THRESHOLD": 500
-}
 
 authXmlManaged = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:a="http://www.w3.org/2005/08/addressing"
@@ -376,6 +368,15 @@ def utc_local_convert(time) -> str:
     localtime = utcTime + datetime.timedelta(hours=8)
     return localtime.ctime()
 
+CacheConfig = {
+    "DEBUG": True,
+    "CACHE_TYPE": "FileSystemCache",
+    "CACHE_DEFAULT_TIMEOUT": 86400,
+    "CACHE_IGNORE_ERRORS": False,
+    "CACHE_DIR": "./cache",
+    "CACHE_THRESHOLD": 500
+}
+
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
@@ -675,6 +676,8 @@ def api_onedrive_setting():
 
 
     data = read_data()
+    BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
+    BackgroundImage = json.loads(BackgroundImageList)[random.randint(0, len(json.loads(BackgroundImageList)))-1]
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
 
     if checkpermission(request):
@@ -682,7 +685,11 @@ def api_onedrive_setting():
     else:
         if 'logout' in request.args:
             response = logout()
-    response = make_response(render_template('api_onedrive_input.html', function = 'setting'))
+        else:
+            accounts=data['SharePointAccountList']
+            for i in accounts:
+                accounts[i] = json.loads(accounts[i])
+            response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
 
     return response
 
@@ -691,6 +698,11 @@ def api_onedrive_setting():
 def api_onedrive_upload():
     pass
 
+@app.route("/api/onedrive/clc")
+def api_onedrive_clc():
+    import shutil
+    shutil.rmtree('./cache')
+    return 'Success'
 
 @app.route("/api/b8s6", methods=['POST', 'GET'])
 def api_b8s6():
