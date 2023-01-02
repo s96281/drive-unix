@@ -249,21 +249,31 @@ def get_cookie(endpoint, username, password):
     cookiejar = CookieJar()
     opener = build_opener(HTTPCookieProcessor(cookiejar))
     try:
-        request = Request("{0}://{1}/_forms/default.aspx?wa=wsignin1.0".format(
-            endpointUrl.scheme, endpointUrl.netloc))
-        response = opener.open(request, data=authToken.encode('utf-8'))
-        cookieStr = ""
-        cookiesFound = []
-        for cookie in cookiejar:
-            if cookie.name in ("FedAuth", "rtFa"):
-                cookieStr += cookie.name + "=" + cookie.value + "; "
-                cookiesFound.append(cookie.name)
+        try:
+            request = Request("{0}://{1}/_forms/default.aspx?wa=wsignin1.0".format(
+                endpointUrl.scheme, endpointUrl.netloc))
+            response = opener.open(request, data=authToken.encode('utf-8'))
+            cookieStr = ""
+            cookiesFound = []
+            for cookie in cookiejar:
+                if cookie.name in ("FedAuth", "rtFa"):
+                    cookieStr += cookie.name + "=" + cookie.value + "; "
+                    cookiesFound.append(cookie.name)
 
-        if "FedAuth" not in cookiesFound or "rtFa" not in cookiesFound:
-            print("Incomplete cookies retrieved.", file=sys.stderr)
-            exit(1)
-        #print(cookieStr)
-        return cookieStr
+            if "FedAuth" not in cookiesFound or "rtFa" not in cookiesFound:
+                print("Incomplete cookies retrieved.", file=sys.stderr)
+                exit(1)
+            #print(cookieStr)
+            return cookieStr
+        except:
+            from office365.runtime.auth.user_credential import UserCredential
+            from office365.sharepoint.client_context import ClientContext
+            user_credentials = UserCredential(username,password)
+            ctx = ClientContext(endpoint).with_credentials(user_credentials)
+            ctx.load(ctx.web)
+            ctx.execute_query()
+            cookieStr = 'rtFa='+vars(vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['rtFa']+'; FedAuth='+vars(vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['FedAuth']
+            return cookieStr
     except URLError as x:
         print("Failed to login to SharePoint site: {}".format(x.reason))
         exit(1)
@@ -468,7 +478,7 @@ def api_onedrive():
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
-        url = 'https://' + domain + '.sharepoint.com/_api/v2.1/sites/' + domain + '.sharepoint.com:/sites/' + site + ':/drive/root'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
@@ -479,7 +489,7 @@ def api_onedrive():
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
-        url = 'https://' + domain + '.sharepoint.com/_api/v2.1/sites/' + domain + '.sharepoint.com:/sites/' + site + ':/drive/root/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         for i in r['value']:
@@ -493,7 +503,7 @@ def api_onedrive():
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
         path = urllib.parse.quote(path)
-        url = 'https://' + domain + '.sharepoint.com/_api/v2.1/sites/' + domain + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         for i in r['value']:
@@ -505,7 +515,7 @@ def api_onedrive():
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
         path = urllib.parse.quote(path)
-        url = 'https://' + domain + '.sharepoint.com/_api/v2.1/sites/' + domain + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
@@ -606,47 +616,12 @@ def api_onedrive_setting():
         if user and password and hash == password:
             return False
         return True
-    def addsharepointaccout(data, endpoint, account, password, sites) -> bool:
+    def UpdateSharePointAccountList(data, endpoint, account, password, sites) -> dict:
         try:
             data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
-            REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
-            return True
+            return data
         except:
-            return False
-    def addsharepointsite(data, account, site) -> bool:
-        # Add site to account that exist.
-        try:
-            [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
-            sites.append(site)
-            data['SharePointAccountList'][account] = json.dumps([endpoint, username, password, " ".join(sites)])
-            REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
-            return True
-        except:
-            return False
-    def delsharepointaccout(data, account) -> bool:
-        try:
-            data['SharePointAccountList'].pop(account, None)
-            REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
-            return True
-        except:
-            return False
-    def delsharepointsite(data, account, site) -> bool:
-        try:
-            [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
-            sites.remove(site)
-            data['SharePointAccountList'][account] = json.dumps([endpoint, username, password, " ".join(sites)])
-            REDIS.hset('SharePointAccountList', account, data['SharePointAccountList'][account])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
-            return True
-        except:
-            return False
+            return data
     def logout():
         response = make_response(redirect('/api/onedrive'))
         response.set_cookie('user', '', path='/', expires=0)
@@ -655,9 +630,6 @@ def api_onedrive_setting():
     def adduser(user, password) -> bool:
         try:
             data['ApiOnedriveSetting']['user_hash'][user] = json.dumps(hashlib.sha256(password.encode()).hexdigest())
-            REDIS.hset('ApiOnedriveSetting', 'user_hash', data['ApiOnedriveSetting']['user_hash'])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
             return True
         except:
             return False
@@ -665,31 +637,53 @@ def api_onedrive_setting():
         try:
             user_hash = json.loads(data['ApiOnedriveSetting']['user_hash']).pop(user, None)
             data['ApiOnedriveSetting']['user_hash'] = json.dumps(user_hash)
-            REDIS.hset('ApiOnedriveSetting', 'user_hash', data['ApiOnedriveSetting']['user_hash'])
-            with open(data_location, 'w') as f:
-                f.write(json.dumps(data))
             return True
         except:
             return False
-    def UpdateBackgroundImage(list) -> bool:
-        pass
-
+    def UpdateApiOnedriveSetting(data, BackgroundImageList, checkpermissionornot, CACHE_TYPE) -> dict:
+        data['ApiOnedriveSetting']['backgroud_image_list'] = BackgroundImageList
+        data['ApiOnedriveSetting']['checkpermissionornot'] = checkpermissionornot
+        data['ApiOnedriveSetting']['CACHE_TYPE'] = CACHE_TYPE
+        return data
+    def write_data(data) -> bool:
+        with open(data_location, 'w') as f:
+            print('寫入緩存...')
+            f.write(json.dumps(data))
+        for i in data:
+            if i != 'TIME':
+                for j in data[i]:
+                    REDIS.hset(i, j, data[i][j])
 
     data = read_data()
     BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
     BackgroundImage = json.loads(BackgroundImageList)[random.randint(0, len(json.loads(BackgroundImageList)))-1]
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
 
+    if request.form:
+        print('收到資料了')
+
     if checkpermission(request):
         response = redirect('/api/onedrive/login')
     else:
         if 'logout' in request.args:
             response = logout()
-        else:
-            accounts=data['SharePointAccountList']
-            for i in accounts:
-                accounts[i] = json.loads(accounts[i])
-            response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
+        elif request.form:
+            if 'background' in request.form:
+                BackgroundImageList = json.loads(request.form.get('background'))
+                checkpermissionornot = request.form.get('checkpermission')
+                CACHE_TYPE = request.form.get('CACHE_TYPE')
+                data = UpdateApiOnedriveSetting(data, BackgroundImageList, checkpermissionornot, CACHE_TYPE)
+            elif 'Host' in request.form:
+                endpoint = request.form.get('Host')
+                account = request.form.get('Account')
+                password = request.form.get('Password')
+                sites = request.form.get('Sites')
+                data = UpdateSharePointAccountList(data, endpoint, account, password, sites)
+            write_data(data)
+        accounts = data['SharePointAccountList']
+        for i in accounts:
+            accounts[i] = json.loads(accounts[i])
+        response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
 
     return response
 
@@ -719,6 +713,5 @@ def api_c9f8():
     id = request.args.get('id')
     url = 'https://c9f8.com/zb_users/theme/md/plugin/down.php?type=down&pid='+id
     return redirect('https://proxy.kazeacg.workers.dev/?url=' + json.loads(requests.get(url ,headers = header).text)['url'])
-
 if __name__ == '__main__':
     app.run()
