@@ -423,29 +423,6 @@ def api():
     return render_template('api.html')
 
 
-@app.route("/api/onedrive/login", methods=['POST','GET'])
-def api_onedrive_login():
-    data = read_data()
-    user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
-    if request.method == 'GET':
-        user = request.cookies.get('user')
-        password = request.cookies.get('password')
-        if user in user_hash and user_hash[user] == password:
-            response = make_response(redirect('/api/onedrive'))
-        else:
-            response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
-    elif request.method == 'POST':
-        user = request.form.get('user')
-        password = request.form.get('password')
-        pdhash = hashlib.sha256(password.encode()).hexdigest()
-        if user in user_hash and user_hash[user] == pdhash:
-            response = make_response(redirect('/api/onedrive'))
-            response.set_cookie('user', user, path='/')
-            response.set_cookie('password', pdhash, path='/')
-        else:
-            response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount', warning = '錯誤'))
-    return response
-
 @app.route("/api/onedrive", methods=['POST','GET'])
 @cache.cached(timeout=500, query_string=True)
 def api_onedrive():
@@ -604,6 +581,29 @@ def api_onedrive():
             response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
+@app.route("/api/onedrive/login", methods=['POST','GET'])
+def api_onedrive_login():
+    data = read_data()
+    user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
+    if request.method == 'GET':
+        user = request.cookies.get('user')
+        password = request.cookies.get('password')
+        if user in user_hash and user_hash[user] == password:
+            response = make_response(redirect('/api/onedrive'))
+        else:
+            response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
+    elif request.method == 'POST':
+        user = request.form.get('user')
+        password = request.form.get('password')
+        pdhash = hashlib.sha256(password.encode()).hexdigest()
+        if user in user_hash and user_hash[user] == pdhash:
+            response = make_response(redirect('/api/onedrive'))
+            response.set_cookie('user', user, path='/')
+            response.set_cookie('password', pdhash, path='/')
+        else:
+            response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount', warning = '錯誤'))
+    return response
+
 @app.route("/api/onedrive/setting", methods=['POST', 'GET'])
 def api_onedrive_setting():
     def checkpermission(request) -> bool:
@@ -669,7 +669,7 @@ def api_onedrive_setting():
             response = logout()
         elif request.form:
             if 'background' in request.form:
-                BackgroundImageList = json.loads(request.form.get('background'))
+                BackgroundImageList = request.form.get('background')
                 checkpermissionornot = request.form.get('checkpermission')
                 CACHE_TYPE = request.form.get('CACHE_TYPE')
                 data = UpdateApiOnedriveSetting(data, BackgroundImageList, checkpermissionornot, CACHE_TYPE)
