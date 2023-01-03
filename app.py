@@ -2,7 +2,7 @@ from __future__ import print_function
 from flask import Flask,redirect,request,render_template,url_for,make_response
 from flask_caching import Cache
 from ansi2html import Ansi2HTMLConverter
-import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime, sys, re, base64
+import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -440,7 +440,8 @@ def api_onedrive():
             hash = ''
         if user and password and hash == password:
             return False
-        return True
+        else:
+            return True
     def sharepointaccounts(data) -> list:
         response = []
         for i in data['SharePointAccountList']:
@@ -497,7 +498,7 @@ def api_onedrive():
         r = json.loads(r)
         return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
     def logout():
-        response = make_response(redirect('/api/onedrive'))
+        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
@@ -539,7 +540,7 @@ def api_onedrive():
             if downloadlink == 0:
                 response = make_response('Path is not file or not exist')
             else:
-                response = make_response(redirect(downloadlink))
+                response = make_response(render_template('redirect.html', URL = downloadlink))
         elif path:
             # 列出路徑檔案
             SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
@@ -589,7 +590,7 @@ def api_onedrive_login():
         user = request.cookies.get('user')
         password = request.cookies.get('password')
         if user in user_hash and user_hash[user] == password:
-            response = make_response(redirect('/api/onedrive'))
+            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
         else:
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
     elif request.method == 'POST':
@@ -597,9 +598,14 @@ def api_onedrive_login():
         password = request.form.get('password')
         pdhash = hashlib.sha256(password.encode()).hexdigest()
         if user in user_hash and user_hash[user] == pdhash:
-            response = make_response(redirect('/api/onedrive'))
+            request.host_url
+            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
+            try:
+                shutil.rmtree('./cache')
+            except:
+                pass
         else:
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount', warning = '錯誤'))
     return response
@@ -615,7 +621,8 @@ def api_onedrive_setting():
             hash = ''
         if user and password and hash == password:
             return False
-        return True
+        else:
+            return True
     def UpdateSharePointAccountList(data, endpoint, account, password, sites) -> dict:
         try:
             data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
@@ -623,7 +630,7 @@ def api_onedrive_setting():
         except:
             return data
     def logout():
-        response = make_response(redirect('/api/onedrive'))
+        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
@@ -663,7 +670,7 @@ def api_onedrive_setting():
         print('收到資料了')
 
     if checkpermission(request):
-        response = redirect('/api/onedrive/login')
+        response = render_template('redirect.html', URL = request.host_url + 'api/onedrive/login')
     else:
         if 'logout' in request.args:
             response = logout()
@@ -694,7 +701,6 @@ def api_onedrive_upload():
 
 @app.route("/api/onedrive/clc")
 def api_onedrive_clc():
-    import shutil
     shutil.rmtree('./cache')
     return 'Success'
 
