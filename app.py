@@ -511,8 +511,6 @@ def api_onedrive():
                 new_url = "&".join(url.split('&')[:-1])+'&'+urllib.parse.quote("/".join(url.split('&')[2].split('/')[:-1])).replace('%3D','=')
         elif 'site' in url:
             new_url = url.split('&')[0]
-        elif 'account' in url:
-            new_url = url.split('?')[0]
         return new_url
 
     # 讀取網站設定等資料
@@ -540,7 +538,7 @@ def api_onedrive():
             if downloadlink == 0:
                 response = make_response('Path is not file or not exist')
             else:
-                response = make_response(render_template('redirect.html', URL = downloadlink))
+                response = make_response(redirect(downloadlink))
         elif path:
             # 列出路徑檔案
             SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
@@ -569,7 +567,7 @@ def api_onedrive():
             response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
         elif account:
             # 列出SharePoint帳號的網站
-            SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
+            SharePointFileList = [['..', '', '', '/api/onedrive']]
             for i in sharepointsites(data, account):
                 detail = sharepointsite_details(data, account, i)
                 SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), request.url + '&site=' + i])
