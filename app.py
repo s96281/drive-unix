@@ -1,8 +1,7 @@
 from __future__ import print_function
 from flask import Flask,redirect,request,render_template,url_for,make_response
 from flask_caching import Cache
-from ansi2html import Ansi2HTMLConverter
-import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
+import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -391,17 +390,6 @@ app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
 
-@app.route("/")
-def index():
-    if os.name == 'nt':
-        return ''
-    else:
-        conv = Ansi2HTMLConverter()
-        ansi = "".join(subprocess.check_output('archey',text=True))
-        #print(subprocess.check_output('archey',text=True))
-        html = conv.convert(ansi)
-        return html
-
 @app.route("/clc")
 def clc():
     import shutil
@@ -418,14 +406,10 @@ def clc():
     print('已重新儲存')
     return 'success'
 
-@app.route("/api")
-def api():
-    return render_template('api.html')
 
-
-@app.route("/api/onedrive", methods=['POST','GET'])
+@app.route("/", methods=['POST','GET'])
 @cache.cached(timeout=500, query_string=True)
-def api_onedrive():
+def home():
     headings = ['Name', 'Last edit time', 'Size', 'Link']
     def checkpermissionornot(data) -> bool:
         if data['ApiOnedriveSetting']['checkpermissionornot'] == '1':
@@ -498,7 +482,7 @@ def api_onedrive():
         r = json.loads(r)
         return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
     def logout():
-        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+        response = make_response(render_template('redirect.html', URL = request.host_url))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
@@ -526,7 +510,7 @@ def api_onedrive():
     download = request.args.get('download')
 
     if checkpermissionornot(data) and checkpermission(request):
-        response = redirect('/api/onedrive/login')
+        response = redirect('/login')
     else:
         # logout = request.args.get('logout')
         if 'previousdirectory' in request.args:
@@ -567,7 +551,7 @@ def api_onedrive():
             response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
         elif account:
             # 列出SharePoint帳號的網站
-            SharePointFileList = [['..', '', '', '/api/onedrive']]
+            SharePointFileList = [['..', '', '', '/']]
             for i in sharepointsites(data, account):
                 detail = sharepointsite_details(data, account, i)
                 SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), request.url + '&site=' + i])
@@ -580,7 +564,7 @@ def api_onedrive():
             response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
-@app.route("/api/onedrive/login", methods=['POST','GET'])
+@app.route("/login", methods=['POST','GET'])
 def api_onedrive_login():
     data = read_data()
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
@@ -588,7 +572,7 @@ def api_onedrive_login():
         user = request.cookies.get('user')
         password = request.cookies.get('password')
         if user in user_hash and user_hash[user] == password:
-            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+            response = make_response(render_template('redirect.html', URL = request.host_url))
         else:
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
     elif request.method == 'POST':
@@ -597,7 +581,7 @@ def api_onedrive_login():
         pdhash = hashlib.sha256(password.encode()).hexdigest()
         if user in user_hash and user_hash[user] == pdhash:
             request.host_url
-            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+            response = make_response(render_template('redirect.html', URL = request.host_url))
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
             try:
@@ -608,7 +592,7 @@ def api_onedrive_login():
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount', warning = '錯誤'))
     return response
 
-@app.route("/api/onedrive/setting", methods=['POST', 'GET'])
+@app.route("/setting", methods=['POST', 'GET'])
 def api_onedrive_setting():
     def checkpermission(request) -> bool:
         user = request.cookies.get('user')
@@ -628,7 +612,7 @@ def api_onedrive_setting():
         except:
             return data
     def logout():
-        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+        response = make_response(render_template('redirect.html', URL = request.host_url))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
@@ -668,7 +652,7 @@ def api_onedrive_setting():
         print('收到資料了')
 
     if checkpermission(request):
-        response = render_template('redirect.html', URL = request.host_url + 'api/onedrive/login')
+        response = render_template('redirect.html', URL = request.host_url + 'login')
     else:
         if 'logout' in request.args:
             response = logout()
@@ -693,29 +677,14 @@ def api_onedrive_setting():
     return response
 
 
-@app.route("/api/onedrive/upload", methods=['POST', 'GET'])
+@app.route("/upload", methods=['POST', 'GET'])
 def api_onedrive_upload():
     pass
 
-@app.route("/api/onedrive/clc")
-def api_onedrive_clc():
+@app.route("/reflash")
+def api_onedrive_reflash():
     shutil.rmtree('./cache')
     return 'Success'
 
-@app.route("/api/b8s6", methods=['POST', 'GET'])
-def api_b8s6():
-    cookie = 'addinfo=%7B%22chkadmin%22%3A1%2C%22chkarticle%22%3A0%2C%22levelname%22%3A%22%5Cu8bc4%5Cu8bba%5Cu8005%22%2C%22userid%22%3A%2237167%22%2C%22useralias%22%3A%22qwerrty%22%7D;mdnumtime=1672254149;token_1ead7cab=db96c7496c4c9135c4358ac0a88f68776e99ec326c582594b664a22cefc1b1e31672322267;userdown=0;username_1ead7cab=qwerrty'
-    header = {'cookie': cookie}
-    id = request.args.get('id')
-    url = 'https://b8s6.com/zb_users/theme/md/plugin/down.php?type=down&pid='+id
-    return redirect('https://proxy.kazeacg.workers.dev/?url=' + json.loads(requests.get(url ,headers = header).text)['url'])
-
-@app.route("/api/c9f8", methods=['POST', 'GET'])
-def api_c9f8():
-    cookie = 'mdnumtime=0; mdnum=0; username_1ead7cab=qwerrty; token_1ead7cab=466e11124b6064ee052c9bf051b7cf42ada931ed36289c6a3b6a96217596f7f21672322739; addinfo=%7B%22chkadmin%22%3A1%2C%22chkarticle%22%3A0%2C%22levelname%22%3A%22%5Cu8bc4%5Cu8bba%5Cu8005%22%2C%22userid%22%3A%22113068%22%2C%22useralias%22%3A%22qwerrty%22%7D; timezone=8; userdown=0'
-    header = {'cookie': cookie}
-    id = request.args.get('id')
-    url = 'https://c9f8.com/zb_users/theme/md/plugin/down.php?type=down&pid='+id
-    return redirect('https://proxy.kazeacg.workers.dev/?url=' + json.loads(requests.get(url ,headers = header).text)['url'])
 if __name__ == '__main__':
     app.run()

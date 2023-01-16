@@ -1,9 +1,7 @@
 psutil
 redis
-ansi2html
 flask
 chardet
-archey4
 requests
 flask_caching
 Office365-REST-Python-Client
