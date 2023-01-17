@@ -507,7 +507,9 @@ def main(_request, data):
             time = utc_local_convert(sharepointsite_path_files[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_path_files[i]['size'])
             if sharepointsite_path_files[i]['type'] == 'folder':
-                SharePointFileList.append([name, time, size, _request.url + '/' + urllib.parse.quote(name)])
+                url = _request.url + '/' + urllib.parse.quote(name)
+                url = url.replace('http','https')
+                SharePointFileList.append([name, time, size, url])
             else:
                 url = _request.url + '/'  + urllib.parse.quote(name) + '&download=1'
                 url = url.replace('http','https')
@@ -522,9 +524,13 @@ def main(_request, data):
             time = utc_local_convert(sharepointsite_root_files[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_root_files[i]['size'])
             if sharepointsite_root_files[i]['type'] == 'folder':
-                SharePointFileList.append([name, time, size, _request.url + '&path=/' + urllib.parse.quote(name)])
+                url = _request.url + '&path=/' + urllib.parse.quote(name)
+                url = url.replace('http','https')
+                SharePointFileList.append([name, time, size, url])
             else:
-                SharePointFileList.append([name, time, size, _request.url + '&path=/' + urllib.parse.quote(name) + '&download=1'])
+                url = _request.url + '&path=/' + urllib.parse.quote(name) + '&download=1'
+                url = url.replace('http','https')
+                SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     elif account:
         # 列出SharePoint帳號的網站
