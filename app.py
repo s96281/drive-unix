@@ -143,7 +143,7 @@ authXmlFederated2 = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envel
 </s:Envelope>
 """
 
-def discover_sts(username):
+def discover_sts(username:str):
     request = urlopen("https://login.microsoft.com/GetUserRealm.srf", "login={}&xml=1".format(username).encode('utf-8'))
     resp = ET.parse(request)
     nstype = resp.find("./NameSpaceType")
@@ -401,7 +401,7 @@ app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
 
-@cache.cached(timeout=50, query_string=True)
+@cache.cached(timeout=86400, query_string=True)
 def main(_request, data):
     headings = ['Name', 'Last edit time', 'Size']
     def sharepointaccounts(data) -> list:
