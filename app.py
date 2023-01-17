@@ -509,7 +509,9 @@ def main(_request, data):
             if sharepointsite_path_files[i]['type'] == 'folder':
                 SharePointFileList.append([name, time, size, _request.url + '/' + urllib.parse.quote(name)])
             else:
-                SharePointFileList.append([name, time, size, _request.url + '/'  + urllib.parse.quote(name) + '&download=1'])
+                url = _request.url + '/'  + urllib.parse.quote(name) + '&download=1'
+                url = url.replace('http','https')
+                SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     elif site or path == '/':
         # 列出SharePoint網站根目錄
@@ -591,7 +593,7 @@ def login():
         user = request.cookies.get('user')
         password = request.cookies.get('password')
         if user in user_hash and user_hash[user] == password:
-            response = make_response(render_template('redirect.html', URL = request.host_url))
+            response = make_response(redirect(url_for('home')))
         else:
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
     elif request.method == 'POST':
@@ -600,7 +602,7 @@ def login():
         pdhash = hashlib.sha256(password.encode()).hexdigest()
         if user in user_hash and user_hash[user] == pdhash:
             request.host_url
-            response = make_response(render_template('redirect.html', URL = request.host_url))
+            response = make_response(redirect(url_for('home')))
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
             try:
@@ -631,7 +633,7 @@ def setting():
         except:
             return data
     def logout():
-        response = make_response(render_template('redirect.html', URL = request.host_url))
+        response = make_response(redirect(url_for('home')))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
