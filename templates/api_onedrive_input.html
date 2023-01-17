@@ -41,8 +41,7 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
-                <a href="/setting" class="btn btn-outline-success" role="button"
-                    style="margin-right: 5px;">setting</a>
+                <a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">setting</a>
                 <form class="d-flex" role="search">
                     <button class="btn btn-outline-success" type="submit" name="logout">Logout</button>
                 </form>
@@ -89,7 +88,8 @@
             </div>
         </div>
     </nav>
-    <div class="container-xxl" style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; padding: 50px; border-radius: 10px">
+    <div class="container-xxl"
+        style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; padding: 50px; border-radius: 10px">
         <h1>平台變數</h1>
         </br>
         <form method="post">
@@ -101,7 +101,7 @@
             <div class="input-group mb-3">
                 <span class="input-group-text">CheckPermission</span>
                 <select class="form-select" name="checkpermission">
-                    <option selected>設定網站公開與否</option>
+                    <option selected>匿名下載</option>
                     <option value="0">是</option>
                     <option value="1">否</option>
                 </select>
@@ -151,7 +151,8 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites" value="{{value[3]}}">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites"
+                            value="{{value[3]}}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
@@ -161,7 +162,8 @@
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="填入https://xxxxxx.sharepoint.com/" name="Host">
+                        <input type="text" class="form-control" placeholder="填入https://xxxxxx.sharepoint.com/"
+                            name="Host">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
