@@ -403,7 +403,7 @@ cache = Cache(app)
 
 @cache.cached(timeout=50, query_string=True)
 def main(_request, data):
-    headings = ['Name', 'Last edit time', 'Size', 'Link']
+    headings = ['Name', 'Last edit time', 'Size']
     def sharepointaccounts(data) -> list:
         response = []
         for i in data['SharePointAccountList']:
@@ -667,11 +667,8 @@ def setting():
     BackgroundImage = json.loads(BackgroundImageList)[random.randint(0, len(json.loads(BackgroundImageList)))-1]
     user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
 
-    if request.form:
-        print('收到資料了')
-
     if checkpermission(request):
-        response = render_template('redirect.html', URL = request.host_url + 'login')
+        response = redirect(url_for('login'))
     else:
         if 'logout' in request.args:
             response = logout()
@@ -688,10 +685,10 @@ def setting():
                 sites = request.form.get('Sites')
                 data = UpdateSharePointAccountList(data, endpoint, account, password, sites)
             write_data(data)
-        accounts = data['SharePointAccountList']
-        for i in accounts:
-            accounts[i] = json.loads(accounts[i])
-        response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
+            accounts = data['SharePointAccountList']
+            for i in accounts:
+                accounts[i] = json.loads(accounts[i])
+            response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
 
     return response
 

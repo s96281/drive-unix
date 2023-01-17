@@ -14,7 +14,7 @@
 <body
     style="background-color: #2b3035;background-image: url('{{ BackgroundImage }}');background-size:cover; background-attachment:fixed;">
     {% if function == "inputaccount" %}
-    <div style="width: 600px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -300px">
+    <div style="width: 300px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -150px">
         <p style="color: red;text-align: center;">{{ warning }}</p>
         <form method="post">
             <div class="mb-3">
@@ -60,11 +60,10 @@
             </thead>
             <tbody>
                 {% for row in SharePointFileList %}
-                <tr>
-                    <td>{{ row[0] }}</td>
-                    <td>{{ row[1] }}</td>
-                    <td>{{ row[2] }}</td>
-                    <td><a class="btn btn-primary" href="{{ row[3] }}" role="button">Link</a></td>
+                <tr style="height: 50px;vertical-align: middle;" onclick="window.location='{{ row[3] }}';">
+                    <td style="cursor: pointer;">{{ row[0] }}</td>
+                    <td style="cursor: pointer;">{{ row[1] }}</td>
+                    <td style="cursor: pointer;">{{ row[2] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
