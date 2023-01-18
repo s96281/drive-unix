@@ -19,10 +19,11 @@ else:
 
 # 設定資料庫
 REDIS = redis.Redis(
-  host= 'usw2-stable-sunfish-30320.upstash.io',
-  port= '30320',
-  password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
-  decode_responses=True
+  host= 'global-liked-dassie-31251.upstash.io',
+  port= '31251',
+  password= '585f5b3af15540d381dc46bf429a7420',
+  decode_responses=True,
+  ssl=True
 )
 
 # 設定網站暫存存放位置
@@ -555,32 +556,38 @@ def main(_request, data):
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
-@app.route("/initialization")
+@app.route("/initialization", methods=['POST','GET'])
 def initialization():
-    data = {"SharePointAccountList": None, "ApiOnedriveSetting": None}
-    local_user = request.form.get('local_user')
-    local_password = request.form.get('local_password')
-    BackgroundImageList = request.form.get('background')
-    checkpermissionornot = request.form.get('checkpermission')
-    CACHE_TYPE = request.form.get('CACHE_TYPE')
-    endpoint = request.form.get('Host')
-    account = request.form.get('Account')
-    password = request.form.get('Password')
-    sites = request.form.get('Sites')
-    data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
-    data['ApiOnedriveSetting'] = {
-        "backgroud_image_list": BackgroundImageList,
-        "checkpermissionornot": checkpermissionornot,
-        "CACHE_TYPE": CACHE_TYPE
-        }
-    with open(data_location, 'w') as f:
-        print('寫入緩存...')
-        f.write(json.dumps(data))
-    for i in data:
-        if i != 'TIME':
-            for j in data[i]:
-                REDIS.hset(i, j, data[i][j])
-    return redirect(url_for('login'))
+    if request.method == 'GET':
+        return render_template('initialization.html')
+    else:
+        data = {"SharePointAccountList": {}, "ApiOnedriveSetting": {}}
+        local_user = request.form.get('local_user')
+        local_password = request.form.get('local_password')
+        BackgroundImageList = request.form.get('background')
+        checkpermissionornot = request.form.get('checkpermission')
+        CACHE_TYPE = request.form.get('CACHE_TYPE')
+        endpoint = request.form.get('Host')
+        account = request.form.get('Account')
+        password = request.form.get('Password')
+        sites = request.form.get('Sites')
+        data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
+        data['ApiOnedriveSetting'] = {
+            "backgroud_image_list": BackgroundImageList,
+            "checkpermissionornot": checkpermissionornot,
+            "user_hash": json.dumps({local_user: hashlib.sha256(local_password.encode()).hexdigest()}),
+            "CACHE_TYPE": CACHE_TYPE
+            }
+        T = time.time()
+        data['TIME']= T
+        with open(data_location, 'w') as f:
+            print('寫入緩存...')
+            f.write(json.dumps(data))
+        for i in data:
+            if i != 'TIME':
+                for j in data[i]:
+                    REDIS.hset(i, j, data[i][j])
+        return redirect(url_for('login'))
     
 
 
