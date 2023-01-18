@@ -10,7 +10,7 @@ psutil redis flask chardet requests flask_caching Office365-REST-Python-Client
 
 # Quick Start
 
-1.	Fork the repo
+1.	Clone the repository.
 
 2.  Install Python3 and dependent modules.
 

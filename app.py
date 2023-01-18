@@ -308,27 +308,35 @@ def read_data() -> dict:
         if data['TIME'] < (time.time()-432000):
             print('緩存過期...')
             data = {}
+            print('線上取得資料...')
+            try:
+                for i in DatasNeedRead:
+                    data[i] = REDIS.hgetall(i)
+                T = time.time()
+                data['TIME']= T
+                with open(data_location, 'w') as f:
+                    print('寫入緩存...')
+                    f.write(json.dumps(data))
+            except:
+                print('資料取得失敗，將進行初始化作業')
+                data = None
+        print('成功讀取資料')
+    else:
+        print('不存在緩存資料...')
+        data = {}
+        print('線上取得資料...')
+        try:
             for i in DatasNeedRead:
                 data[i] = REDIS.hgetall(i)
-            print('線上取得資料...')
             T = time.time()
             data['TIME']= T
             with open(data_location, 'w') as f:
                 print('寫入緩存...')
                 f.write(json.dumps(data))
-        print('成功讀取資料')
-    else:
-        print('不存在緩存資料...')
-        data = {}
-        for i in DatasNeedRead:
-            data[i] = REDIS.hgetall(i)
-        print('線上取得資料...')
-        T = time.time()
-        data['TIME']= T
-        with open(data_location, 'w') as f:
-            print('寫入緩存...')
-            f.write(json.dumps(data))
-        print('成功讀取資料')
+            print('成功讀取資料')
+        except:
+            print('資料取得失敗，將進行初始化作業')
+            data = None
     return data
 
 def read_cookie(endpoint, username, password) -> str:
@@ -547,6 +555,35 @@ def main(_request, data):
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
+@app.route("/initialization")
+def initialization():
+    data = {"SharePointAccountList": None, "ApiOnedriveSetting": None}
+    local_user = request.form.get('local_user')
+    local_password = request.form.get('local_password')
+    BackgroundImageList = request.form.get('background')
+    checkpermissionornot = request.form.get('checkpermission')
+    CACHE_TYPE = request.form.get('CACHE_TYPE')
+    endpoint = request.form.get('Host')
+    account = request.form.get('Account')
+    password = request.form.get('Password')
+    sites = request.form.get('Sites')
+    data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
+    data['ApiOnedriveSetting'] = {
+        "backgroud_image_list": BackgroundImageList,
+        "checkpermissionornot": checkpermissionornot,
+        "CACHE_TYPE": CACHE_TYPE
+        }
+    with open(data_location, 'w') as f:
+        print('寫入緩存...')
+        f.write(json.dumps(data))
+    for i in data:
+        if i != 'TIME':
+            for j in data[i]:
+                REDIS.hset(i, j, data[i][j])
+    return redirect(url_for('login'))
+    
+
+
 @app.route("/clc")
 def clc():
     import shutil
@@ -585,7 +622,9 @@ def home():
         else:
             return True
 
-    if checkpermissionornot(data) and checkpermission(data, request):
+    if data == None:
+        response = redirect(url_for('initialization'))
+    elif checkpermissionornot(data) and checkpermission(data, request):
         response = redirect(url_for('login'))
     else:
         response = main(request, data)
@@ -693,6 +732,7 @@ def setting():
                 sites = request.form.get('Sites')
                 data = UpdateSharePointAccountList(data, endpoint, account, password, sites)
             write_data(data)
+        else:
             accounts = data['SharePointAccountList']
             for i in accounts:
                 accounts[i] = json.loads(accounts[i])
