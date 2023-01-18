@@ -90,7 +90,7 @@
     </nav>
     <div class="container-xxl"
         style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; padding: 50px; border-radius: 10px">
-        <h1>平台變數</h1>
+        <h1 style="color: white;">全域變數</h1>
         </br>
         <form method="post">
             <div class="input-group mb-3">
@@ -118,7 +118,7 @@
         </form>
         </br>
         </br>
-        <h1>帳號設定</h1>
+        <h1 style="color: white;">SharePoint設定</h1>
         </br>
         <ul class="nav nav-tabs" id="myTab" role="tablist">
             {% for key, value in accounts.items() %}
@@ -151,7 +151,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites"
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以空格隔開" name="Sites"
                             value="{{value[3]}}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
@@ -175,7 +175,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以空格隔開" name="Sites">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
