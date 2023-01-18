@@ -7,6 +7,9 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
+# 效能分析工具
+from flask import g
+from pyinstrument import Profiler
 
 
 # 設定設定檔、金鑰存放位置
@@ -19,11 +22,10 @@ else:
 
 # 設定資料庫
 REDIS = redis.Redis(
-  host= 'global-liked-dassie-31251.upstash.io',
-  port= '31251',
-  password= '585f5b3af15540d381dc46bf429a7420',
-  decode_responses=True,
-  ssl=True
+    host= 'usw2-stable-sunfish-30320.upstash.io',
+    port= '30320',
+    password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
+    decode_responses=True
 )
 
 # 設定網站暫存存放位置
@@ -409,6 +411,20 @@ def utc_local_convert(time) -> str:
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
+# 效能分析工具
+@app.before_request
+def before_request():
+    if "profile" in request.args:
+        g.profiler = Profiler()
+        g.profiler.start()
+
+@app.after_request
+def after_request(response):
+    if not hasattr(g, "profiler"):
+        return response
+    g.profiler.stop()
+    output_html = g.profiler.output_html()
+    return make_response(output_html)
 
 @cache.cached(timeout=86400, query_string=True)
 def main(_request, data):
