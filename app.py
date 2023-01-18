@@ -310,15 +310,15 @@ def read_data() -> dict:
             print('緩存過期...')
             data = {}
             print('線上取得資料...')
-            try:
-                for i in DatasNeedRead:
-                    data[i] = REDIS.hgetall(i)
+            for i in DatasNeedRead:
+                data[i] = REDIS.hgetall(i)
+            if data != {'SharePointAccountList': {}, 'ApiOnedriveSetting': {}}:
                 T = time.time()
                 data['TIME']= T
                 with open(data_location, 'w') as f:
                     print('寫入緩存...')
                     f.write(json.dumps(data))
-            except:
+            else:
                 print('資料取得失敗，將進行初始化作業')
                 data = None
         print('成功讀取資料')
@@ -326,16 +326,16 @@ def read_data() -> dict:
         print('不存在緩存資料...')
         data = {}
         print('線上取得資料...')
-        try:
-            for i in DatasNeedRead:
-                data[i] = REDIS.hgetall(i)
+        for i in DatasNeedRead:
+            data[i] = REDIS.hgetall(i)
+        if data != {'SharePointAccountList': {}, 'ApiOnedriveSetting': {}}:
             T = time.time()
             data['TIME']= T
             with open(data_location, 'w') as f:
                 print('寫入緩存...')
                 f.write(json.dumps(data))
             print('成功讀取資料')
-        except:
+        else:
             print('資料取得失敗，將進行初始化作業')
             data = None
     return data
