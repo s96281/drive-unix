@@ -1,20 +1,38 @@
 # Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+An index & manager of SharePoint powered by Python, Flask and Redis.
+No need to generate OneDrive API Tokens or register application in Azure.
+Built for those who can't authorize apps and don't have admin permissions.
+Completely free to host.
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+# Dependents
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+psutil
+redis
+flask
+chardet
+requests
+flask_caching
+Office365-REST-Python-Client
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+# Quick Start
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+1.	Fork the repo
+
+2.  Install Python3 and dependent modules.
+
+    ```bash
+    sudo apt install python3;pip install -r requirements.txt
+    ```
+
+3.	Change host, port, password with your Redis server.
+
+4.	Write in a new hash named "SharePointAccountList" in to your Redis server.
+    It should contain a Key which is your office account e-mail and a list with "[endpoint, email, password, SharePointSite(if there are multiple sites, separate by space)]"
+
+5.	Run with command
+
+    ```bash
+    python app.py
+    ```
+
+# To-Do
