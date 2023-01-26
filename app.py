@@ -777,9 +777,6 @@ def upload():
 
 @app.route("/reflash")
 def reflash():
-    # if os.path.exists(CACHE_LOCATION):
-    #     shutil.rmtree('./cache')
-    #     os.mkdir('./cache')
     if request.referrer:
         cache.delete_memoized(main, request.referrer)
         response = make_response(redirect(request.referrer))
