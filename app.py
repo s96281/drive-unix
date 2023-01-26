@@ -7,31 +7,41 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
+
+
+DEBUG = True
+
 # 效能分析工具
-from flask import g
-from pyinstrument import Profiler
+if DEBUG:
+    from flask import g
+    from pyinstrument import Profiler
 
 
 # 設定設定檔、金鑰存放位置
-if os.name == 'nt':
+if os.name == 'nt': # Windows
     data_location = './data'
     cookies_location = './cookies'
-else:
+else: # Linux、MacOS
     data_location = '/tmp/data'
     cookies_location = '/tmp/cookies'
 
-# 設定資料庫
-REDIS = redis.Redis(
-    host= 'usw2-stable-sunfish-30320.upstash.io',
-    port= '30320',
-    password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
-    decode_responses=True
-)
+# 設定是否由資料庫同步資料
+Redis_sync = True
 
-# 設定網站暫存存放位置
+# 設定資料庫
+if Redis_sync:
+    REDIS = redis.Redis(
+        host= 'usw2-stable-sunfish-30320.upstash.io',
+        port= '30320',
+        password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
+        decode_responses=True
+    )
+
+# 設定同步資料間隔時間
+Redis_sync_expires = 432000
+
+# 設定網站快取存放位置
 CACHE_LOCATION = './cache'
-if not os.path.exists(CACHE_LOCATION):
-    os.mkdir(CACHE_LOCATION)
 
 # 設定時區
 UTC = 8
@@ -46,6 +56,9 @@ CacheConfig = {
     "CACHE_THRESHOLD": 500
 }
 
+
+# 獲取使用者Cookie
+# 作者：Krzysztof Nowicki
 authXmlManaged = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:a="http://www.w3.org/2005/08/addressing"
       xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
@@ -298,18 +311,41 @@ def get_cookie(endpoint, username, password):
     except URLError as x:
         print("Failed to login to SharePoint site: {}".format(x.reason))
         exit(1)
+# 結束獲取使用者Cookie
 
-def read_data() -> dict:
-    DatasNeedRead = ['SharePointAccountList','ApiOnedriveSetting']
-    print('讀取資料中...')
-    if os.path.isfile(data_location):
-        print('存在緩存資料...')
-        f = open(data_location)
-        data = json.loads(f.read())
-        print('讀取緩存資料...')
-        f.close()
-        if data['TIME'] < (time.time()-432000):
-            print('緩存過期...')
+# 建立快取資料夾
+if not os.path.exists(CACHE_LOCATION):
+    os.mkdir(CACHE_LOCATION)
+
+# 讀取網站設定
+if Redis_sync:
+    def read_data() -> dict:
+        DatasNeedRead = ['SharePointAccountList','ApiOnedriveSetting']
+        print('讀取資料中...')
+        if os.path.isfile(data_location):
+            print('存在緩存資料...')
+            f = open(data_location)
+            data = json.loads(f.read())
+            print('讀取緩存資料...')
+            f.close()
+            if data['TIME'] < (time.time()-Redis_sync_expires):
+                print('緩存過期...')
+                data = {}
+                print('線上取得資料...')
+                for i in DatasNeedRead:
+                    data[i] = REDIS.hgetall(i)
+                if data != {'SharePointAccountList': {}, 'ApiOnedriveSetting': {}}:
+                    T = time.time()
+                    data['TIME']= T
+                    with open(data_location, 'w') as f:
+                        print('寫入緩存...')
+                        f.write(json.dumps(data))
+                else:
+                    print('資料取得失敗，將進行初始化作業')
+                    data = None
+            print('成功讀取資料')
+        else:
+            print('不存在緩存資料...')
             data = {}
             print('線上取得資料...')
             for i in DatasNeedRead:
@@ -320,28 +356,28 @@ def read_data() -> dict:
                 with open(data_location, 'w') as f:
                     print('寫入緩存...')
                     f.write(json.dumps(data))
+                print('成功讀取資料')
             else:
                 print('資料取得失敗，將進行初始化作業')
                 data = None
-        print('成功讀取資料')
-    else:
-        print('不存在緩存資料...')
-        data = {}
-        print('線上取得資料...')
-        for i in DatasNeedRead:
-            data[i] = REDIS.hgetall(i)
-        if data != {'SharePointAccountList': {}, 'ApiOnedriveSetting': {}}:
-            T = time.time()
-            data['TIME']= T
-            with open(data_location, 'w') as f:
-                print('寫入緩存...')
-                f.write(json.dumps(data))
+        return data
+else:
+    def read_data() -> dict:
+        print('讀取資料中...')
+        if os.path.isfile(data_location):
+            print('存在緩存資料...')
+            f = open(data_location)
+            data = json.loads(f.read())
+            print('讀取緩存資料...')
+            f.close()
             print('成功讀取資料')
         else:
             print('資料取得失敗，將進行初始化作業')
             data = None
-    return data
+        return data
+# 結束讀取網站設定
 
+# 讀取Cookie
 def read_cookie(endpoint, username, password) -> str:
     print('讀取憑證中...')
     if os.path.isfile(cookies_location):
@@ -382,7 +418,10 @@ def read_cookie(endpoint, username, password) -> str:
             print('寫入憑證...')
         print('成功讀取憑證')
     return cookies[username]['cookie']
+# 結束讀取Cookie
 
+
+# 轉換size為人類可讀
 def sizeof_fmt(num, suffix="B") -> str:
     for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
         if abs(num) < 1024.0:
@@ -390,15 +429,15 @@ def sizeof_fmt(num, suffix="B") -> str:
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
-def getdownloadlink(account, site, file) -> str:
-    url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1/sites/'+ account.split('@')[1].replace('.','') +'.sharepoint.com:/sites/'+ site +':/drive/root:/'+file
-    if 'root:' in url:
-        url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1'+ urllib.parse.quote(file)  
-    with open(cookies_location, 'r') as f:
-        cookie = json.loads(f.read())[account]['cookie']
+def getdownloadlink(data, account, site, path) -> str:
+    [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
+    cookie = read_cookie(endpoint, username, password)
     header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-    r = json.loads(requests.get(url, headers = header).text)
-    return r['@content.downloadUrl']
+    path = urllib.parse.quote(path)
+    url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path
+    r = requests.get(url, headers=header).text
+    r = json.loads(r)
+    return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
 
 def utc_local_convert(time) -> str:
     utc = time
@@ -411,20 +450,22 @@ def utc_local_convert(time) -> str:
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
-# 效能分析工具
-@app.before_request
-def before_request():
-    if "profile" in request.args:
-        g.profiler = Profiler()
-        g.profiler.start()
 
-@app.after_request
-def after_request(response):
-    if not hasattr(g, "profiler"):
-        return response
-    g.profiler.stop()
-    output_html = g.profiler.output_html()
-    return make_response(output_html)
+# 效能分析工具
+if DEBUG:
+    @app.before_request
+    def before_request():
+        if "profile" in request.args:
+            g.profiler = Profiler()
+            g.profiler.start()
+
+    @app.after_request
+    def after_request(response):
+        if not hasattr(g, "profiler"):
+            return response
+        g.profiler.stop()
+        output_html = g.profiler.output_html()
+        return make_response(output_html)
 
 @cache.cached(timeout=86400, query_string=True)
 def main(_request, data):
