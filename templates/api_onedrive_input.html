@@ -96,7 +96,7 @@
             <div class="input-group mb-3">
                 <span class="input-group-text">BackgroudImageList</span>
                 <input type="text" class="form-control" placeholder='["URL1", "URL2", "URL3"...]' name="background"
-                    value="{{ backgroud_image_list }}">
+                    value="{% for i in backgroud_image_list %}{{ i }},{% endfor %}">
             </div>
             <div class="input-group mb-3">
                 <span class="input-group-text">CheckPermission</span>
@@ -135,24 +135,24 @@
         </br>
         <div class="tab-content" id="myTabContent">
             {% for key, value in accounts.items() %}
-            <div class="tab-pane fade" id="{{value[1]}}" role="tabpanel" tabindex="0">
+            <div class="tab-pane fade" id="{{key}}" role="tabpanel" tabindex="0">
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value[0]}}">
+                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value["endpoint"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
-                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value[1]}}">
+                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value["username"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Password</span>
-                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value[2]}}">
+                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value["password"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
                         <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以空格隔開" name="Sites"
-                            value="{{value[3]}}">
+                            value="{% for i in value["sites"] %}{{ i }},{% endfor %}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
