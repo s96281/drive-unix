@@ -633,6 +633,7 @@ def initialization():
         T = time.time()
         data['TIME']= T
         write_data(data)
+        reflash()
         return redirect(url_for('login'))
     
 
