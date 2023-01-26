@@ -58,7 +58,7 @@ CacheConfig = {
     "CACHE_THRESHOLD": 500
 }
 
-
+requests = requests.Session()
 # 獲取使用者Cookie
 # 作者：Krzysztof Nowicki
 # 修改：Henry Yo
