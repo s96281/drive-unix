@@ -95,20 +95,28 @@
         </br>
         <form method="post">
             <div class="input-group mb-3">
-                <span class="input-group-text">BackgroudImageList</span>
-                <input type="text" class="form-control" placeholder='["URL1", "URL2", "URL3"...]' name="background"
+                <span class="input-group-text">網頁背景圖</span>
+                <input type="text" class="form-control" placeholder='URL1,URL2,...(以","結尾)' name="background"
                     value="{% for i in backgroud_image_list %}{{ i }},{% endfor %}">
             </div>
             <div class="input-group mb-3">
-                <span class="input-group-text">CheckPermission</span>
+                <span class="input-group-text">公開網站</span>
                 <select class="form-select" name="checkpermission">
-                    <option selected>匿名下載</option>
+                    <option selected>是否開放網站(不須登入即可檢視目錄)</option>
                     <option value="0">是</option>
                     <option value="1">否</option>
                 </select>
             </div>
             <div class="input-group mb-3">
-                <span class="input-group-text">Cache type</span>
+                <span class="input-group-text">匿名下載</span>
+                <select class="form-select" name="anonymous_download">
+                    <option selected>是否開放匿名下載(不須登入即可下載)</option>
+                    <option value="0">是</option>
+                    <option value="1">否</option>
+                </select>
+            </div>
+            <div class="input-group mb-3">
+                <span class="input-group-text">快取</span>
                 <select class="form-select" name="CACHE_TYPE">
                     <option selected>設定伺服器快取形式</option>
                     <option value="NullCache">NullCache</option>
@@ -152,7 +160,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以空格隔開" name="Sites"
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開" name="Sites"
                             value="{% for i in value["sites"] %}{{ i }},{% endfor %}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
@@ -176,7 +184,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以空格隔開" name="Sites">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開(以','結尾)" name="Sites">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>

@@ -601,6 +601,7 @@ def initialization():
         local_password = request.form.get('local_password')
         BackgroundImageList = request.form.get('background')
         checkpermissionornot = request.form.get('checkpermission')
+        anonymous_download = request.form.get('anonymous_download')
         CACHE_TYPE = request.form.get('CACHE_TYPE')
         endpoint = request.form.get('Host')
         account = request.form.get('Account')
@@ -618,6 +619,7 @@ def initialization():
             "ApiOnedriveSetting": {
                 "backgroud_image_list": BackgroundImageList.split(',')[:-1],
                 "checkpermissionornot": True if checkpermissionornot == '1' else False,
+                "anonymous_download": True if anonymous_download == '0' else False,
                 "user_hash": {
                     local_user: hashlib.sha256(local_password.encode()).hexdigest()
                 },
@@ -670,20 +672,23 @@ def home():
         else:
             return True
 
+    account = request.args.get('account')
+    site = request.args.get('site')
+    path = request.args.get('path')
+    path = urllib.parse.unquote(path) if path else path
+    download = request.args.get('download')
+    _logout = request.args.get('logout')
+    _previousdirectory = request.args.get("_previousdirectory")
+    url = request.url.replace('https://','')
+    url = url.replace('http://','')
+
     if data == None:
         response = redirect(url_for('initialization'))
+    elif 'download' in request.args and data["ApiOnedriveSetting"]["anonymous_download"] == True:
+        response = main(url,account,site,path,download,_logout,_previousdirectory)
     elif checkpermissionornot(data) and checkpermission(data, request):
         response = redirect(url_for('login'))
     else:
-        account = request.args.get('account')
-        site = request.args.get('site')
-        path = request.args.get('path')
-        path = urllib.parse.unquote(path) if path else path
-        download = request.args.get('download')
-        _logout = request.args.get('logout')
-        _previousdirectory = request.args.get("_previousdirectory")
-        url = request.url.replace('https://','')
-        url = url.replace('http://','')
         response = main(url,account,site,path,download,_logout,_previousdirectory)
     return response
 
@@ -748,9 +753,11 @@ def setting():
             if 'background' in request.form:
                 BackgroundImageList = request.form.get('background')
                 checkpermissionornot = request.form.get('checkpermission')
+                anonymous_download = request.form.get('anonymous_download')
                 CACHE_TYPE = request.form.get('CACHE_TYPE')
                 data["ApiOnedriveSetting"]["backgroud_image_list"] = BackgroundImageList.split(',')[:-1]
                 data["ApiOnedriveSetting"]["checkpermissionornot"] = True if checkpermissionornot == '1' else False
+                data["ApiOnedriveSetting"]["anonymous_download"] = True if anonymous_download == '0' else False
                 data["ApiOnedriveSetting"]["CACHE_TYPE"] = CACHE_TYPE
             elif 'Host' in request.form:
                 endpoint = request.form.get('Host')
