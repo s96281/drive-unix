@@ -50,7 +50,7 @@ UTC = 8
 
 # 設定快取參數
 CacheConfig = {
-    "DEBUG": False,
+    "DEBUG": True,
     "CACHE_TYPE": "FileSystemCache",
     "CACHE_DEFAULT_TIMEOUT": 86400,
     "CACHE_IGNORE_ERRORS": True,
@@ -446,9 +446,11 @@ if DEBUG:
         output_html = g.profiler.output_html()
         return make_response(output_html)
 
-@cache.cached(timeout=86400, query_string=True)
-def main(_request, data):
+# @cache.cached(timeout=86400, make_cache_key='url', query_string=True)
+@cache.memoize(args_to_ignore=['account','site','path','download','_logout','_previousdirectory'])
+def main(url = None,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
     headings = ['Name', 'Last edit time', 'Size']
+    data = read_data()
     def sharepointaccounts(data) -> list:
         response = []
         for i in data['SharePointAccountList']:
@@ -529,18 +531,11 @@ def main(_request, data):
     BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
     BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
 
-
-    account = _request.args.get('account')
-    site = _request.args.get('site')
-    path = _request.args.get('path')
-    path = urllib.parse.unquote(path) if path else path
-    download = _request.args.get('download')
-
-
+    _url = url
     # logout = request.args.get('logout')
-    if 'previousdirectory' in _request.args:
-        response = previousdirectory(_request.url)
-    elif 'logout' in _request.args:
+    if _previousdirectory:
+        response = previousdirectory(_url)
+    elif _logout:
         response = logout()
     elif download:
         downloadlink = getdownloadlink(data, account, site, path)
@@ -550,35 +545,35 @@ def main(_request, data):
             response = make_response(redirect(downloadlink))
     elif path:
         # 列出路徑檔案
-        SharePointFileList = [['..', '', '', previousdirectory(_request.url)]]
+        SharePointFileList = [['..', '', '', previousdirectory(_url)]]
         sharepointsite_path_files = sharepointsite_path_files(data, account, site, path)
         for i in sharepointsite_path_files:
             name = i
             time = utc_local_convert(sharepointsite_path_files[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_path_files[i]['size'])
             if sharepointsite_path_files[i]['type'] == 'folder':
-                url = _request.url + '/' + urllib.parse.quote(name)
+                url = _url + '/' + urllib.parse.quote(name)
                 url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
             else:
-                url = _request.url + '/'  + urllib.parse.quote(name) + '&download=1'
+                url = _url + '/'  + urllib.parse.quote(name) + '&download=1'
                 url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     elif site or path == '/':
         # 列出SharePoint網站根目錄
-        SharePointFileList = [['..', '', '', previousdirectory(_request.url)]]
+        SharePointFileList = [['..', '', '', previousdirectory(_url)]]
         sharepointsite_root_files = sharepointsite_root_files(data, account, site)
         for i in sharepointsite_root_files:
             name = i
             time = utc_local_convert(sharepointsite_root_files[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_root_files[i]['size'])
             if sharepointsite_root_files[i]['type'] == 'folder':
-                url = _request.url + '&path=/' + urllib.parse.quote(name)
+                url = _url + '&path=/' + urllib.parse.quote(name)
                 url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
             else:
-                url = _request.url + '&path=/' + urllib.parse.quote(name) + '&download=1'
+                url = _url + '&path=/' + urllib.parse.quote(name) + '&download=1'
                 url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
@@ -587,13 +582,13 @@ def main(_request, data):
         SharePointFileList = [['..', '', '', url_for('home')]]
         for i in sharepointsites(data, account):
             detail = sharepointsite_details(data, account, i)
-            SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), _request.url + '&site=' + i])
+            SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), _url + '&site=' + i])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     else:
         # 列出SharePoint帳號列表
         SharePointFileList = []
         for i in sharepointaccounts(data):
-            SharePointFileList.append([i, '', '', _request.url + '?account=' + i])
+            SharePointFileList.append([i, '', '', _url + '?account=' + i])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     return response
 
@@ -681,7 +676,14 @@ def home():
     elif checkpermissionornot(data) and checkpermission(data, request):
         response = redirect(url_for('login'))
     else:
-        response = main(request, data)
+        account = request.args.get('account')
+        site = request.args.get('site')
+        path = request.args.get('path')
+        path = urllib.parse.unquote(path) if path else path
+        download = request.args.get('download')
+        _logout = request.args.get('logout')
+        _previousdirectory = request.args.get("_previousdirectory")
+        response = main(request.url,account,site,path,download,_logout,_previousdirectory)
     return response
 
 @app.route("/login", methods=['POST','GET'])
@@ -775,10 +777,11 @@ def upload():
 
 @app.route("/reflash")
 def reflash():
-    if os.path.exists(CACHE_LOCATION):
-        shutil.rmtree('./cache')
-        os.mkdir('./cache')
+    # if os.path.exists(CACHE_LOCATION):
+    #     shutil.rmtree('./cache')
+    #     os.mkdir('./cache')
     if request.referrer:
+        cache.delete_memoized(main, request.referrer)
         response = make_response(redirect(request.referrer))
     else:
         response = make_response(redirect(url_for("home")))
