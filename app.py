@@ -554,11 +554,10 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
             size = sizeof_fmt(sharepointsite_path_files[i]['size'])
             if sharepointsite_path_files[i]['type'] == 'folder':
                 url = _url + '/' + urllib.parse.quote(name)
-                url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
             else:
                 url = _url + '/'  + urllib.parse.quote(name) + '&download=1'
-                url = url.replace('http','https')
+                url = url.replace('http://','https://')
                 SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     elif site or path == '/':
@@ -571,11 +570,10 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
             size = sizeof_fmt(sharepointsite_root_files[i]['size'])
             if sharepointsite_root_files[i]['type'] == 'folder':
                 url = _url + '&path=/' + urllib.parse.quote(name)
-                url = url.replace('http','https')
                 SharePointFileList.append([name, time, size, url])
             else:
                 url = _url + '&path=/' + urllib.parse.quote(name) + '&download=1'
-                url = url.replace('http','https')
+                url = url.replace('http://','https://')
                 SharePointFileList.append([name, time, size, url])
         response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     elif account:
