@@ -448,7 +448,7 @@ if DEBUG:
 
 # @cache.cached(timeout=86400, make_cache_key='url', query_string=True)
 @cache.memoize(args_to_ignore=['account','site','path','download','_logout','_previousdirectory'])
-def main(url = None,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
+def main(url,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
     headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
     def sharepointaccounts(data) -> list:
@@ -683,7 +683,7 @@ def home():
         download = request.args.get('download')
         _logout = request.args.get('logout')
         _previousdirectory = request.args.get("_previousdirectory")
-        response = main(request.url,account,site,path,download,_logout,_previousdirectory)
+        response = main(str(request.url),account,site,path,download,_logout,_previousdirectory)
     return response
 
 @app.route("/login", methods=['POST','GET'])
@@ -778,7 +778,7 @@ def upload():
 @app.route("/reflash")
 def reflash():
     if request.referrer:
-        cache.delete_memoized(main, request.referrer)
+        cache.delete_memoized(main, str(request.referrer.replace('@','%40')))
         response = make_response(redirect(request.referrer))
     else:
         response = make_response(redirect(url_for("home")))
