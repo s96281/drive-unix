@@ -451,6 +451,7 @@ if DEBUG:
 def main(url,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
     headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
+    url = 'https://'+url
     def sharepointaccounts(data) -> list:
         response = []
         for i in data['SharePointAccountList']:
@@ -683,7 +684,9 @@ def home():
         download = request.args.get('download')
         _logout = request.args.get('logout')
         _previousdirectory = request.args.get("_previousdirectory")
-        response = main(str(request.url),account,site,path,download,_logout,_previousdirectory)
+        url = request.url.replace('https://','')
+        url = url.replace('http://','')
+        response = main(url,account,site,path,download,_logout,_previousdirectory)
     return response
 
 @app.route("/login", methods=['POST','GET'])
@@ -778,7 +781,10 @@ def upload():
 @app.route("/reflash")
 def reflash():
     if request.referrer:
-        cache.delete_memoized(main, str(request.referrer.replace('@','%40')))
+        url = request.referrer.replace('https://','')
+        url = url.replace('http://','')
+        url = url.replace('@','%40')
+        cache.delete_memoized(main, url)
         response = make_response(redirect(request.referrer))
     else:
         response = make_response(redirect(url_for("home")))
