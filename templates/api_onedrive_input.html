@@ -43,6 +43,7 @@
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
                 <a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">setting</a>
+                <a href="/reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">reflash</a>
                 <form class="d-flex" role="search">
                     <button class="btn btn-outline-success" type="submit" name="logout">Logout</button>
                 </form>
@@ -50,7 +51,7 @@
         </div>
     </nav>
     <div class="container-lg "
-        style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 43%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
+        style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 65%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
         <table class="table" style="color: white;">
             <thead>
                 <tr>
@@ -62,9 +63,9 @@
             <tbody>
                 {% for row in SharePointFileList %}
                 <tr style="height: 50px;vertical-align: middle;" onclick="window.location='{{ row[3] }}';">
-                    <td style="cursor: pointer;">{{ row[0] }}</td>
-                    <td style="cursor: pointer;">{{ row[1] }}</td>
-                    <td style="cursor: pointer;">{{ row[2] }}</td>
+                    <td style="cursor: pointer;width:60%">{{ row[0] }}</td>
+                    <td style="cursor: pointer;width:25%">{{ row[1] }}</td>
+                    <td style="cursor: pointer;width:15%">{{ row[2] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
