@@ -787,6 +787,7 @@ def setting():
                     "sites": sites.split(',')[:-1]
                 }
             write_data(data)
+            cache.clear()
             response = make_response(url_for("setting"))
         else:
             accounts = data['SharePointAccountList']

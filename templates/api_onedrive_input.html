@@ -150,23 +150,20 @@
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value["
-                            endpoint"]}}">
+                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value['endpoint']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
-                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value["
-                            username"]}}">
+                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value['username']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Password</span>
-                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value["
-                            password"]}}">
+                        <input type="password" class="form-control" placeholder="" name="Password" value="{{value['password']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開" name="Sites"
-                            value="{% for i in value[" sites"] %}{{ i }},{% endfor %}">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開(以','結尾)" name="Sites"
+                            value="{% for i in value['sites'] %}{{ i }},{% endfor %}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
