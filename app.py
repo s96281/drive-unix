@@ -926,5 +926,10 @@ def cookie():
 def status():
     return 'Online'
 
+@app.route("/test")
+def test():
+    response = make_response(render_template('test.html'))
+    return response
+
 if __name__ == '__main__':
     app.run()

@@ -1,0 +1,54 @@
+<input type="file" id="file-input">
+<button id="submit-button">Submit</button>
+<script>
+    async function upload(user, binary, parent_path, file_name) {
+    const cookieResponse = await fetch('https://henrysharepoint.azurewebsites.net/cookie?user=' + user);
+    const cookie = await cookieResponse.text();
+    console.log(cookie)
+    const contextinfo_url = "https://mailswdpsntpcedutw.sharepoint.com/sites/application/_api/contextinfo";
+    const contextinfo_headers = {
+        'Accept': 'application/json',
+        'cookie': cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0',
+        'Sec-Fetch-User': '?1'
+    };
+    const contextinfoResponse = await fetch(contextinfo_url, {
+        method: 'POST',
+        headers: contextinfo_headers
+    });
+    const contextinfo = await contextinfoResponse.json();
+    const headers = {
+        'X-RequestDigest': contextinfo['FormDigestValue'],
+        "cookie": cookie
+    };
+    parent_path = encodeURIComponent(parent_path);
+    const url = `https://mailswdpsntpcedutw.sharepoint.com/sites/application/_api/web/GetFolderByServerRelativeUrl('${parent_path}')/Files/add(url='${file_name}',overwrite=true)`;
+    const postResponse = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: binary
+    });
+    console.log(postResponse.status)
+    return postResponse.status;
+}
+
+const input = document.getElementById('file-input');
+const submitButton = document.getElementById('submit-button');
+submitButton.addEventListener('click', async () => {
+    if (input.files.length === 0) {
+        alert("Please select a file");
+        return;
+    }
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.readAsText(file);
+    reader.onload = () => {
+        const fileContent = reader.result;
+        console.log(fileContent);
+        console.log(file.name);
+        const user = 's96281@mails.wdps.ntpc.edu.tw';
+        const parent_path = '/';
+        upload(user, fileContent, parent_path, file.name);
+    }
+});
+</script>
