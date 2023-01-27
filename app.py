@@ -50,7 +50,7 @@ UTC = 8
 
 # 設定快取參數
 CacheConfig = {
-    "DEBUG": True,
+    "DEBUG": False,
     "CACHE_TYPE": "FileSystemCache",
     "CACHE_DEFAULT_TIMEOUT": 86400,
     "CACHE_IGNORE_ERRORS": True,
@@ -447,7 +447,7 @@ if DEBUG:
         return make_response(output_html)
 
 # @cache.cached(timeout=86400, make_cache_key='url', query_string=True)
-@cache.memoize(args_to_ignore=['account','site','path','download','_logout','_previousdirectory'])
+@cache.memoize(timeout=86400, args_to_ignore=['account','site','path','download','_logout','_previousdirectory'])
 def main(url,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
     headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
@@ -515,6 +515,8 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         r = json.loads(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(data, r["@odata.nextLink"]))
         return response
     def getdownloadlink(data, account, site, path) -> str:
         endpoint = data['SharePointAccountList'][account]["endpoint"]
@@ -798,7 +800,107 @@ def setting():
 
 @app.route("/upload", methods=['POST', 'GET'])
 def upload():
-    pass
+    data = read_data()
+    def new_folder(data,account,site,parent_path,new_folder_name):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        url = endpoint + "sites/" + site + "/_api/web/folders"
+        update_data = {}
+        update_data['__metadata'] = {'type': 'SP.Folder'}
+        if '/' not in parent_path:
+            parent_path = urllib.parse.unquote(parent_path)
+        if parent_path[-1] != '/':
+            parent_path += '/'
+        if parent_path[0] != '/':
+            parent_path = '/' + parent_path
+        parent_path = '/sites/' + site + '/Shared Documents' + parent_path
+        parent_path += new_folder_name
+        parent_path = urllib.parse.quote(parent_path, safe='')
+        # print(parent_path)
+        update_data['ServerRelativeUrl'] = parent_path
+        body = json.dumps(update_data)
+        headers = {'Accept': 'application/json;odata=verbose',
+                    'Content-Type': 'application/json;odata=verbose',
+                    'X-RequestDigest': contextinfo['FormDigestValue'],
+                    'cookie': cookie}
+        r = requests.post(url=url, headers=headers, data=body)
+        if r.status_code != 201:
+            return r.json()
+        return True
+    def new_file(data,account,site,parent_path,type,file_content,file_name):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        if '/' not in parent_path:
+            parent_path = urllib.parse.unquote(parent_path)
+        if parent_path[-1] != '/':
+            parent_path += '/'
+        if parent_path[0] != '/':
+            parent_path = '/' + parent_path
+        parent_path = '/sites/' + site + '/Shared Documents' + parent_path
+        parent_path = urllib.parse.quote(parent_path, safe='')
+        headers = {'X-RequestDigest': contextinfo['FormDigestValue'],"cookie":cookie}
+        if type == 'location':
+            # 從本地讀取檔案上傳
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            with open(file_content,'rb') as f:
+                binary = f.read()
+            r = requests.post(url=url,data=binary,headers=headers)
+        elif type == 'binary':
+            # 傳入二進制數據上傳
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            r = requests.post(url=url,data=file_content,headers=headers)
+        elif type == 'url':
+            # 傳入下載連結上傳
+            binary = requests.get(file_content).content
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            r = requests.post(url=url,data=binary,headers=headers)
+        elif type == 'remote':
+            # 調用外部API(給那些有備選方案的人自行發揮)
+            return True
+        elif type == 'bypass':
+            # 返回上傳連結
+            pass
+        if r.status_code == 201:
+            return True
+        return r.json()
+    def del_item(data,account,site,path):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        if '/' not in path:
+            path = urllib.parse.unquote(path)
+        if path[-1] != '/':
+            path += '/'
+        if path[0] != '/':
+            path = '/' + path
+        path = '/sites/' + site + '/Shared Documents/' + path
+        path = urllib.parse.quote(path, safe='')
+        url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + path + "')"
+        headers = {'Accept': 'application/json;odata=verbose',
+                    'If-Match': '*',
+                    'X-HTTP-Method': 'DELETE',
+                    'Content-Type': 'application/json;odata=verbose',
+                    'X-RequestDigest': contextinfo['FormDigestValue'],
+                    'cookie': cookie}
+        r = requests.post(url=url, headers=headers)
+        if r.status_code != 204:
+            return r.json()
+        return True
+
 
 @app.route("/reflash")
 def reflash():
@@ -811,6 +913,18 @@ def reflash():
     else:
         response = make_response(redirect(url_for("home")))
     return response
+
+    
+@app.route("/cookie")
+def cookie():
+    user = request.args.get("user")
+    data = read_data()
+    cookie = read_cookie(data["SharePointAccountList"][user]["endpoint"], user, data["SharePointAccountList"][user]["password"])
+    return cookie
+
+@app.route("/status")
+def status():
+    return 'Online'
 
 if __name__ == '__main__':
     app.run()
