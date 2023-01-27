@@ -929,7 +929,7 @@ def status():
 @app.route("/test")
 def test():
     account = 's96281@mails.wdps.ntpc.edu.tw'
-    data = read_data
+    data = read_data()
     endpoint = data["SharePointAccountList"][account]["endpoint"]
     username = data["SharePointAccountList"][account]["username"]
     password = data["SharePointAccountList"][account]["password"]
