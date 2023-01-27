@@ -7,7 +7,7 @@
     </title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" href="https://favicon.ico" type="image/x-icon"/>
+    <link rel="icon" href="https://favicon.ico" type="image/x-icon" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
 </head>
@@ -62,7 +62,9 @@
             </thead>
             <tbody>
                 {% for row in SharePointFileList %}
-                <tr style="height: 50px;vertical-align: middle;" onclick="window.location='{{ row[3] }}';">
+                <tr style="height: 50px;vertical-align: middle;"
+                    oncontextmenu='navigator.clipboard.writeText("{{ row[3] }}");tempAlert("已複製鏈結",1000)'
+                    onclick="window.location='{{ row[3] }}';">
                     <td style="cursor: pointer;width:60%">{{ row[0] }}</td>
                     <td style="cursor: pointer;width:25%">{{ row[1] }}</td>
                     <td style="cursor: pointer;width:15%">{{ row[2] }}</td>
@@ -148,20 +150,23 @@
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value["endpoint"]}}">
+                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value["
+                            endpoint"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
-                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value["username"]}}">
+                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value["
+                            username"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Password</span>
-                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value["password"]}}">
+                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value["
+                            password"]}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
                         <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開" name="Sites"
-                            value="{% for i in value["sites"] %}{{ i }},{% endfor %}">
+                            value="{% for i in value[" sites"] %}{{ i }},{% endfor %}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
@@ -201,6 +206,19 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"
         integrity="sha384-mQ93GR66B00ZXjt0YO5KlohRA5SY2XofN4zfuZxLkoj1gXtW8ANNCe9d5Y3eG5eD"
         crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        function tempAlert(msg, duration) {
+            var el = document.createElement("div");
+            el.setAttribute("class", "alert alert-warning show");
+            el.setAttribute("style", "position: absolute;left: 10px;bottom: 10px;")
+            el.innerHTML = msg;
+            setTimeout(function () {
+                el.parentNode.removeChild(el);
+            }, duration);
+            document.body.appendChild(el);
+        }
+    </script>
 </body>
 
 </html>
