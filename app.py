@@ -470,6 +470,20 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
+    def nextpage(data, url) -> dict:
+        response = {}
+        endpoint = data['SharePointAccountList'][account]["endpoint"]
+        username = data['SharePointAccountList'][account]["username"]
+        password = data['SharePointAccountList'][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        r = requests.get(url, headers=header).text
+        r = json.loads(r)
+        for i in r['value']:
+            response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(data, r["@odata.nextLink"]))
+        return response
     def sharepointsite_root_files(data, account, site) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
@@ -483,6 +497,8 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         r = json.loads(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(data, r["@odata.nextLink"]))
         return response
     def sharepointsite_path_files(data, account, site, path) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
