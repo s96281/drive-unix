@@ -928,7 +928,18 @@ def status():
 
 @app.route("/test")
 def test():
-    response = make_response(render_template('test.html'))
+    account = 's96281@mails.wdps.ntpc.edu.tw'
+    data = read_data
+    endpoint = data["SharePointAccountList"][account]["endpoint"]
+    username = data["SharePointAccountList"][account]["username"]
+    password = data["SharePointAccountList"][account]["password"]
+    cookie = read_cookie(endpoint, username, password)
+    site = 'application'
+    contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+    contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+    contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+    contextinfo = contextinfo['FormDigestValue']
+    response = make_response(render_template('test.html', contextinfo=contextinfo))
     return response
 
 if __name__ == '__main__':

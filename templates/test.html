@@ -4,21 +4,9 @@
     async function upload(user, binary, parent_path, file_name) {
     const cookieResponse = await fetch('https://henrysharepoint.azurewebsites.net/cookie?user=' + user);
     const cookie = await cookieResponse.text();
-    console.log(cookie)
-    const contextinfo_url = "https://mailswdpsntpcedutw.sharepoint.com/sites/application/_api/contextinfo";
-    const contextinfo_headers = {
-        'Accept': 'application/json',
-        'cookie': cookie,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0',
-        'Sec-Fetch-User': '?1'
-    };
-    const contextinfoResponse = await fetch(contextinfo_url, {
-        method: 'POST',
-        headers: contextinfo_headers
-    });
-    const contextinfo = await contextinfoResponse.json();
+    console.log(cookie);
     const headers = {
-        'X-RequestDigest': contextinfo['FormDigestValue'],
+        'X-RequestDigest': "{{ contextinfo }}",
         "cookie": cookie
     };
     parent_path = encodeURIComponent(parent_path);
