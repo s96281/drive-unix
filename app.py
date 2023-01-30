@@ -9,7 +9,7 @@ from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
 
 
-DEBUG = False
+DEBUG = True
 
 # 效能分析工具
 if DEBUG:
@@ -24,6 +24,9 @@ if os.name == 'nt': # Windows
 else: # Linux、MacOS
     data_location = '/tmp/data'
     cookies_location = '/tmp/cookies'
+
+# 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
+REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
 Redis_sync = False
@@ -52,8 +55,8 @@ UTC = 8
 CacheConfig = {
     "DEBUG": False,
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DEFAULT_TIMEOUT": 86400,
-    "CACHE_IGNORE_ERRORS": True,
+    "CACHE_DEFAULT_TIMEOUT": 432000,
+    "CACHE_IGNORE_ERRORS": False,
     "CACHE_DIR": CACHE_LOCATION,
     "CACHE_THRESHOLD": 500
 }
@@ -470,19 +473,14 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
-    def nextpage(data, url) -> dict:
+    def nextpage(header, url) -> dict:
         response = {}
-        endpoint = data['SharePointAccountList'][account]["endpoint"]
-        username = data['SharePointAccountList'][account]["username"]
-        password = data['SharePointAccountList'][account]["password"]
-        cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
-            response.update(nextpage(data, r["@odata.nextLink"]))
+            response.update(nextpage(header, r["@odata.nextLink"]))
         return response
     def sharepointsite_root_files(data, account, site) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
@@ -492,13 +490,13 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
-            response.update(nextpage(data, r["@odata.nextLink"]))
+            response.update(nextpage(header, r["@odata.nextLink"]))
         return response
     def sharepointsite_path_files(data, account, site, path) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
@@ -510,13 +508,13 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
         path = urllib.parse.quote(path)
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
-            response.update(nextpage(data, r["@odata.nextLink"]))
+            response.update(nextpage(header, r["@odata.nextLink"]))
         return response
     def getdownloadlink(data, account, site, path) -> str:
         endpoint = data['SharePointAccountList'][account]["endpoint"]
