@@ -477,6 +477,8 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         response = {}
         r = requests.get(url, headers=header).text
         r = json.loads(r)
+        if DEBUG:
+            print(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
@@ -490,9 +492,11 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
+        if DEBUG:
+            print(url,r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
@@ -511,6 +515,8 @@ def main(url,account = None,site = None,path = None,download = None,_logout = No
         url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
+        if DEBUG:
+            print(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
