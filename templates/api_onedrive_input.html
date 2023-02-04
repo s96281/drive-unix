@@ -3,18 +3,19 @@
 
 <head>
     <title>
-
+        Flask-SharePoint
     </title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="https://files.catbox.moe/yl8lnp.svg"/>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
 </head>
 
 <body
-    style="background-color: #2b3035;background-image: url('{{ BackgroundImage }}');background-size:cover; background-attachment:fixed;">
+    style="background-color: #2b3035;background-image: url('{{ BackgroundImage }}');background-size:cover; background-attachment:fixed;user-select: none;">
     {% if function == "inputaccount" %}
-    <div style="width: 600px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -300px">
+    <div style="width: 300px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -150px">
         <p style="color: red;text-align: center;">{{ warning }}</p>
         <form method="post">
             <div class="mb-3">
@@ -32,7 +33,7 @@
     {% elif function == "listfiles" %}
     <nav class="navbar navbar-expand-lg bg-body-tertiary bg-dark" data-bs-theme="dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/api/onedrive">Home</a>
+            <a class="navbar-brand" href="/">Home</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
                 data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
                 aria-label="Toggle navigation">
@@ -41,8 +42,8 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
-                <a href="/api/onedrive/setting" class="btn btn-outline-success" role="button"
-                    style="margin-right: 5px;">setting</a>
+                <a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">setting</a>
+                <a href="/reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">reflash</a>
                 <form class="d-flex" role="search">
                     <button class="btn btn-outline-success" type="submit" name="logout">Logout</button>
                 </form>
@@ -50,7 +51,7 @@
         </div>
     </nav>
     <div class="container-lg "
-        style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 43%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
+        style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 65%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
         <table class="table" style="color: white;">
             <thead>
                 <tr>
@@ -61,11 +62,12 @@
             </thead>
             <tbody>
                 {% for row in SharePointFileList %}
-                <tr>
-                    <td>{{ row[0] }}</td>
-                    <td>{{ row[1] }}</td>
-                    <td>{{ row[2] }}</td>
-                    <td><a class="btn btn-primary" href="{{ row[3] }}" role="button">Link</a></td>
+                <tr style="height: 50px;vertical-align: middle;"
+                    oncontextmenu='navigator.clipboard.writeText("{{ row[3] }}");tempAlert("已複製鏈結",1000)'
+                    onclick="window.location='{{ row[3] }}';">
+                    <td style="cursor: pointer;width:60%">{{ row[0] }}</td>
+                    <td style="cursor: pointer;width:25%">{{ row[1] }}</td>
+                    <td style="cursor: pointer;width:15%">{{ row[2] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -74,7 +76,7 @@
     {% elif function == "setting" %}
     <nav class="navbar navbar-expand-lg bg-body-tertiary bg-dark" data-bs-theme="dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/api/onedrive">Home</a>
+            <a class="navbar-brand" href="/">Home</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
                 data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
                 aria-label="Toggle navigation">
@@ -89,25 +91,34 @@
             </div>
         </div>
     </nav>
-    <div class="container-xxl" style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; padding: 50px; border-radius: 10px">
-        <h1>平台變數</h1>
+    <div class="container-xxl"
+        style="backdrop-filter: blur(5px); background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; margin-bottom: 20px; padding: 50px; border-radius: 10px">
+        <h1 style="color: white;">全域變數</h1>
         </br>
         <form method="post">
             <div class="input-group mb-3">
-                <span class="input-group-text">BackgroudImageList</span>
-                <input type="text" class="form-control" placeholder='["URL1", "URL2", "URL3"...]' name="background"
-                    value="{{ backgroud_image_list }}">
+                <span class="input-group-text">網頁背景圖</span>
+                <input type="text" class="form-control" placeholder='URL1,URL2,...(以","結尾)' name="background"
+                    value="{% for i in backgroud_image_list %}{{ i }},{% endfor %}">
             </div>
             <div class="input-group mb-3">
-                <span class="input-group-text">CheckPermission</span>
+                <span class="input-group-text">公開網站</span>
                 <select class="form-select" name="checkpermission">
-                    <option selected>設定網站公開與否</option>
+                    <option selected>是否開放網站(不須登入即可檢視目錄)</option>
                     <option value="0">是</option>
                     <option value="1">否</option>
                 </select>
             </div>
             <div class="input-group mb-3">
-                <span class="input-group-text">Cache type</span>
+                <span class="input-group-text">匿名下載</span>
+                <select class="form-select" name="anonymous_download">
+                    <option selected>是否開放匿名下載(不須登入即可下載)</option>
+                    <option value="0">是</option>
+                    <option value="1">否</option>
+                </select>
+            </div>
+            <div class="input-group mb-3">
+                <span class="input-group-text">快取</span>
                 <select class="form-select" name="CACHE_TYPE">
                     <option selected>設定伺服器快取形式</option>
                     <option value="NullCache">NullCache</option>
@@ -118,7 +129,7 @@
         </form>
         </br>
         </br>
-        <h1>帳號設定</h1>
+        <h1 style="color: white;">SharePoint設定</h1>
         </br>
         <ul class="nav nav-tabs" id="myTab" role="tablist">
             {% for key, value in accounts.items() %}
@@ -135,23 +146,24 @@
         </br>
         <div class="tab-content" id="myTabContent">
             {% for key, value in accounts.items() %}
-            <div class="tab-pane fade" id="{{value[1]}}" role="tabpanel" tabindex="0">
+            <div class="tab-pane fade" id="{{key}}" role="tabpanel" tabindex="0">
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value[0]}}">
+                        <input type="text" class="form-control" placeholder="" name="Host" value="{{value['endpoint']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
-                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value[1]}}">
+                        <input type="text" class="form-control" placeholder="" name="Account" value="{{value['username']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Password</span>
-                        <input type="text" class="form-control" placeholder="" name="Password" value="{{value[2]}}">
+                        <input type="password" class="form-control" placeholder="" name="Password" value="{{value['password']}}">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites" value="{{value[3]}}">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開(以','結尾)" name="Sites"
+                            value="{% for i in value['sites'] %}{{ i }},{% endfor %}">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
@@ -161,7 +173,8 @@
                 <form method="post">
                     <div class="input-group mb-3">
                         <span class="input-group-text">Host</span>
-                        <input type="text" class="form-control" placeholder="填入https://xxxxxx.sharepoint.com/" name="Host">
+                        <input type="text" class="form-control" placeholder="填入https://xxxxxx.sharepoint.com/"
+                            name="Host">
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Email address</span>
@@ -173,7 +186,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">Sites</span>
-                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以分號隔開" name="Sites">
+                        <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開(以','結尾)" name="Sites">
                     </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
@@ -190,6 +203,19 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.min.js"
         integrity="sha384-mQ93GR66B00ZXjt0YO5KlohRA5SY2XofN4zfuZxLkoj1gXtW8ANNCe9d5Y3eG5eD"
         crossorigin="anonymous"></script>
+    <script>
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        function tempAlert(msg, duration) {
+            var el = document.createElement("div");
+            el.setAttribute("class", "alert alert-warning show");
+            el.setAttribute("style", "position: absolute;left: 10px;bottom: 10px;")
+            el.innerHTML = msg;
+            setTimeout(function () {
+                el.parentNode.removeChild(el);
+            }, duration);
+            document.body.appendChild(el);
+        }
+    </script>
 </body>
 
 </html>

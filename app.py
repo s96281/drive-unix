@@ -1,30 +1,70 @@
 from __future__ import print_function
 from flask import Flask,redirect,request,render_template,url_for,make_response
 from flask_caching import Cache
-from ansi2html import Ansi2HTMLConverter
-import random, json, os, time, redis, subprocess, archey, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
+import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
 
-if os.name == 'nt':
+
+DEBUG = True
+
+# 效能分析工具
+if DEBUG:
+    from flask import g
+    from pyinstrument import Profiler
+
+
+# 設定設定檔、金鑰存放位置
+if os.name == 'nt': # Windows
     data_location = './data'
     cookies_location = './cookies'
-else:
+else: # Linux、MacOS
     data_location = '/tmp/data'
     cookies_location = '/tmp/cookies'
 
-#設定資料庫
-REDIS = redis.Redis(
-  host= 'usw2-stable-sunfish-30320.upstash.io',
-  port= '30320',
-  password= 'ef2629d1f9ee4d61bf9b41bf6c738da0',
-  decode_responses=True
-)
+# 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
+REQUEST_SIZE = 2000
 
+# 設定是否由資料庫同步資料
+Redis_sync = False
 
+# 設定資料庫
+if Redis_sync:
+    REDIS = redis.Redis(
+        host= 'global-liked-dassie-31251.upstash.io',
+        port= '31251',
+        password= '585f5b3af15540d381dc46bf429a7420',
+        ssl=True,
+        decode_responses=True
+    )
+    # 設定同步資料間隔時間
+    Redis_sync_expires = 432000
+    # 設定資料庫鍵
+    Redis_sync_key = 'data'
+
+# 設定網站快取存放位置
+CACHE_LOCATION = './cache'
+
+# 設定時區
+UTC = 8
+
+# 設定快取參數
+CacheConfig = {
+    "DEBUG": False,
+    "CACHE_TYPE": "FileSystemCache",
+    "CACHE_DEFAULT_TIMEOUT": 432000,
+    "CACHE_IGNORE_ERRORS": False,
+    "CACHE_DIR": CACHE_LOCATION,
+    "CACHE_THRESHOLD": 500
+}
+
+requests = requests.Session()
+# 獲取使用者Cookie
+# 作者：Krzysztof Nowicki
+# 修改：Henry Yo
 authXmlManaged = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
       xmlns:a="http://www.w3.org/2005/08/addressing"
       xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
@@ -125,7 +165,7 @@ authXmlFederated2 = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envel
 </s:Envelope>
 """
 
-def discover_sts(username):
+def discover_sts(username:str):
     request = urlopen("https://login.microsoft.com/GetUserRealm.srf", "login={}&xml=1".format(username).encode('utf-8'))
     resp = ET.parse(request)
     nstype = resp.find("./NameSpaceType")
@@ -148,10 +188,8 @@ def getSecurityTokenManaged(username, password, endpoint):
         request = urlopen("https://login.microsoftonline.com/extSTS.srf", authReq.encode('utf-8'))
     except URLError:
         raise RuntimeError("Failed to send login request.")
-
     ns = {"soap": "http://www.w3.org/2003/05/soap-envelope",
           "wssec": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"}
-
     authRespTree = ET.parse(request)
     authToken = None
     fault = authRespTree.find(".//soap:Fault", ns)
@@ -162,7 +200,6 @@ def getSecurityTokenManaged(username, password, endpoint):
         else:
             reason = "*Unknown reason*"
         raise RuntimeError("Railed to retrieve authentication token: {}".format(reason))
-
     tokenElm = authRespTree.find(".//wssec:BinarySecurityToken", ns)
     if tokenElm is None:
         raise RuntimeError("Failed to extract authentication token.")
@@ -189,24 +226,19 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
         request = urlopen(req)
     except URLError as x:
         raise RuntimeError("Failed to send login request.")
-
     ns = {"soap": "http://www.w3.org/2003/05/soap-envelope",
           "wssec": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
           "saml": "urn:oasis:names:tc:SAML:1.0:assertion"}
-
     # The assertion must be copied into the second request as-is without any processing as it contains a signature.
     text = request.read()
     match = re.search(r"<saml:Assertion .*</saml:Assertion>", text.decode('utf-8'))
-
     authReq2 = buildAuthXmlFederated2(match.group(0))
-
     try:
         req = Request("https://login.microsoftonline.com/rst2.srf", authReq2.encode('utf-8'),
                       {"Content-Type": "application/soap+xml; charset=utf-8"})
         request = urlopen(req)
     except URLError as x:
         raise RuntimeError("Failed to send login request.")
-
     authRespTree = ET.parse(request)
     authToken = None
     fault = authRespTree.find(".//soap:Fault", ns)
@@ -217,7 +249,6 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
         else:
             reason = "*Unknown reason*"
         raise RuntimeError("Railed to retrieve authentication token: {}".format(reason))
-
     tokenElm = authRespTree.find(".//wssec:BinarySecurityToken", ns)
     if tokenElm is None:
         raise RuntimeError("Failed to extract authentication token.")
@@ -226,12 +257,7 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
     return authToken
 
 def get_cookie(endpoint, username, password):
-    # if len(sys.argv) < 3:
-    #     print("Usage: get-sharepoint-auth-cookie.py endpointURL username password", file=sys.stderr)
-    #     exit(1)
-
     stsurl = discover_sts(username)
-
     try:
         if stsurl is None:
             authToken = getSecurityTokenManaged(username, password, endpoint)
@@ -240,12 +266,10 @@ def get_cookie(endpoint, username, password):
     except RuntimeError as x:
         print(str(x), file=sys.stderr)
         exit(1)
-
     endpointUrl = urlparse(endpoint)
     if endpointUrl.scheme not in ["http", "https"] or not endpointUrl.netloc:
         print("Invalid endpoint URL: {}".format(endpoint), file=sys.stderr)
         exit(1)
-
     cookiejar = CookieJar()
     opener = build_opener(HTTPCookieProcessor(cookiejar))
     try:
@@ -259,7 +283,6 @@ def get_cookie(endpoint, username, password):
                 if cookie.name in ("FedAuth", "rtFa"):
                     cookieStr += cookie.name + "=" + cookie.value + "; "
                     cookiesFound.append(cookie.name)
-
             if "FedAuth" not in cookiesFound or "rtFa" not in cookiesFound:
                 print("Incomplete cookies retrieved.", file=sys.stderr)
                 exit(1)
@@ -277,42 +300,67 @@ def get_cookie(endpoint, username, password):
     except URLError as x:
         print("Failed to login to SharePoint site: {}".format(x.reason))
         exit(1)
+# 結束獲取使用者Cookie
 
+
+# 讀取網站設定
 def read_data() -> dict:
-    DatasNeedRead = ['SharePointAccountList','ApiOnedriveSetting']
-    print('讀取資料中...')
-    if os.path.isfile(data_location):
-        print('存在緩存資料...')
-        f = open(data_location)
-        data = json.loads(f.read())
-        print('讀取緩存資料...')
-        f.close()
-        if data['TIME'] < (time.time()-432000):
-            print('緩存過期...')
+    if Redis_sync:
+        print('讀取資料中...')
+        if os.path.isfile(data_location):
+            print('存在緩存資料...')
+            f = open(data_location)
+            data = json.loads(f.read())
+            print('讀取緩存資料...')
+            f.close()
+            if data['TIME'] < (time.time()-Redis_sync_expires):
+                print('緩存過期...')
+                data = {}
+                print('線上取得資料...')
+                data = REDIS.get(Redis_sync_key)
+                if data:
+                    data = json.loads(data)
+                    T = time.time()
+                    data['TIME']= T
+                    with open(data_location, 'w') as f:
+                        print('寫入緩存...')
+                        f.write(json.dumps(data))
+                else:
+                    print('資料取得失敗，將進行初始化作業')
+                    data = None
+        else:
+            print('不存在緩存資料...')
             data = {}
-            for i in DatasNeedRead:
-                data[i] = REDIS.hgetall(i)
             print('線上取得資料...')
-            T = time.time()
-            data['TIME']= T
-            with open(data_location, 'w') as f:
-                print('寫入緩存...')
-                f.write(json.dumps(data))
-        print('成功讀取資料')
+            data = REDIS.get(Redis_sync_key)
+            if data:
+                data = json.loads(data)
+                T = time.time()
+                data['TIME']= T
+                with open(data_location, 'w') as f:
+                    print('寫入緩存...')
+                    f.write(json.dumps(data))
+                print('成功讀取資料')
+            else:
+                print('資料取得失敗，將進行初始化作業')
+                data = None
+        return data
     else:
-        print('不存在緩存資料...')
-        data = {}
-        for i in DatasNeedRead:
-            data[i] = REDIS.hgetall(i)
-        print('線上取得資料...')
-        T = time.time()
-        data['TIME']= T
-        with open(data_location, 'w') as f:
-            print('寫入緩存...')
-            f.write(json.dumps(data))
-        print('成功讀取資料')
-    return data
+        print('讀取資料中...')
+        if os.path.isfile(data_location):
+            print('存在緩存資料...')
+            f = open(data_location)
+            data = json.loads(f.read())
+            print('讀取緩存資料...')
+            f.close()
+            print('成功讀取資料')
+        else:
+            print('資料取得失敗，將進行初始化作業')
+            data = None
+        return data
 
+
+# 讀取Cookie
 def read_cookie(endpoint, username, password) -> str:
     print('讀取憑證中...')
     if os.path.isfile(cookies_location):
@@ -354,6 +402,17 @@ def read_cookie(endpoint, username, password) -> str:
         print('成功讀取憑證')
     return cookies[username]['cookie']
 
+
+# 寫入網站設定
+def write_data(data):
+    _data = json.dumps(data)
+    if Redis_sync:
+        REDIS.set(Redis_sync_key, _data)
+    with open(data_location, 'w') as f:
+        f.write(_data)
+    return 0
+
+# 轉換size為人類可讀
 def sizeof_fmt(num, suffix="B") -> str:
     for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
         if abs(num) < 1024.0:
@@ -361,134 +420,112 @@ def sizeof_fmt(num, suffix="B") -> str:
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
 
-def getdownloadlink(account, site, file) -> str:
-    url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1/sites/'+ account.split('@')[1].replace('.','') +'.sharepoint.com:/sites/'+ site +':/drive/root:/'+file
-    if 'root:' in url:
-        url = 'https://'+ account.split('@')[1].replace('.','') +'.sharepoint.com/_api/v2.1'+ urllib.parse.quote(file)  
-    with open(cookies_location, 'r') as f:
-        cookie = json.loads(f.read())[account]['cookie']
-    header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-    r = json.loads(requests.get(url, headers = header).text)
-    return r['@content.downloadUrl']
 
 def utc_local_convert(time) -> str:
     utc = time
     UTC_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
     utcTime = datetime.datetime.strptime(utc, UTC_FORMAT)
-    localtime = utcTime + datetime.timedelta(hours=8)
+    localtime = utcTime + datetime.timedelta(hours=UTC)
     return localtime.ctime()
 
-CacheConfig = {
-    "DEBUG": True,
-    "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DEFAULT_TIMEOUT": 86400,
-    "CACHE_IGNORE_ERRORS": False,
-    "CACHE_DIR": "./cache",
-    "CACHE_THRESHOLD": 500
-}
 
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
 cache = Cache(app)
 
-@app.route("/")
-def index():
-    if os.name == 'nt':
-        return ''
-    else:
-        conv = Ansi2HTMLConverter()
-        ansi = "".join(subprocess.check_output('archey',text=True))
-        #print(subprocess.check_output('archey',text=True))
-        html = conv.convert(ansi)
-        return html
+# 效能分析工具
+if DEBUG:
+    @app.before_request
+    def before_request():
+        if "profile" in request.args:
+            g.profiler = Profiler()
+            g.profiler.start()
 
-@app.route("/clc")
-def clc():
-    import shutil
-    print('刪除中...')
-    os.remove(data_location)
-    os.remove(cookies_location)
-    shutil.rmtree('./cache')
-    print('已刪除')
+    @app.after_request
+    def after_request(response):
+        if not hasattr(g, "profiler"):
+            return response
+        g.profiler.stop()
+        output_html = g.profiler.output_html()
+        return make_response(output_html)
+
+# @cache.cached(timeout=86400, make_cache_key='url', query_string=True)
+@cache.memoize(timeout=86400, args_to_ignore=['account','site','path','download','_logout','_previousdirectory'])
+def main(url,account = None,site = None,path = None,download = None,_logout = None,_previousdirectory = None):
+    headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
-    print('變數已更新')
-    data['TIME'] = time.time()
-    with open(data_location, 'w') as f:
-        f.write(json.dumps(data))
-    print('已重新儲存')
-    return 'success'
-
-@app.route("/api")
-def api():
-    return render_template('api.html')
-
-
-@app.route("/api/onedrive", methods=['POST','GET'])
-@cache.cached(timeout=500, query_string=True)
-def api_onedrive():
-    headings = ['Name', 'Last edit time', 'Size', 'Link']
-    def checkpermissionornot(data) -> bool:
-        if data['ApiOnedriveSetting']['checkpermissionornot'] == '1':
-            return True
-        return False
-    def checkpermission(request) -> bool:
-        user = request.cookies.get('user')
-        password = request.cookies.get('password')
-        try:
-            hash = user_hash[request.cookies.get('user')]
-        except:
-            hash = ''
-        if user and password and hash == password:
-            return False
-        else:
-            return True
+    url = 'https://'+url
     def sharepointaccounts(data) -> list:
         response = []
         for i in data['SharePointAccountList']:
             response.append(i)
         return response
     def sharepointsites(data, account) -> list:
-        response = data['SharePointAccountList'][account]
-        response = json.loads(response)[-1].split(' ')
+        response = data['SharePointAccountList'][account]["sites"]
         return response
     def sharepointsite_details(data, account, site) -> dict:
-        [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
+        endpoint = data['SharePointAccountList'][account]["endpoint"]
+        username = data['SharePointAccountList'][account]["username"]
+        password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        domain = account.split('@')[-1].replace('.','')
         url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
+    def nextpage(header, url) -> dict:
+        response = {}
+        r = requests.get(url, headers=header).text
+        r = json.loads(r)
+        if DEBUG:
+            print(r)
+        for i in r['value']:
+            response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(header, r["@odata.nextLink"]))
+        return response
     def sharepointsite_root_files(data, account, site) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
-        [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
+        endpoint = data['SharePointAccountList'][account]["endpoint"]
+        username = data['SharePointAccountList'][account]["username"]
+        password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        domain = account.split('@')[-1].replace('.','')
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
+        if DEBUG:
+            print(url,r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(header, r["@odata.nextLink"]))
         return response
     def sharepointsite_path_files(data, account, site, path) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
-        [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
+        endpoint = data['SharePointAccountList'][account]["endpoint"]
+        username = data['SharePointAccountList'][account]["username"]
+        password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
         path = urllib.parse.quote(path)
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
+        if DEBUG:
+            print(r)
         for i in r['value']:
             response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+        if "@odata.nextLink" in r:
+            response.update(nextpage(header, r["@odata.nextLink"]))
         return response
     def getdownloadlink(data, account, site, path) -> str:
-        [[endpoint, username, password], sites] = [json.loads(data['SharePointAccountList'][account])[:-1],json.loads(data['SharePointAccountList'][account])[-1].split(' ')]
+        endpoint = data['SharePointAccountList'][account]["endpoint"]
+        username = data['SharePointAccountList'][account]["username"]
+        password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         domain = account.split('@')[-1].replace('.','')
@@ -498,7 +535,7 @@ def api_onedrive():
         r = json.loads(r)
         return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
     def logout():
-        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+        response = make_response(redirect(url_for('login')))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
@@ -513,82 +550,179 @@ def api_onedrive():
             new_url = url.split('&')[0]
         return new_url
 
-    # 讀取網站設定等資料
-    data = read_data()
-    BackgroundImageList = json.loads(data['ApiOnedriveSetting']['backgroud_image_list'])
+
+    BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
     BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
 
-    user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
+    _url = url
+    # logout = request.args.get('logout')
+    if _previousdirectory:
+        response = previousdirectory(_url)
+    elif _logout:
+        response = logout()
+    elif download:
+        downloadlink = getdownloadlink(data, account, site, path)
+        if downloadlink == 0:
+            response = make_response('Path is not file or not exist')
+        else:
+            response = make_response(redirect(downloadlink))
+    elif path:
+        # 列出路徑檔案
+        SharePointFileList = [['..', '', '', previousdirectory(_url)]]
+        sharepointsite_path_files = sharepointsite_path_files(data, account, site, path)
+        for i in sharepointsite_path_files:
+            name = i
+            time = utc_local_convert(sharepointsite_path_files[i]['lastModifiedDateTime'])
+            size = sizeof_fmt(sharepointsite_path_files[i]['size'])
+            if sharepointsite_path_files[i]['type'] == 'folder':
+                url = _url + '/' + urllib.parse.quote(name)
+                SharePointFileList.append([name, time, size, url])
+            else:
+                url = _url + '/'  + urllib.parse.quote(name) + '&download=1'
+                url = url.replace('http://','https://')
+                SharePointFileList.append([name, time, size, url])
+        response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+    elif site or path == '/':
+        # 列出SharePoint網站根目錄
+        SharePointFileList = [['..', '', '', previousdirectory(_url)]]
+        sharepointsite_root_files = sharepointsite_root_files(data, account, site)
+        for i in sharepointsite_root_files:
+            name = i
+            time = utc_local_convert(sharepointsite_root_files[i]['lastModifiedDateTime'])
+            size = sizeof_fmt(sharepointsite_root_files[i]['size'])
+            if sharepointsite_root_files[i]['type'] == 'folder':
+                url = _url + '&path=/' + urllib.parse.quote(name)
+                SharePointFileList.append([name, time, size, url])
+            else:
+                url = _url + '&path=/' + urllib.parse.quote(name) + '&download=1'
+                url = url.replace('http://','https://')
+                SharePointFileList.append([name, time, size, url])
+        response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+    elif account:
+        # 列出SharePoint帳號的網站
+        SharePointFileList = [['..', '', '', url_for('home')]]
+        for i in sharepointsites(data, account):
+            detail = sharepointsite_details(data, account, i)
+            SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), _url + '&site=' + i])
+        response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+    else:
+        # 列出SharePoint帳號列表
+        SharePointFileList = []
+        for i in sharepointaccounts(data):
+            SharePointFileList.append([i, '', '', _url + '?account=' + i])
+        response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+    return response
+
+@app.route("/initialization", methods=['POST','GET'])
+def initialization():
+    if request.method == 'GET':
+        return render_template('initialization.html')
+    else:
+        data = {"SharePointAccountList": {}, "ApiOnedriveSetting": {}}
+        local_user = request.form.get('local_user')
+        local_password = request.form.get('local_password')
+        BackgroundImageList = request.form.get('background')
+        checkpermissionornot = request.form.get('checkpermission')
+        anonymous_download = request.form.get('anonymous_download')
+        CACHE_TYPE = request.form.get('CACHE_TYPE')
+        endpoint = request.form.get('Host')
+        account = request.form.get('Account')
+        password = request.form.get('Password')
+        sites = request.form.get('Sites')
+        data = {
+            "SharePointAccountList": {
+                account: {
+                    "endpoint": endpoint if endpoint[-1] == '/' else endpoint + '/',
+                    "username": account,
+                    "password": password,
+                    "sites": sites.split(',')[:-1]
+                }
+            },
+            "ApiOnedriveSetting": {
+                "backgroud_image_list": BackgroundImageList.split(',')[:-1],
+                "checkpermissionornot": True if checkpermissionornot == '1' else False,
+                "anonymous_download": True if anonymous_download == '0' else False,
+                "user_hash": {
+                    local_user: hashlib.sha256(local_password.encode()).hexdigest()
+                },
+                "CACHE_TYPE": CACHE_TYPE
+            }
+        }
+        T = time.time()
+        data['TIME']= T
+        write_data(data)
+        reflash()
+        return redirect(url_for('login'))
+    
+
+
+@app.route("/clc")
+def clc():
+    import shutil
+    print('刪除中...')
+    os.remove(data_location)
+    os.remove(cookies_location)
+    shutil.rmtree(CACHE_LOCATION)
+    print('已刪除')
+    data = read_data()
+    print('變數已更新')
+    data['TIME'] = time.time()
+    write_data(data)
+    print('已重新儲存')
+    return 'success'
+
+
+@app.route("/", methods=['POST','GET'])
+def home():
+    if not os.path.exists(CACHE_LOCATION):
+        os.mkdir(CACHE_LOCATION)
+    data = read_data()
+
+    def checkpermissionornot(data) -> bool:
+        if data['ApiOnedriveSetting']['checkpermissionornot']:
+            return True
+        return False
+    def checkpermission(data, request) -> bool:
+        user = request.cookies.get('user')
+        password = request.cookies.get('password')
+        try:
+            hash = data["ApiOnedriveSetting"]["user_hash"][request.cookies.get('user')]
+        except:
+            hash = ''
+        if user and password and hash == password:
+            return False
+        else:
+            return True
+
     account = request.args.get('account')
     site = request.args.get('site')
     path = request.args.get('path')
     path = urllib.parse.unquote(path) if path else path
     download = request.args.get('download')
+    _logout = request.args.get('logout')
+    _previousdirectory = request.args.get("_previousdirectory")
+    url = request.url.replace('https://','')
+    url = url.replace('http://','')
 
-    if checkpermissionornot(data) and checkpermission(request):
-        response = redirect('/api/onedrive/login')
+    if data == None:
+        response = redirect(url_for('initialization'))
+    elif 'download' in request.args and data["ApiOnedriveSetting"]["anonymous_download"] == True:
+        response = main(url,account,site,path,download,_logout,_previousdirectory)
+    elif checkpermissionornot(data) and checkpermission(data, request):
+        response = redirect(url_for('login'))
     else:
-        # logout = request.args.get('logout')
-        if 'previousdirectory' in request.args:
-            response = previousdirectory(request.url)
-        elif 'logout' in request.args:
-            response = logout()
-        elif download:
-            downloadlink = getdownloadlink(data, account, site, path)
-            if downloadlink == 0:
-                response = make_response('Path is not file or not exist')
-            else:
-                response = make_response(redirect(downloadlink))
-        elif path:
-            # 列出路徑檔案
-            SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
-            sharepointsite_path_files = sharepointsite_path_files(data, account, site, path)
-            for i in sharepointsite_path_files:
-                name = i
-                time = utc_local_convert(sharepointsite_path_files[i]['lastModifiedDateTime'])
-                size = sizeof_fmt(sharepointsite_path_files[i]['size'])
-                if sharepointsite_path_files[i]['type'] == 'folder':
-                    SharePointFileList.append([name, time, size, request.url + '/' + urllib.parse.quote(name)])
-                else:
-                    SharePointFileList.append([name, time, size, request.url + '/'  + urllib.parse.quote(name) + '&download=1'])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
-        elif site or path == '/':
-            # 列出SharePoint網站根目錄
-            SharePointFileList = [['..', '', '', previousdirectory(request.url)]]
-            sharepointsite_root_files = sharepointsite_root_files(data, account, site)
-            for i in sharepointsite_root_files:
-                name = i
-                time = utc_local_convert(sharepointsite_root_files[i]['lastModifiedDateTime'])
-                size = sizeof_fmt(sharepointsite_root_files[i]['size'])
-                if sharepointsite_root_files[i]['type'] == 'folder':
-                    SharePointFileList.append([name, time, size, request.url + '&path=/' + urllib.parse.quote(name)])
-                else:
-                    SharePointFileList.append([name, time, size, request.url + '&path=/' + urllib.parse.quote(name) + '&download=1'])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
-        elif account:
-            # 列出SharePoint帳號的網站
-            SharePointFileList = [['..', '', '', '/api/onedrive']]
-            for i in sharepointsites(data, account):
-                detail = sharepointsite_details(data, account, i)
-                SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), request.url + '&site=' + i])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
-        else:
-            # 列出SharePoint帳號列表
-            SharePointFileList = []
-            for i in sharepointaccounts(data):
-                SharePointFileList.append([i, '', '', request.url + '?account=' + i])
-            response = make_response(render_template('api_onedrive_input.html', function = 'listfiles', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+        response = main(url,account,site,path,download,_logout,_previousdirectory)
     return response
 
-@app.route("/api/onedrive/login", methods=['POST','GET'])
-def api_onedrive_login():
+@app.route("/login", methods=['POST','GET'])
+def login():
     data = read_data()
-    user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
+    user_hash = data["ApiOnedriveSetting"]["user_hash"]
     if request.method == 'GET':
         user = request.cookies.get('user')
         password = request.cookies.get('password')
         if user in user_hash and user_hash[user] == password:
-            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+            response = make_response(redirect(url_for('home')))
         else:
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount'))
     elif request.method == 'POST':
@@ -597,7 +731,7 @@ def api_onedrive_login():
         pdhash = hashlib.sha256(password.encode()).hexdigest()
         if user in user_hash and user_hash[user] == pdhash:
             request.host_url
-            response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+            response = make_response(redirect(url_for('home')))
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
             try:
@@ -608,8 +742,8 @@ def api_onedrive_login():
             response = make_response(render_template('api_onedrive_input.html', function = 'inputaccount', warning = '錯誤'))
     return response
 
-@app.route("/api/onedrive/setting", methods=['POST', 'GET'])
-def api_onedrive_setting():
+@app.route("/setting", methods=['POST', 'GET'])
+def setting():
     def checkpermission(request) -> bool:
         user = request.cookies.get('user')
         password = request.cookies.get('password')
@@ -621,54 +755,19 @@ def api_onedrive_setting():
             return False
         else:
             return True
-    def UpdateSharePointAccountList(data, endpoint, account, password, sites) -> dict:
-        try:
-            data['SharePointAccountList'][account] = json.dumps([endpoint, account, password, sites])
-            return data
-        except:
-            return data
     def logout():
-        response = make_response(render_template('redirect.html', URL = request.host_url + 'api/onedrive'))
+        response = make_response(redirect(url_for('home')))
         response.set_cookie('user', '', path='/', expires=0)
         response.set_cookie('password', '', path='/', expires=0)
         return response
-    def adduser(user, password) -> bool:
-        try:
-            data['ApiOnedriveSetting']['user_hash'][user] = json.dumps(hashlib.sha256(password.encode()).hexdigest())
-            return True
-        except:
-            return False
-    def deluser(user) -> bool:
-        try:
-            user_hash = json.loads(data['ApiOnedriveSetting']['user_hash']).pop(user, None)
-            data['ApiOnedriveSetting']['user_hash'] = json.dumps(user_hash)
-            return True
-        except:
-            return False
-    def UpdateApiOnedriveSetting(data, BackgroundImageList, checkpermissionornot, CACHE_TYPE) -> dict:
-        data['ApiOnedriveSetting']['backgroud_image_list'] = BackgroundImageList
-        data['ApiOnedriveSetting']['checkpermissionornot'] = checkpermissionornot
-        data['ApiOnedriveSetting']['CACHE_TYPE'] = CACHE_TYPE
-        return data
-    def write_data(data) -> bool:
-        with open(data_location, 'w') as f:
-            print('寫入緩存...')
-            f.write(json.dumps(data))
-        for i in data:
-            if i != 'TIME':
-                for j in data[i]:
-                    REDIS.hset(i, j, data[i][j])
 
     data = read_data()
+    user_hash = data["ApiOnedriveSetting"]["user_hash"]
     BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
-    BackgroundImage = json.loads(BackgroundImageList)[random.randint(0, len(json.loads(BackgroundImageList)))-1]
-    user_hash = json.loads(data['ApiOnedriveSetting']['user_hash'])
-
-    if request.form:
-        print('收到資料了')
+    BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
 
     if checkpermission(request):
-        response = render_template('redirect.html', URL = request.host_url + 'api/onedrive/login')
+        response = redirect(url_for('login'))
     else:
         if 'logout' in request.args:
             response = logout()
@@ -676,46 +775,176 @@ def api_onedrive_setting():
             if 'background' in request.form:
                 BackgroundImageList = request.form.get('background')
                 checkpermissionornot = request.form.get('checkpermission')
+                anonymous_download = request.form.get('anonymous_download')
                 CACHE_TYPE = request.form.get('CACHE_TYPE')
-                data = UpdateApiOnedriveSetting(data, BackgroundImageList, checkpermissionornot, CACHE_TYPE)
+                data["ApiOnedriveSetting"]["backgroud_image_list"] = BackgroundImageList.split(',')[:-1]
+                data["ApiOnedriveSetting"]["checkpermissionornot"] = True if checkpermissionornot == '1' else False
+                data["ApiOnedriveSetting"]["anonymous_download"] = True if anonymous_download == '0' else False
+                data["ApiOnedriveSetting"]["CACHE_TYPE"] = CACHE_TYPE
             elif 'Host' in request.form:
                 endpoint = request.form.get('Host')
                 account = request.form.get('Account')
                 password = request.form.get('Password')
                 sites = request.form.get('Sites')
-                data = UpdateSharePointAccountList(data, endpoint, account, password, sites)
+                data["SharePointAccountList"][account] = {
+                    "endpoint": endpoint,
+                    "username": account,
+                    "password": password,
+                    "sites": sites.split(',')[:-1]
+                }
             write_data(data)
-        accounts = data['SharePointAccountList']
-        for i in accounts:
-            accounts[i] = json.loads(accounts[i])
-        response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
+            cache.clear()
+            response = make_response(url_for("setting"))
+        else:
+            accounts = data['SharePointAccountList']
+            response = make_response(render_template('api_onedrive_input.html', function='setting', accounts=accounts, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
 
     return response
 
 
-@app.route("/api/onedrive/upload", methods=['POST', 'GET'])
-def api_onedrive_upload():
-    pass
+@app.route("/upload", methods=['POST', 'GET'])
+def upload():
+    data = read_data()
+    def new_folder(data,account,site,parent_path,new_folder_name):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        url = endpoint + "sites/" + site + "/_api/web/folders"
+        update_data = {}
+        update_data['__metadata'] = {'type': 'SP.Folder'}
+        if '/' not in parent_path:
+            parent_path = urllib.parse.unquote(parent_path)
+        if parent_path[-1] != '/':
+            parent_path += '/'
+        if parent_path[0] != '/':
+            parent_path = '/' + parent_path
+        parent_path = '/sites/' + site + '/Shared Documents' + parent_path
+        parent_path += new_folder_name
+        parent_path = urllib.parse.quote(parent_path, safe='')
+        # print(parent_path)
+        update_data['ServerRelativeUrl'] = parent_path
+        body = json.dumps(update_data)
+        headers = {'Accept': 'application/json;odata=verbose',
+                    'Content-Type': 'application/json;odata=verbose',
+                    'X-RequestDigest': contextinfo['FormDigestValue'],
+                    'cookie': cookie}
+        r = requests.post(url=url, headers=headers, data=body)
+        if r.status_code != 201:
+            return r.json()
+        return True
+    def new_file(data,account,site,parent_path,type,file_content,file_name):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        if '/' not in parent_path:
+            parent_path = urllib.parse.unquote(parent_path)
+        if parent_path[-1] != '/':
+            parent_path += '/'
+        if parent_path[0] != '/':
+            parent_path = '/' + parent_path
+        parent_path = '/sites/' + site + '/Shared Documents' + parent_path
+        parent_path = urllib.parse.quote(parent_path, safe='')
+        headers = {'X-RequestDigest': contextinfo['FormDigestValue'],"cookie":cookie}
+        if type == 'location':
+            # 從本地讀取檔案上傳
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            with open(file_content,'rb') as f:
+                binary = f.read()
+            r = requests.post(url=url,data=binary,headers=headers)
+        elif type == 'binary':
+            # 傳入二進制數據上傳
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            r = requests.post(url=url,data=file_content,headers=headers)
+        elif type == 'url':
+            # 傳入下載連結上傳
+            binary = requests.get(file_content).content
+            url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + parent_path + "')/Files/add(url='" + file_name + "',overwrite=true)"
+            r = requests.post(url=url,data=binary,headers=headers)
+        elif type == 'remote':
+            # 調用外部API(給那些有備選方案的人自行發揮)
+            return True
+        elif type == 'bypass':
+            # 返回上傳連結
+            pass
+        if r.status_code == 201:
+            return True
+        return r.json()
+    def del_item(data,account,site,path):
+        endpoint = data["SharePointAccountList"][account]["endpoint"]
+        username = data["SharePointAccountList"][account]["username"]
+        password = data["SharePointAccountList"][account]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+        contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+        if '/' not in path:
+            path = urllib.parse.unquote(path)
+        if path[-1] != '/':
+            path += '/'
+        if path[0] != '/':
+            path = '/' + path
+        path = '/sites/' + site + '/Shared Documents/' + path
+        path = urllib.parse.quote(path, safe='')
+        url = endpoint + "sites/" + site + "/_api/web/GetFolderByServerRelativeUrl('" + path + "')"
+        headers = {'Accept': 'application/json;odata=verbose',
+                    'If-Match': '*',
+                    'X-HTTP-Method': 'DELETE',
+                    'Content-Type': 'application/json;odata=verbose',
+                    'X-RequestDigest': contextinfo['FormDigestValue'],
+                    'cookie': cookie}
+        r = requests.post(url=url, headers=headers)
+        if r.status_code != 204:
+            return r.json()
+        return True
 
-@app.route("/api/onedrive/clc")
-def api_onedrive_clc():
-    shutil.rmtree('./cache')
-    return 'Success'
 
-@app.route("/api/b8s6", methods=['POST', 'GET'])
-def api_b8s6():
-    cookie = 'addinfo=%7B%22chkadmin%22%3A1%2C%22chkarticle%22%3A0%2C%22levelname%22%3A%22%5Cu8bc4%5Cu8bba%5Cu8005%22%2C%22userid%22%3A%2237167%22%2C%22useralias%22%3A%22qwerrty%22%7D;mdnumtime=1672254149;token_1ead7cab=db96c7496c4c9135c4358ac0a88f68776e99ec326c582594b664a22cefc1b1e31672322267;userdown=0;username_1ead7cab=qwerrty'
-    header = {'cookie': cookie}
-    id = request.args.get('id')
-    url = 'https://b8s6.com/zb_users/theme/md/plugin/down.php?type=down&pid='+id
-    return redirect('https://proxy.kazeacg.workers.dev/?url=' + json.loads(requests.get(url ,headers = header).text)['url'])
+@app.route("/reflash")
+def reflash():
+    if request.referrer:
+        url = request.referrer.replace('https://','')
+        url = url.replace('http://','')
+        url = url.replace('@','%40')
+        cache.delete_memoized(main, url)
+        response = make_response(redirect(request.referrer))
+    else:
+        response = make_response(redirect(url_for("home")))
+    return response
 
-@app.route("/api/c9f8", methods=['POST', 'GET'])
-def api_c9f8():
-    cookie = 'mdnumtime=0; mdnum=0; username_1ead7cab=qwerrty; token_1ead7cab=466e11124b6064ee052c9bf051b7cf42ada931ed36289c6a3b6a96217596f7f21672322739; addinfo=%7B%22chkadmin%22%3A1%2C%22chkarticle%22%3A0%2C%22levelname%22%3A%22%5Cu8bc4%5Cu8bba%5Cu8005%22%2C%22userid%22%3A%22113068%22%2C%22useralias%22%3A%22qwerrty%22%7D; timezone=8; userdown=0'
-    header = {'cookie': cookie}
-    id = request.args.get('id')
-    url = 'https://c9f8.com/zb_users/theme/md/plugin/down.php?type=down&pid='+id
-    return redirect('https://proxy.kazeacg.workers.dev/?url=' + json.loads(requests.get(url ,headers = header).text)['url'])
+    
+@app.route("/cookie")
+def cookie():
+    user = request.args.get("user")
+    data = read_data()
+    cookie = read_cookie(data["SharePointAccountList"][user]["endpoint"], user, data["SharePointAccountList"][user]["password"])
+    return cookie
+
+@app.route("/status")
+def status():
+    return 'Online'
+
+@app.route("/test")
+def test():
+    account = 's96281@mails.wdps.ntpc.edu.tw'
+    data = read_data()
+    endpoint = data["SharePointAccountList"][account]["endpoint"]
+    username = data["SharePointAccountList"][account]["username"]
+    password = data["SharePointAccountList"][account]["password"]
+    cookie = read_cookie(endpoint, username, password)
+    site = 'application'
+    contextinfo_url = endpoint + "sites/" + site + "/_api/contextinfo"
+    contextinfo_headers = {'Accept': 'application/json', 'cookie': cookie,'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+    contextinfo = requests.post(contextinfo_url,headers=contextinfo_headers).json()
+    contextinfo = contextinfo['FormDigestValue']
+    response = make_response(render_template('test.html', contextinfo=contextinfo))
+    return response
+
 if __name__ == '__main__':
     app.run()
