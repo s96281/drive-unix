@@ -431,10 +431,13 @@ def utc_local_convert(time) -> str:
 
 # 權限管理
 def logout():
+    if request.referrer:
+        response = make_response(redirect(request.referrer))
+    else:
         response = make_response(redirect(url_for('home')))
-        response.set_cookie('user', '', path='/', expires=0)
-        response.set_cookie('password', '', path='/', expires=0)
-        return response
+    response.set_cookie('user', '', path='/', expires=0)
+    response.set_cookie('password', '', path='/', expires=0)
+    return response
 
 def loggined(data, request) -> bool:
     user = request.cookies.get('user')
