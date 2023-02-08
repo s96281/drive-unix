@@ -1,4 +1,5 @@
 # Introduction 
+
 An index & manager of SharePoint powered by Python, Flask and Redis.  
 No need to generate OneDrive API Tokens or register application in Azure.  
 Built for those who can't authorize apps and don't have admin permissions.  
