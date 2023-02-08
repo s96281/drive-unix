@@ -3,7 +3,7 @@
 
 <head>
     <title>
-        Flask-SharePoint
+        Setting Flask-SharePoint
     </title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,66 +14,6 @@
 
 <body
     style="background-color: #2b3035;background-image: url('{{ BackgroundImage }}');background-size:cover; background-attachment:fixed;user-select: none;">
-    {% if function == "inputaccount" %}
-    <div style="width: 300px;height: 300px;position: absolute;top: 50%;left: 50%;margin: -150px 0 0 -150px">
-        <p style="color: red;text-align: center;">{{ warning }}</p>
-        <form method="post">
-            <div class="mb-3">
-                <label for="exampleInputEmail1" class="form-label" style="color: white;">帳號</label>
-                <input type="text" class="form-control" id="exampleInputEmail1" aria-describedby="emailHelp"
-                    name="user">
-            </div>
-            <div class="mb-3">
-                <label for="exampleInputPassword1" class="form-label" style="color: white;">密碼</label>
-                <input type="password" class="form-control" id="exampleInputPassword1" name="password">
-            </div>
-            <button type="submit" class="btn btn-primary">Submit</button>
-        </form>
-    </div>
-    {% elif function == "listfiles" %}
-    <nav class="navbar navbar-expand-lg bg-body-tertiary bg-dark" data-bs-theme="dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">Home</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
-                aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                </ul>
-                <a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">setting</a>
-                <a href="/reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">reflash</a>
-                <form class="d-flex" role="search">
-                    <button class="btn btn-outline-success" type="submit" name="logout" value="1">Logout</button>
-                </form>
-            </div>
-        </div>
-    </nav>
-    <div class="container-lg "
-        style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 65%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
-        <table class="table" style="color: white;">
-            <thead>
-                <tr>
-                    {% for header in headings %}
-                    <th scope="col">{{ header }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in SharePointFileList %}
-                <tr style="height: 50px;vertical-align: middle;"
-                    oncontextmenu='navigator.clipboard.writeText("{{ row[3] }}");tempAlert("已複製鏈結",1000)'
-                    onclick="window.location='{{ row[3] }}';">
-                    <td style="cursor: pointer;width:60%">{{ row[0] }}</td>
-                    <td style="cursor: pointer;width:25%">{{ row[1] }}</td>
-                    <td style="cursor: pointer;width:15%">{{ row[2] }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% elif function == "setting" %}
     <nav class="navbar navbar-expand-lg bg-body-tertiary bg-dark" data-bs-theme="dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="/">Home</a>
@@ -227,19 +167,25 @@
                     <div class="input-group mb-3">
                         <span class="input-group-text">使用者身分</span>
                         {% if value["rank"] == "admin" %}
-                        <select class="form-select" name="anonymous_download">
+                        <select class="form-select" name="isadmin">
                             <option value="-1">身分</option>
                             <option selected value="0">管理員</option>
                             <option value="1">普通用戶</option>
                         </select>
                         {% else %}
-                        <select class="form-select" name="anonymous_download">
+                        <select class="form-select" name="isadmin">
                             <option value="-1">身分</option>
                             <option value="0">管理員</option>
                             <option selected value="1">普通用戶</option>
                         </select>
                         {% endif %}
                     </div>
+                    <div class="form-check" style="color: white;">
+                        <input class="form-check-input" type="checkbox" value="True" name="pop" id="flexCheckDefault">
+                        <label class="form-check-label" for="flexCheckDefault">
+                            刪除帳號
+                        </label>
+                      </div>
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
             </div>
@@ -256,7 +202,7 @@
                     </div>
                     <div class="input-group mb-3">
                         <span class="input-group-text">使用者身分</span>
-                        <select class="form-select" name="anonymous_download">
+                        <select class="form-select" name="isadmin">
                             <option selected>身分</option>
                             <option value="0">管理員</option>
                             <option value="1">普通用戶</option>
@@ -265,19 +211,11 @@
                     <button type="submit" class="btn btn-primary">Submit</button>
                 </form>
             </div>
-            <div class="alert alert-primary d-flex align-items-center" role="alert">
-                <svg xmlns="http://www.w3.org/2000/svg" class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"
-                    viewBox="0 0 16 16" role="img" aria-label="Warning:">
-                    <path
-                        d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
-                </svg>
-                <div>
-                    注意! 請保留至少一位管理員身分使用者。否則將無法再次進入此設定頁面。
-                </div>
+            <div class="alert alert-danger" role="alert">
+                ❗你必須保留至少一位管理員角色，否則可能無法再次進入設定頁面
             </div>
         </div>
     </div>
-    {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN"
         crossorigin="anonymous"></script>
