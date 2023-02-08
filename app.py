@@ -677,7 +677,7 @@ def initialization():
         data['TIME']= T
         write_data(data)
         reflash()
-        return redirect(url_for('login'))
+        return redirect(url_for("home"))
 
 
 @app.route("/", methods=['POST','GET'])

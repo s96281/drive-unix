@@ -26,7 +26,7 @@
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
                 <a href="/reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Reflash</a>
-                <div id='loginorlogout'></div>
+                <div id='loginorlogout' style="display: flex;"></div>
                 <script>
                     if (document.cookie.includes('user')) {
                         document.getElementById('loginorlogout').innerHTML = '<a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Setting</a><form class="d-flex" role="search"><button class="btn btn-outline-success" type="submit" name="logout" value="1">Logout</button></form>'
