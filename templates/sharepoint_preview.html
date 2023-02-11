@@ -51,8 +51,39 @@
         <script>
             const player = new Plyr('#player');
         </script>
+        {% elif mediatype == 'office' %}
+        <iframe src='https://view.officeapps.live.com/op/embed.aspx?src={{source}}' width="100%" height="100%"
+            frameborder='0'>
+        </iframe>
+        {% elif mediatype == 'image' %}
+        <img src="{{source}}" width="100%" height="100%">
+        {% elif mediatype == 'audio' %}
+        <div id="app" style="text-align: center"></div>
+        <!-- 加载 cplayer 脚本 -->
+        <script src="https://cdn.jsdelivr.net/npm/cplayer/dist/cplayer.min.js"></script>
+        <script>
+            let player = new cplayer(
+                {
+                    element: document.getElementById('app'),
+                    big: true,
+                    dark: true,
+                    playlist: [
+                        {
+                            src: '{{source}}',
+                            poster: 'https://files.catbox.moe/ynjcw9.png',
+                            name: '{{name}}'
+                        }
+                    ]
+                }
+            )
+        </script>
+        {% elif mediatype == 'text' %}
+        <pre style="color: white;">
+            {{txt}}
+        </pre>
         {% endif %}
-        <a style="margin-top: 10px;margin-bottom: 10px;float: right;" class="btn btn-primary" href="{{ source }}" role="button">下載</a>
+        <a style="margin-top: 10px;margin-bottom: 10px;float: right;" class="btn btn-primary" href="{{ source }}"
+            role="button">下載</a>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"
         integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN"

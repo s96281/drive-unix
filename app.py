@@ -7,6 +7,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
+import chardet
 
 
 DEBUG = False
@@ -655,7 +656,8 @@ def get_file_type(extension):
         video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
         image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
         audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
-        document_extensions = [".pdf", ".doc", ".docx", ".txt", ".ppt", ".pptx"]
+        document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
+        text_extensions = [".txt"]
 
         if extension in video_extensions:
             return "video"
@@ -664,14 +666,26 @@ def get_file_type(extension):
         elif extension in audio_extensions:
             return "audio"
         elif extension in document_extensions:
-            return "document"
+            return "office"
+        elif extension in text_extensions:
+            return "text"
         else:
             return "unknown"
 
 # 檔案預覽
 def preview(request):
-    # 檢查權限
-    return make_response(render_template("sharepoint_preview.html",source=request.full_path.replace('preview=1','download=1'),mediatype=get_file_type(request.path[-4:])))
+    mediatype = get_file_type('.'+request.path.split('.')[-1])
+    if mediatype == 'text':
+        data = read_data()
+        account = request.path.split('/')[1]
+        site = request.path.split('/')[2]
+        path = '/'.join(request.path.split('/')[3:])
+        txt = requests.get(getdownloadlink(data, account, site, path)).content
+        code = chardet.detect(txt)['encoding']
+        txt = txt.decode(code)
+    else:
+        txt = ''
+    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt))
 
 def download(url):
     # 檢查權限
