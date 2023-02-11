@@ -25,14 +25,14 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 </ul>
-                <a href="/reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Reflash</a>
+                <a href="?reflash" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Reflash</a>
                 <div id='loginorlogout' style="display: flex;"></div>
                 <script>
                     if (document.cookie.includes('user')) {
-                        document.getElementById('loginorlogout').innerHTML = '<a href="/setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Setting</a><form class="d-flex" role="search"><button class="btn btn-outline-success" type="submit" name="logout" value="1">Logout</button></form>'
+                        document.getElementById('loginorlogout').innerHTML = '<a href="?setting" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Setting</a><a href="?logout" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Logout</a>'
                     }
                     else {
-                        document.getElementById('loginorlogout').innerHTML = '<a href="/login" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Login</a>'
+                        document.getElementById('loginorlogout').innerHTML = '<a href="?login" class="btn btn-outline-success" role="button" style="margin-right: 5px;">Login</a>'
                     }
                 </script>
             </div>
