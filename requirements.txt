@@ -6,3 +6,4 @@ requests
 flask_caching
 Office365-REST-Python-Client
 pyinstrument
+markdown

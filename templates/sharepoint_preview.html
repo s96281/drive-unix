@@ -77,10 +77,14 @@
                 }
             )
         </script>
-        {% elif mediatype == 'text' %}
+        {% elif mediatype == 'text'%}
         <pre style="color: white;">
             {{txt}}
         </pre>
+        {% elif mediatype == 'programe' %}
+        <div style="color: white;">
+            {{txt | safe}}
+        </div>
         {% endif %}
         <a style="margin-top: 10px;margin-bottom: 10px;float: right;" class="btn btn-primary" href="{{ source }}"
             role="button">下載</a>

@@ -1,13 +1,12 @@
 from __future__ import print_function
-from flask import Flask,redirect,request,render_template,url_for,make_response
+from flask import Flask,redirect,request,render_template,url_for,make_response, Markup
 from flask_caching import Cache
-import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil
+import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil, chardet, markdown
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
-import chardet
 
 
 DEBUG = False
@@ -496,7 +495,7 @@ def initialization(request):
             },
             "ApiOnedriveSetting": {
                 "backgroud_image_list": BackgroundImageList.split(',')[:-1],
-                "anonymous_viewlist": True if anonymous_viewlist == '1' else False,
+                "anonymous_viewlist": True if anonymous_viewlist == '0' else False,
                 "anonymous_download": True if anonymous_download == '0' else False,
                 "users": {
                     local_user: {
@@ -658,6 +657,7 @@ def get_file_type(extension):
         audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
         document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
         text_extensions = [".txt"]
+        program_extensions = [".json",".py",".c",".cpp",".java",".html",".htm"]
 
         if extension in video_extensions:
             return "video"
@@ -669,6 +669,8 @@ def get_file_type(extension):
             return "office"
         elif extension in text_extensions:
             return "text"
+        elif extension in program_extensions:
+            return "programe"
         else:
             return "unknown"
 
@@ -686,6 +688,15 @@ def preview(request):
         txt = requests.get(getdownloadlink(data, account, site, path)).content
         code = chardet.detect(txt)['encoding']
         txt = txt.decode(code)
+    elif mediatype == 'programe':
+        account = request.path.split('/')[1]
+        site = request.path.split('/')[2]
+        path = '/'.join(request.path.split('/')[3:])
+        txt = requests.get(getdownloadlink(data, account, site, path)).text
+        txt = '```'  + request.path.split('.')[-1] + '\n' + txt + '\n```'
+        exts = ['markdown.extensions.extra', 'markdown.extensions.codehilite','markdown.extensions.tables','markdown.extensions.toc']
+        txt = markdown.markdown(txt,extensions=exts)
+        txt = Markup(txt)
     else:
         txt = ''
     return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt))
