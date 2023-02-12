@@ -674,9 +674,12 @@ def get_file_type(extension):
 
 # 檔案預覽
 def preview(request):
+    data = read_data()
+    # 檢查權限
+    if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
+        return login(request)
     mediatype = get_file_type('.'+request.path.split('.')[-1])
     if mediatype == 'text':
-        data = read_data()
         account = request.path.split('/')[1]
         site = request.path.split('/')[2]
         path = '/'.join(request.path.split('/')[3:])
@@ -688,8 +691,10 @@ def preview(request):
     return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt))
 
 def download(url):
-    # 檢查權限
     data = read_data()
+    # 檢查權限
+    if data["ApiOnedriveSetting"]["anonymous_download"] == False and not loggined(data, request):
+        return login(request)
     account = url.split('/')[0]
     site = url.split('/')[1]
     path = '/'.join(url.split('/')[2:])
