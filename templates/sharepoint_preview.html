@@ -43,7 +43,11 @@
         style="margin-top: 20px;border-radius: 8px; background-color: rgb(22 22 22 / 65%); box-shadow: 0 3px 3px -2px rgba(0,0,0,.2),0 3px 4px 0 rgba(0,0,0,.14),0 1px 8px 0 rgba(0,0,0,.12)">
         {% if mediatype == 'video' %}
         <video id="player" playsinline controls data-poster="/path/to/poster.jpg" preload="none">
-            <source src="{{ source }}" />
+            <source id="source" src="" />
+            <script>
+                var URL = window.location.href.replace('preview=1', 'download=1');
+                document.getElementById('source').src = URL;
+            </script>
             <!-- Captions are optional -->
             <!-- <track kind="captions" label="English captions" src="/path/to/captions.vtt" srclang="en" default /> -->
         </video>
