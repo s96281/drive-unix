@@ -923,12 +923,12 @@ def dir(path):
                 return download(path)
             else:
                 return redirect(request.base_url)
-            
-    if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
-        response = redirect(request.base_url + '/?login=1')
     else:
-        response = main(url=path)
-    return response
+        if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
+            response = redirect(request.base_url + '/?login=1')
+        else:
+            response = main(url=path)
+        return response
 
 
 # Run the flask app.
