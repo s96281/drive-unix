@@ -17,13 +17,15 @@ if DEBUG:
     from pyinstrument import Profiler
 
 
-# 設定設定檔、金鑰存放位置
+# 設定設定檔、金鑰、快取存放位置
 if os.name == 'nt': # Windows
+    CACHE_LOCATION = './cache'
     data_location = './data'
     cookies_location = './cookies'
 else: # Linux、MacOS
     data_location = '/tmp/data'
     cookies_location = '/tmp/cookies'
+    CACHE_LOCATION = './cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
 REQUEST_SIZE = 2000
@@ -45,8 +47,6 @@ if Redis_sync:
     # 設定資料庫鍵
     Redis_sync_key = 'data'
 
-# 設定網站快取存放位置
-CACHE_LOCATION = './cache'
 
 # 設定時區
 UTC = 8
@@ -61,11 +61,6 @@ CacheConfig = {
     "CACHE_THRESHOLD": 500
 }
 
-# CacheConfig = {
-#     "DEBUG": True,
-#     "CACHE_TYPE": "RedisCache",
-#     "CACHE_REDIS_URL": "redis://default:ef2629d1f9ee4d61bf9b41bf6c738da0@usw2-stable-sunfish-30320.upstash.io:30320/0"
-# }
 
 requests = requests.Session()
 # 獲取使用者Cookie
