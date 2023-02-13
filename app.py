@@ -23,9 +23,9 @@ if os.name == 'nt': # Windows
     data_location = './data'
     cookies_location = './cookies'
 else: # Linux、MacOS
-    data_location = '/tmp/data'
-    cookies_location = '/tmp/cookies'
-    CACHE_LOCATION = './cache'
+    data_location = '/home/data'
+    cookies_location = '/home/cookies'
+    CACHE_LOCATION = '/home/cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
 REQUEST_SIZE = 2000
