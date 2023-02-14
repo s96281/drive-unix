@@ -16,36 +16,37 @@ if DEBUG:
     from flask import g
     from pyinstrument import Profiler
 
+root = os.environ['root']
 
 # 設定設定檔、金鑰、快取存放位置
 if os.name == 'nt': # Windows
-    CACHE_LOCATION = './cache'
-    data_location = './data'
-    cookies_location = './cookies'
+    CACHE_LOCATION = root + '/cache'
+    data_location = root + '/data'
+    cookies_location = root + '/cookies'
 else: # Linux、MacOS
-    data_location = '/tmp/data'
-    cookies_location = '/tmp/cookies'
-    CACHE_LOCATION = '/tmp/cache'
+    data_location = root + '/data'
+    cookies_location = root + '/cookies'
+    CACHE_LOCATION = root + '/cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
-REQUEST_SIZE = 2000
+REQUEST_SIZE = os.environ['REQUEST_SIZE'] if os.environ['REQUEST_SIZE'] else 2000
 
 # 設定是否由資料庫同步資料
-Redis_sync = False
+Redis_sync = True if os.environ['Redis_sync'] else False
 
 # 設定資料庫
 if Redis_sync:
     REDIS = redis.Redis(
-        host= 'global-liked-dassie-31251.upstash.io',
-        port= '31251',
-        password= '585f5b3af15540d381dc46bf429a7420',
-        ssl=True,
-        decode_responses=True
+        host = os.environ['Redis_host'],
+        port = os.environ['Redis_port'],
+        password = os.environ['Redis_port'],
+        ssl = True if os.environ['Redis_ssl'] else False,
+        decode_responses = True
     )
     # 設定同步資料間隔時間
-    Redis_sync_expires = 432000
+    Redis_sync_expires = os.environ['Redis_sync_expires'] if os.environ['Redis_sync_expires'] else 432000
     # 設定資料庫鍵
-    Redis_sync_key = 'data'
+    Redis_sync_key = os.environ['Redis_sync_key'] if os.environ['Redis_sync_key'] else 'data'
 
 
 # 設定時區
