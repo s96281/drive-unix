@@ -39,7 +39,7 @@ if Redis_sync:
     REDIS = redis.Redis(
         host = os.environ['Redis_host'],
         port = os.environ['Redis_port'],
-        password = os.environ['Redis_port'],
+        password = os.environ['Redis_password'],
         ssl = True if os.environ['Redis_ssl'] else False,
         decode_responses = True
     )
