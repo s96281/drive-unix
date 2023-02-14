@@ -29,10 +29,10 @@ else: # Linux、MacOS
     CACHE_LOCATION = root + '/cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
-REQUEST_SIZE = os.environ['REQUEST_SIZE'] if os.environ['REQUEST_SIZE'] else 2000
+REQUEST_SIZE = os.environ['REQUEST_SIZE'] if 'REQUEST_SIZE' in os.environ else 2000
 
 # 設定是否由資料庫同步資料
-Redis_sync = True if os.environ['Redis_sync'] else False
+Redis_sync = True if 'Redis_sync' in os.environ else False
 
 # 設定資料庫
 if Redis_sync:
@@ -40,13 +40,13 @@ if Redis_sync:
         host = os.environ['Redis_host'],
         port = os.environ['Redis_port'],
         password = os.environ['Redis_password'],
-        ssl = True if os.environ['Redis_ssl'] else False,
+        ssl = True if 'Redis_ssl' in os.environ else False,
         decode_responses = True
     )
     # 設定同步資料間隔時間
-    Redis_sync_expires = os.environ['Redis_sync_expires'] if os.environ['Redis_sync_expires'] else 432000
+    Redis_sync_expires = os.environ['Redis_sync_expires'] if 'Redis_sync_expires' in os.environ else 432000
     # 設定資料庫鍵
-    Redis_sync_key = os.environ['Redis_sync_key'] if os.environ['Redis_sync_key'] else 'data'
+    Redis_sync_key = os.environ['Redis_sync_key'] if 'Redis_sync_key' in os.environ else 'data'
 
 
 # 設定時區
