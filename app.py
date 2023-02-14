@@ -16,37 +16,36 @@ if DEBUG:
     from flask import g
     from pyinstrument import Profiler
 
-root = os.environ['root']
 
 # 設定設定檔、金鑰、快取存放位置
 if os.name == 'nt': # Windows
-    CACHE_LOCATION = root + '/cache'
-    data_location = root + '/data'
-    cookies_location = root + '/cookies'
+    CACHE_LOCATION = './cache'
+    data_location = './data'
+    cookies_location = './cookies'
 else: # Linux、MacOS
-    data_location = root + '/data'
-    cookies_location = root + '/cookies'
-    CACHE_LOCATION = root + '/cache'
+    data_location = '/tmp/data'
+    cookies_location = '/tmp/cookies'
+    CACHE_LOCATION = '/tmp/cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
-REQUEST_SIZE = os.environ['REQUEST_SIZE'] if 'REQUEST_SIZE' in os.environ else 2000
+REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
-Redis_sync = True if 'Redis_sync' in os.environ else False
+Redis_sync = True
 
 # 設定資料庫
 if Redis_sync:
     REDIS = redis.Redis(
-        host = os.environ['Redis_host'],
-        port = os.environ['Redis_port'],
-        password = os.environ['Redis_password'],
-        ssl = True if 'Redis_ssl' in os.environ else False,
+        host = 'suited-gar-32837.upstash.io',
+        port = '32837',
+        password = 'b188cbee399942a98f467c74484529b7',
+        ssl = False,
         decode_responses = True
     )
     # 設定同步資料間隔時間
-    Redis_sync_expires = os.environ['Redis_sync_expires'] if 'Redis_sync_expires' in os.environ else 432000
+    Redis_sync_expires = 432000
     # 設定資料庫鍵
-    Redis_sync_key = os.environ['Redis_sync_key'] if 'Redis_sync_key' in os.environ else 'data'
+    Redis_sync_key = 'HenrySharePointPreview'
 
 
 # 設定時區
