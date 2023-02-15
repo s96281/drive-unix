@@ -709,8 +709,6 @@ def download(url):
     account = url.split('/')[0]
     site = url.split('/')[1]
     path = '/'.join(url.split('/')[2:])
-    if path[-4:] == '.ass' or path[-4:] == '.str' or path[-4:] == '.vtt':
-        return request.get(getdownloadlink(data, account, site, path)).text
     return redirect(getdownloadlink(data, account, site, path))
 
 app = Flask(__name__)
