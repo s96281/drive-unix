@@ -65,16 +65,12 @@
                 speed: { selected: 1, options: [0.1, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 4] },
             });
 
-            var sub = window.location.href.replace('mp4?preview=1', 'ass?download=1')
-            sub = window.location.href.replace('mkv?preview=1', 'ass?download=1')
-            console.log(sub)
-
             player.on('ready', function () {
                 var video = document.getElementById('player');
                 window.SubtitlesOctopusOnLoad = function() {
                     var options = {
                         video: video,
-                        subUrl: sub,
+                        subUrl: window.location.href.replace('mp4?preview=1', 'ass?download=1').replace('mkv?preview=1', 'ass?download=1'),
                         fonts: ['https://files.catbox.moe/i0eiva.ttf', 'https://files.catbox.moe/fboung.ttf', 'https://files.catbox.moe/2z74rb.ttf', 'https://files.catbox.moe/3xp5xr.ttf', 'https://files.catbox.moe/twxdgs.ttf'],
                         //onReady: onReadyFunction,
                         //debug: true,
