@@ -45,11 +45,10 @@
         <div style="text-align: center; color: white;">
             {{name}}
         </div>
-        <video id="player" playsinline controls data-poster="/path/to/poster.jpg" preload="none" style="margin-bottom: 10px;">
-            <source id="source" src="" />
+        <video id="player" playsinline controls data-poster="/path/to/poster.jpg" preload="none" style="margin-bottom: 10px;" src="">
             <script>
                 var URL = window.location.href.replace('preview=1', 'download=1');
-                document.getElementById('source').src = URL;
+                document.getElementById('player').src = URL;
             </script>
             <!-- Captions are optional -->
             <!-- <track kind="captions" label="Zh-tw captions" src="/path/to/captions.vtt" srclang="tw" default /> -->
