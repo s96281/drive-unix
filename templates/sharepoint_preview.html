@@ -72,8 +72,9 @@
                         subUrl: '{{SUB}}',
                         fonts: ['https://files.catbox.moe/i0eiva.ttf', 'https://files.catbox.moe/fboung.ttf', 'https://files.catbox.moe/2z74rb.ttf', 'https://files.catbox.moe/3xp5xr.ttf', 'https://files.catbox.moe/twxdgs.ttf'],
                         //onReady: onReadyFunction,
-                        //debug: true,
-                        workerUrl:'/static/js/subtitles-octopus-worker.js'
+                        debug: true,
+                        workerUrl:'/static/js/subtitles-octopus-worker.js',
+                        legacyWorkerUrl: '/static/js/subtitles-octopus-worker-legacy.js'
                     };
                     window.octopusInstance = new SubtitlesOctopus(options); // You can experiment in console
                 };
