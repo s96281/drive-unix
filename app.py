@@ -1,5 +1,5 @@
 from __future__ import print_function
-from flask import Flask,redirect,request,render_template,url_for,make_response, Markup
+from flask import Flask,redirect,request,render_template,url_for,make_response, Markup, send_file
 from flask_caching import Cache
 import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil, chardet, markdown
 from http.cookiejar import CookieJar
@@ -891,6 +891,8 @@ def home():
 # 權限確認後列出檔案
 @app.route("/<path:path>", methods=['POST','GET'])
 def dir(path):
+    if path == 'subtitles-octopus-worker.wasm'
+        return send_file('./static/subtitles-octopus-worker.wasm')
     if path == 'favicon.ico':
         return '404'
     if not os.path.exists(CACHE_LOCATION):
