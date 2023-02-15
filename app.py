@@ -699,7 +699,7 @@ def preview(request):
         txt = ''
     else:
         txt = SUB = ''
-    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt),SUB=SUB)
+    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt,SUB=SUB))
 
 def download(url):
     data = read_data()
