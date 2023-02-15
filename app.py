@@ -891,7 +891,7 @@ def home():
 # 權限確認後列出檔案
 @app.route("/<path:path>", methods=['POST','GET'])
 def dir(path):
-    if path == 'subtitles-octopus-worker.wasm'
+    if path == 'subtitles-octopus-worker.wasm':
         return send_file('./static/subtitles-octopus-worker.wasm')
     if path == 'favicon.ico':
         return '404'
