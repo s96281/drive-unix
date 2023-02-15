@@ -683,6 +683,7 @@ def preview(request):
         txt = requests.get(getdownloadlink(data, account, site, path)).content
         code = chardet.detect(txt)['encoding']
         txt = txt.decode(code)
+        SUB = ''
     elif mediatype == 'programe':
         account = request.path.split('/')[1]
         site = request.path.split('/')[2]
@@ -692,9 +693,13 @@ def preview(request):
         exts = ['markdown.extensions.extra', 'markdown.extensions.codehilite','markdown.extensions.tables','markdown.extensions.toc']
         txt = markdown.markdown(txt,extensions=exts)
         txt = Markup(txt)
-    else:
+        SUB = ''
+    elif mediatype == 'video':
+        SUB = request.url.replace('mp4?preview=1','ass?download=1').replace('mkv?preview=1','ass?download=1')
         txt = ''
-    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt))
+    else:
+        txt = SUB = ''
+    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt),SUB=SUB)
 
 def download(url):
     data = read_data()
