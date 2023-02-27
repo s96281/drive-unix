@@ -737,8 +737,11 @@ def get_page_encrypt_pw(data, path):
     account = path.split('/')[0]
     site = path.split('/')[1]
     path = '/'.join(path.split('/')[2:])
-    r = requests.get(getdownloadlink(data, account, site, path))
-    return r.text if r.ok else None
+    try:
+        r = requests.get(getdownloadlink(data, account, site, path))
+        return r.text if r.ok else None
+    except:
+        return None
 
 # 辨認檔案型態
 def get_file_type(extension):
