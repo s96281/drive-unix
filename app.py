@@ -1,7 +1,20 @@
 from __future__ import print_function
-from flask import Flask,redirect,request,render_template,url_for,make_response, Markup, send_file
+from flask import Flask, redirect, request, render_template, url_for, make_response, Markup, send_file
 from flask_caching import Cache
-import random, json, os, time, redis, hashlib, requests, urllib.parse, datetime, sys, re, base64, shutil, chardet, markdown
+import random
+import json
+import os
+import time
+import redis
+import hashlib
+import requests
+import urllib.parse
+import datetime
+import sys
+import re
+import base64
+import chardet
+import markdown
 from http.cookiejar import CookieJar
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -18,11 +31,11 @@ if DEBUG:
 
 
 # 設定設定檔、金鑰、快取存放位置
-if os.name == 'nt': # Windows
+if os.name == 'nt':  # Windows
     CACHE_LOCATION = './cache'
     data_location = './data'
     cookies_location = './cookies'
-else: # Linux、MacOS
+else:  # Linux、MacOS
     data_location = '/tmp/data'
     cookies_location = '/tmp/cookies'
     CACHE_LOCATION = '/tmp/cache'
@@ -36,16 +49,16 @@ Redis_sync = True
 # 設定資料庫
 if Redis_sync:
     REDIS = redis.Redis(
-        host = 'suited-gar-32837.upstash.io',
-        port = '32837',
-        password = 'b188cbee399942a98f467c74484529b7',
-        ssl = False,
-        decode_responses = True
+        host='suited-gar-32837.upstash.io',
+        port='32837',
+        password='b188cbee399942a98f467c74484529b7',
+        ssl=False,
+        decode_responses=True
     )
     # 設定同步資料間隔時間
     Redis_sync_expires = 432000
     # 設定資料庫鍵
-    Redis_sync_key = 'HenrySharePointPreview'
+    Redis_sync_key = 'HenrySharePoint'
 
 
 # 設定時區
@@ -166,27 +179,34 @@ authXmlFederated2 = """<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envel
 </s:Envelope>
 """
 
-def discover_sts(username:str):
-    request = urlopen("https://login.microsoft.com/GetUserRealm.srf", "login={}&xml=1".format(username).encode('utf-8'))
+
+def discover_sts(username: str):
+    request = urlopen("https://login.microsoft.com/GetUserRealm.srf",
+                      "login={}&xml=1".format(username).encode('utf-8'))
     resp = ET.parse(request)
     nstype = resp.find("./NameSpaceType")
     if nstype is None:
-        raise RuntimeError("Invalid GetUserRealm response - missing namespace type")
+        raise RuntimeError(
+            "Invalid GetUserRealm response - missing namespace type")
     if nstype.text == "Federated":
         stsurl = resp.find("./STSAuthURL")
         if stsurl is None:
-            raise RuntimeError("Invalid GetUserRealm response - missing STS URL")
+            raise RuntimeError(
+                "Invalid GetUserRealm response - missing STS URL")
         return stsurl.text
     else:
         return None
 
+
 def buildAuthXmlManaged(username, password, endpoint):
     return authXmlManaged.format(username, password, endpoint)
+
 
 def getSecurityTokenManaged(username, password, endpoint):
     authReq = buildAuthXmlManaged(username, password, endpoint)
     try:
-        request = urlopen("https://login.microsoftonline.com/extSTS.srf", authReq.encode('utf-8'))
+        request = urlopen(
+            "https://login.microsoftonline.com/extSTS.srf", authReq.encode('utf-8'))
     except URLError:
         raise RuntimeError("Failed to send login request.")
     ns = {"soap": "http://www.w3.org/2003/05/soap-envelope",
@@ -200,7 +220,8 @@ def getSecurityTokenManaged(username, password, endpoint):
             reason = reason.text
         else:
             reason = "*Unknown reason*"
-        raise RuntimeError("Railed to retrieve authentication token: {}".format(reason))
+        raise RuntimeError(
+            "Railed to retrieve authentication token: {}".format(reason))
     tokenElm = authRespTree.find(".//wssec:BinarySecurityToken", ns)
     if tokenElm is None:
         raise RuntimeError("Failed to extract authentication token.")
@@ -208,22 +229,27 @@ def getSecurityTokenManaged(username, password, endpoint):
         authToken = tokenElm.text
     return authToken
 
+
 def buildAuthXmlFederated(username, password, stsurl):
     timestamp = time.time()
     ctime = time.gmtime(timestamp)
     etime = time.gmtime(timestamp + 1 * 60)
     ctime_str = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", ctime)
     etime_str = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", etime)
-    nonce = base64.standard_b64encode(bytearray(random.getrandbits(8) for _ in range(32)))
+    nonce = base64.standard_b64encode(
+        bytearray(random.getrandbits(8) for _ in range(32)))
     return authXmlFederated.format(stsurl, ctime_str, etime_str, username, password, nonce.decode('utf-8'))
+
 
 def buildAuthXmlFederated2(assertion):
     return authXmlFederated2.format(assertion)
 
+
 def getSecurityTokenFederated(username, password, endpoint, stsurl):
     authReq = buildAuthXmlFederated(username, password, stsurl)
     try:
-        req = Request(stsurl, authReq.encode('utf-8'), {"Content-Type": "application/soap+xml; charset=utf-8"})
+        req = Request(stsurl, authReq.encode('utf-8'),
+                      {"Content-Type": "application/soap+xml; charset=utf-8"})
         request = urlopen(req)
     except URLError as x:
         raise RuntimeError("Failed to send login request.")
@@ -232,7 +258,8 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
           "saml": "urn:oasis:names:tc:SAML:1.0:assertion"}
     # The assertion must be copied into the second request as-is without any processing as it contains a signature.
     text = request.read()
-    match = re.search(r"<saml:Assertion .*</saml:Assertion>", text.decode('utf-8'))
+    match = re.search(r"<saml:Assertion .*</saml:Assertion>",
+                      text.decode('utf-8'))
     authReq2 = buildAuthXmlFederated2(match.group(0))
     try:
         req = Request("https://login.microsoftonline.com/rst2.srf", authReq2.encode('utf-8'),
@@ -249,7 +276,8 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
             reason = reason.text
         else:
             reason = "*Unknown reason*"
-        raise RuntimeError("Railed to retrieve authentication token: {}".format(reason))
+        raise RuntimeError(
+            "Railed to retrieve authentication token: {}".format(reason))
     tokenElm = authRespTree.find(".//wssec:BinarySecurityToken", ns)
     if tokenElm is None:
         raise RuntimeError("Failed to extract authentication token.")
@@ -257,13 +285,15 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
         authToken = tokenElm.text
     return authToken
 
+
 def get_cookie(endpoint, username, password):
     stsurl = discover_sts(username)
     try:
         if stsurl is None:
             authToken = getSecurityTokenManaged(username, password, endpoint)
         else:
-            authToken = getSecurityTokenFederated(username, password, endpoint, stsurl)
+            authToken = getSecurityTokenFederated(
+                username, password, endpoint, stsurl)
     except RuntimeError as x:
         print(str(x), file=sys.stderr)
         exit(1)
@@ -287,16 +317,17 @@ def get_cookie(endpoint, username, password):
             if "FedAuth" not in cookiesFound or "rtFa" not in cookiesFound:
                 print("Incomplete cookies retrieved.", file=sys.stderr)
                 exit(1)
-            #print(cookieStr)
+            # print(cookieStr)
             return cookieStr
         except:
             from office365.runtime.auth.user_credential import UserCredential
             from office365.sharepoint.client_context import ClientContext
-            user_credentials = UserCredential(username,password)
+            user_credentials = UserCredential(username, password)
             ctx = ClientContext(endpoint).with_credentials(user_credentials)
             ctx.load(ctx.web)
             ctx.execute_query()
-            cookieStr = 'rtFa='+vars(vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['rtFa']+'; FedAuth='+vars(vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['FedAuth']
+            cookieStr = 'rtFa='+vars(vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['rtFa']+'; FedAuth='+vars(
+                vars(vars(ctx)['_auth_context'])['_provider'])['_cached_auth_cookies']['FedAuth']
             return cookieStr
     except URLError as x:
         print("Failed to login to SharePoint site: {}".format(x.reason))
@@ -322,7 +353,7 @@ def read_data() -> dict:
                 if data:
                     data = json.loads(data)
                     T = time.time()
-                    data['TIME']= T
+                    data['TIME'] = T
                     with open(data_location, 'w') as f:
                         print('寫入緩存...')
                         f.write(json.dumps(data))
@@ -337,7 +368,7 @@ def read_data() -> dict:
             if data:
                 data = json.loads(data)
                 T = time.time()
-                data['TIME']= T
+                data['TIME'] = T
                 with open(data_location, 'w') as f:
                     print('寫入緩存...')
                     f.write(json.dumps(data))
@@ -376,7 +407,8 @@ def read_cookie(endpoint, username, password) -> str:
             if cookies[username]['TIME'] < (time.time()-86400):
                 print('憑證過期...')
                 T = time.time()
-                cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
+                cookies[username] = {'cookie': get_cookie(
+                    endpoint, username, password), 'TIME': T}
                 print('線上取得憑證...')
                 with open(cookies_location, 'w') as f:
                     f.write(json.dumps(cookies))
@@ -385,7 +417,8 @@ def read_cookie(endpoint, username, password) -> str:
         else:
             print('用戶不存在...')
             T = time.time()
-            cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
+            cookies[username] = {'cookie': get_cookie(
+                endpoint, username, password), 'TIME': T}
             print('線上取得憑證...')
             with open(cookies_location, 'w') as f:
                 f.write(json.dumps(cookies))
@@ -395,7 +428,8 @@ def read_cookie(endpoint, username, password) -> str:
         print('不存在憑證資料...')
         cookies = {}
         T = time.time()
-        cookies[username] = {'cookie': get_cookie(endpoint, username, password), 'TIME': T}
+        cookies[username] = {'cookie': get_cookie(
+            endpoint, username, password), 'TIME': T}
         print('線上取得憑證...')
         with open(cookies_location, 'w') as f:
             f.write(json.dumps(cookies))
@@ -414,6 +448,8 @@ def write_data(data):
     return 0
 
 # 轉換size為人類可讀
+
+
 def sizeof_fmt(num, suffix="B") -> str:
     for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
         if abs(num) < 1024.0:
@@ -429,17 +465,25 @@ def utc_local_convert(time) -> str:
     localtime = utcTime + datetime.timedelta(hours=UTC)
     return localtime.ctime()
 
+
 def url_standardization(url):
     url = urllib.parse.unquote(url)
-    url = urllib.parse.quote(url,safe='/?=')
+    url = urllib.parse.quote(url, safe='/?=')
     return url
 
+
 def randombackground(data):
-    BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
-    BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
+    try:
+        BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
+        BackgroundImage = BackgroundImageList[random.randint(
+            0, len(BackgroundImageList))-1]
+    except:
+        BackgroundImage = ''
     return BackgroundImage
 
 # 權限管理
+
+
 def loggined(data, request) -> bool:
     user = request.cookies.get('user')
     password = request.cookies.get('password')
@@ -454,13 +498,13 @@ def loggined(data, request) -> bool:
     # Password incorrect
     return False
 
+
 def is_admin(data, request) -> bool:
     user = request.cookies.get('user')
     if data["ApiOnedriveSetting"]["users"][user]["rank"] == "admin":
         return True
     else:
         return False
-
 
 
 # 布建網站後初始化資料庫，或在接收?initialization=1時執行
@@ -479,19 +523,33 @@ def initialization(request):
         account = request.form.get('Account')
         password = request.form.get('Password')
         sites = request.form.get('Sites')
+        top_md = request.form.get('top_md')
+        bottom_md = request.form.get('bottom_md')
+        page_encrypt = request.form.get('page_encrypt')
+        passfile = request.form.get('passfile')
+        dic = {}
+        for i in sites.split(',')[:-1]:
+            try:
+                dic[i.split("|")[0]] = i.split("|")[1]
+            except:
+                dic[i.split("|")[0]] = i.split("|")[0]
         data = {
             "SharePointAccountList": {
                 account: {
                     "endpoint": endpoint if endpoint[-1] == '/' else endpoint + '/',
                     "username": account,
                     "password": password,
-                    "sites": sites.split(',')[:-1]
+                    "sites": dic
                 }
             },
             "ApiOnedriveSetting": {
                 "backgroud_image_list": BackgroundImageList.split(',')[:-1],
                 "anonymous_viewlist": True if anonymous_viewlist == '0' else False,
                 "anonymous_download": True if anonymous_download == '0' else False,
+                "top_md": True if top_md else False,
+                "bottom_md": True if bottom_md else False,
+                "page_encrypt": True if page_encrypt else False,
+                "passfile": passfile,
                 "users": {
                     local_user: {
                         "rank": "admin",
@@ -502,11 +560,10 @@ def initialization(request):
             }
         }
         T = time.time()
-        data['TIME']= T
+        data['TIME'] = T
         write_data(data)
         reflash(request)
         return redirect(url_for("home"))
-
 
 
 # 登入頁面，?login時執行
@@ -529,17 +586,15 @@ def login(request):
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
         else:
-            response = make_response(render_template('sharepoint_login.html', warning = '錯誤'))
+            response = make_response(render_template('sharepoint_login.html', warning='錯誤'))
     return response
-
 
 
 # 設定頁面，?setting時執行
 def setting(request):
     data = read_data()
     BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
-    BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
-
+    BackgroundImage = randombackground(data)
     if not loggined(data, request):
         response = redirect(request.base_url + '/?login')
     elif not is_admin(data, request) and loggined(data, request):
@@ -553,20 +608,35 @@ def setting(request):
                 anonymous_viewlist = request.form.get('anonymous_viewlist')
                 anonymous_download = request.form.get('anonymous_download')
                 CACHE_TYPE = request.form.get('CACHE_TYPE')
-                data["ApiOnedriveSetting"]["backgroud_image_list"] = BackgroundImageList.split(',')[:-1]
+                top_md = request.form.get('top_md')
+                bottom_md = request.form.get('bottom_md')
+                page_encrypt = request.form.get('page_encrypt')
+                passfile = request.form.get('passfile')
+                data["ApiOnedriveSetting"]["backgroud_image_list"] = BackgroundImageList.split(',')[
+                    :-1]
                 data["ApiOnedriveSetting"]["anonymous_viewlist"] = True if anonymous_viewlist == '0' else False
                 data["ApiOnedriveSetting"]["anonymous_download"] = True if anonymous_download == '0' else False
                 data["ApiOnedriveSetting"]["CACHE_TYPE"] = CACHE_TYPE
+                data["ApiOnedriveSetting"]["top_md"] = True if top_md else top_md
+                data["ApiOnedriveSetting"]["bottom_md"] = True if bottom_md else bottom_md
+                data["ApiOnedriveSetting"]["page_encrypt"] = True if page_encrypt else page_encrypt
+                data["ApiOnedriveSetting"]["passfile"] = passfile
             elif 'Host' in request.form:
                 endpoint = request.form.get('Host')
                 account = request.form.get('Account')
                 password = request.form.get('Password')
                 sites = request.form.get('Sites')
+                dic = {}
+                for i in sites.split(',')[:-1]:
+                    try:
+                        dic[i.split("|")[0]] = i.split("|")[1]
+                    except:
+                        dic[i.split("|")[0]] = i.split("|")[0]
                 data["SharePointAccountList"][account] = {
                     "endpoint": endpoint,
                     "username": account,
                     "password": password,
-                    "sites": sites.split(',')[:-1]
+                    "sites": dic
                 }
             elif 'user' in request.form:
                 pop = request.form.get('pop')
@@ -586,9 +656,10 @@ def setting(request):
         else:
             SharePointAccountList = data['SharePointAccountList']
             Users = data["ApiOnedriveSetting"]["users"]
-            response = make_response(render_template('sharepoint_setting.html', Users=Users, SharePointAccountList=SharePointAccountList, backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage))
+            passfile = data["ApiOnedriveSetting"]["passfile"]
+            response = make_response(render_template('sharepoint_setting.html', Users=Users, SharePointAccountList=SharePointAccountList,
+                                     backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage, passfile=passfile))
     return response
-
 
 
 # 登出頁面，?logout時執行
@@ -602,12 +673,11 @@ def logout(request):
     return response
 
 
-
 # 刷新頁面，?reflash時執行
 def reflash(path):
     if path != '':
         if DEBUG:
-            with open("claer-cache-arg",'w') as f:
+            with open("claer-cache-arg", 'w') as f:
                 f.write(path)
         cache.delete_memoized(main, path)
         response = make_response(redirect(request.referrer))
@@ -615,6 +685,21 @@ def reflash(path):
         response = make_response(redirect(url_for("home")))
     return response
 
+
+#
+def sharepointsite2alias(data, account, site) -> str:
+    response = data['SharePointAccountList'][account]["sites"][site]
+    return response
+
+def sharepointalias2site(data, account, alias) -> str:
+    response = alias
+    for i in data['SharePointAccountList'][account]["sites"]:
+        if data['SharePointAccountList'][account]["sites"][i] == alias:
+            response = i
+    if response:
+        return response
+    else:
+        return None
 
 
 # 返回下載地址，?download時執行
@@ -635,39 +720,50 @@ def getdownloadlink(data, account, site, path):
 def cookie(request):
     user = request.args.get("cookie")
     data = read_data()
-    cookie = read_cookie(data["SharePointAccountList"][user]["endpoint"], user, data["SharePointAccountList"][user]["password"])
+    cookie = read_cookie(data["SharePointAccountList"][user]["endpoint"],
+                         user, data["SharePointAccountList"][user]["password"])
     return cookie
-
 
 
 # 回傳網站狀態，?status時執行
 def status(request):
     return 'Online'
 
+# 讀取頁面加密密碼
+def get_page_encrypt_pw(data, path):
+    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(path.split('/')) < 2:
+        return None
+    path += '/' + data["ApiOnedriveSetting"]["passfile"]
+    account = path.split('/')[0]
+    site = path.split('/')[1]
+    path = '/'.join(path.split('/')[2:])
+    r = requests.get(getdownloadlink(data, account, site, path))
+    return r.text if r.ok else None
+
 # 辨認檔案型態
 def get_file_type(extension):
-        extension = extension.lower()
-        video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
-        image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
-        audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
-        document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
-        text_extensions = [".txt"]
-        program_extensions = [".json",".py",".c",".cpp",".java",".html",".htm"]
+    extension = extension.lower()
+    video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
+    image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
+    audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
+    document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
+    text_extensions = [".txt"]
+    program_extensions = [".json", ".py", ".c",".cpp",".java",".html",".htm"]
 
-        if extension in video_extensions:
-            return "video"
-        elif extension in image_extensions:
-            return "image"
-        elif extension in audio_extensions:
-            return "audio"
-        elif extension in document_extensions:
-            return "office"
-        elif extension in text_extensions:
-            return "text"
-        elif extension in program_extensions:
-            return "programe"
-        else:
-            return "unknown"
+    if extension in video_extensions:
+        return "video"
+    elif extension in image_extensions:
+        return "image"
+    elif extension in audio_extensions:
+        return "audio"
+    elif extension in document_extensions:
+        return "office"
+    elif extension in text_extensions:
+        return "text"
+    elif extension in program_extensions:
+        return "programe"
+    else:
+        return "unknown"
 
 # 檔案預覽
 def preview(request):
@@ -689,17 +785,18 @@ def preview(request):
         site = request.path.split('/')[2]
         path = '/'.join(request.path.split('/')[3:])
         txt = requests.get(getdownloadlink(data, account, site, path)).text
-        txt = '```'  + request.path.split('.')[-1] + '\n' + txt + '\n```'
-        exts = ['markdown.extensions.extra', 'markdown.extensions.codehilite','markdown.extensions.tables','markdown.extensions.toc']
-        txt = markdown.markdown(txt,extensions=exts)
+        txt = '```' + '\n' + txt + '\n```'
+        exts = ['extra','codehilite','tables','toc']
+        txt = markdown.markdown(txt, extensions=exts)
         txt = Markup(txt)
         SUB = ''
     elif mediatype == 'video':
-        SUB = request.url.replace('mp4?preview=1','ass?download=1').replace('mkv?preview=1','ass?download=1')
+        SUB = request.url.replace('mp4?preview=1', 'ass?download=1').replace('mkv?preview=1', 'ass?download=1')
         txt = ''
     else:
         txt = SUB = ''
-    return make_response(render_template("sharepoint_preview.html",source=request.url.replace('preview=1','download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt,SUB=SUB))
+    return make_response(render_template("sharepoint_preview.html", source=request.url.replace('preview=1', 'download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt,SUB=SUB))
+
 
 def download(url):
     data = read_data()
@@ -710,6 +807,7 @@ def download(url):
     site = url.split('/')[1]
     path = '/'.join(url.split('/')[2:])
     return redirect(getdownloadlink(data, account, site, path))
+
 
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
@@ -736,21 +834,29 @@ if DEBUG:
 @cache.memoize()
 def main(url):
     if DEBUG:
-        with open("cache-arg",'w') as f:
+        with open("cache-arg", 'w') as f:
             f.write(url)
+
     def sharepointsites(data, account) -> list:
-        response = data['SharePointAccountList'][account]["sites"]
+        response = []
+        for i in data['SharePointAccountList'][account]["sites"]:
+            response.append(i)
         return response
+
     def sharepointsite_details(data, account, site) -> dict:
         endpoint = data['SharePointAccountList'][account]["endpoint"]
         username = data['SharePointAccountList'][account]["username"]
         password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root'
+        header = {'cookie': cookie,
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        url = endpoint + '_api/v2.1/sites/' + \
+            endpoint.split('.')[0].split('/')[-1] + \
+                           '.sharepoint.com:/sites/' + site + ':/drive/root'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
+
     def nextpage(header, url) -> dict:
         response = {}
         r = requests.get(url, headers=header).text
@@ -758,10 +864,12 @@ def main(url):
         if DEBUG:
             print(r)
         for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
             response.update(nextpage(header, r["@odata.nextLink"]))
         return response
+
     def sharepointsite_root_files(data, account, site) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
@@ -769,17 +877,21 @@ def main(url):
         username = data['SharePointAccountList'][account]["username"]
         password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+        header = {'cookie': cookie,
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
+        site + ':/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         if DEBUG:
-            print(url,r)
+            print(url, r)
         for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
             response.update(nextpage(header, r["@odata.nextLink"]))
         return response
+
     def sharepointsite_path_files(data, account, site, path) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
@@ -787,64 +899,117 @@ def main(url):
         username = data['SharePointAccountList'][account]["username"]
         password = data['SharePointAccountList'][account]["password"]
         cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+        header = {'cookie': cookie,
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         path = urllib.parse.quote(path)
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + \
+        ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         if DEBUG:
             print(r)
         for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file", "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
         if "@odata.nextLink" in r:
             response.update(nextpage(header, r["@odata.nextLink"]))
         return response
+    
+    def head_foot_note(data, url, SharePointFileList) -> list:
+        account = url.split('/')[0]
+        site = sharepointalias2site(data, account, url.split('/')[1])
+        response = []
+        if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
+            _url = url+'/top.md'
+            path = '/'.join(_url.split('/')[2:])
+            r = requests.get(getdownloadlink(data, account, site, path))
+            if r.ok:
+                txt = r.text
+                exts = ['extra','codehilite','tables','toc']
+                txt = markdown.markdown(txt, extensions=exts)
+                txt = Markup(txt)
+                response.append(txt)
+            else:
+                response.append(None)
+        else:
+            response.append(None)
+        if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
+            _url = url+'/bottom.md'
+            path = '/'.join(_url.split('/')[2:])
+            r = requests.get(getdownloadlink(data, account, site, path))
+            if r.ok:
+                txt = r.text
+                exts = ['extra','codehilite','tables','toc']
+                txt = markdown.markdown(txt, extensions=exts)
+                txt = Markup(txt)
+                response.append(txt)
+            else:
+                response.append(None)
+        else:
+            response.append(None)
+        return response
+    
     headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
-    BackgroundImageList = data['ApiOnedriveSetting']['backgroud_image_list']
-    BackgroundImage = BackgroundImageList[random.randint(0, len(BackgroundImageList))-1]
+
+    BackgroundImage = randombackground(data)
     if url[-1] == '/':
+        # Back to Home Page
         url = url[:-1]
     if len(url.split('/')) == 1:
+        # List sites
         SharePointFileList = [['..', '', '', '/']]
         account = url.split('/')[0]
         for i in sharepointsites(data, account):
             detail = sharepointsite_details(data, account, i)
-            SharePointFileList.append([i, utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), '/' + url + '/' + i])
-        return make_response(render_template('sharepoint_main.html', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+            SharePointFileList.append([sharepointsite2alias(data, account, i), utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), '/' + url + '/' + sharepointsite2alias(data, account, i)])
+        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
     if len(url.split('/')) == 2:
-        SharePointFileList = [['..', '', '', '/'+ url.split('/')[0]]]
+        # List root files in site
+        SharePointFileList = [['..', '', '', '/' + url.split('/')[0]]]
         account = url.split('/')[0]
-        site = url.split('/')[1]
-        sharepointsite_root_files_dict = sharepointsite_root_files(data, account, site)
+        site = sharepointalias2site(data, account, url.split('/')[1])
+        sharepointsite_root_files_dict = sharepointsite_root_files(
+            data, account, site)
         for i in sharepointsite_root_files_dict:
             name = i
-            time = utc_local_convert(sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
+            time = utc_local_convert(
+                sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
             if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                SharePointFileList.append([name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                SharePointFileList.append(
+                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
             else:
-                SharePointFileList.append([name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-        return make_response(render_template('sharepoint_main.html', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+                SharePointFileList.append(
+                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+        [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
+        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
     if len(url.split('/')) > 2:
-        SharePointFileList = [['..', '', '', '/' + url.split('/')[0] + '/' + '/'.join(url.split('/')[1:-1])]]
+        # List files in path
+        SharePointFileList = [
+            ['..', '', '', '/' + url.split('/')[0] + '/' + '/'.join(url.split('/')[1:-1])]]
         account = url.split('/')[0]
-        site = url.split('/')[1]
+        site = sharepointalias2site(data, account, url.split('/')[1])
         path = '/'.join(url.split('/')[2:])
-        sharepointsite_path_files_dict = sharepointsite_path_files(data, account, site, path)
+        sharepointsite_path_files_dict = sharepointsite_path_files(
+            data, account, site, path)
         for i in sharepointsite_path_files_dict:
             name = i
-            time = utc_local_convert(sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
+            time = utc_local_convert(
+                sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
             size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
             if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                SharePointFileList.append([name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                SharePointFileList.append(
+                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
             else:
-                SharePointFileList.append([name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-        return make_response(render_template('sharepoint_main.html', headings = headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+                SharePointFileList.append(
+                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+        [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
+        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
 
 
 # 首頁，權限確認後列出帳號
-@app.route("/", methods=['POST','GET'])
+@app.route("/", methods=['POST', 'GET'])
 def home():
     def sharepointaccounts(data) -> list:
         response = []
@@ -854,7 +1019,6 @@ def home():
 
     headings = ['Name', 'Last edit time', 'Size']
 
-
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
 
@@ -862,7 +1026,7 @@ def home():
 
     if data == None:
         return initialization(request)
-    
+
     if request.args:
         for i in request.args:
             if i == "initialization":
@@ -881,20 +1045,20 @@ def home():
                 return status(request)
             else:
                 return redirect(request.base_url)
-            
-    
+
     if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
         response = login(request)
     else:
         SharePointFileList = []
         for i in sharepointaccounts(data):
             SharePointFileList.append([i, '', '', '/' + i])
-        response = make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=randombackground(data), SharePointFileList=SharePointFileList))
+        response = make_response(render_template('sharepoint_main.html', headings=headings,
+                                 BackgroundImage=randombackground(data), SharePointFileList=SharePointFileList))
     return response
 
 
 # 權限確認後列出檔案
-@app.route("/<path:path>", methods=['POST','GET'])
+@app.route("/<path:path>", methods=['POST', 'GET'])
 def dir(path):
     if path.split('/')[0] == 'static':
         return send_file('./'+path)
@@ -902,8 +1066,15 @@ def dir(path):
         return '404'
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
-    
+
     data = read_data()
+
+    def decrypt(password, path):
+        if request.form.get('password') == password:
+            response = main(url=path)
+        else:
+            response = make_response(render_template("sharepoint_encrypt.html", warning="密碼錯誤"))
+        return response
 
     if data == None:
         return initialization(request)
@@ -928,13 +1099,22 @@ def dir(path):
                 return preview(request)
             elif i == "download":
                 return download(path)
+            elif i == "decrypt":
+                pass
             else:
                 return redirect(request.base_url)
     else:
         if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
-            response = main(url=path)
+            if get_page_encrypt_pw(data, path):
+                password = get_page_encrypt_pw(data, path)
+                if request.method == "POST":
+                    response = decrypt(password, path)
+                else:
+                    response = make_response(render_template("sharepoint_encrypt.html", warning="加密資料夾，請輸入密碼"))
+            else:
+                response = main(url=path)
         return response
 
 
