@@ -49,10 +49,10 @@ Redis_sync = True
 # 設定資料庫
 if Redis_sync:
     REDIS = redis.Redis(
-        host='suited-gar-32837.upstash.io',
-        port='32837',
-        password='b188cbee399942a98f467c74484529b7',
-        ssl=False,
+        host='global-liked-dassie-31251.upstash.io',
+        port='31251',
+        password='585f5b3af15540d381dc46bf429a7420',
+        ssl=True,
         decode_responses=True
     )
     # 設定同步資料間隔時間
