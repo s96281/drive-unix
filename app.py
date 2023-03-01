@@ -956,60 +956,62 @@ def main(url):
     data = read_data()
 
     BackgroundImage = randombackground(data)
-    if url[-1] == '/':
-        # Back to Home Page
-        url = url[:-1]
-    if len(url.split('/')) == 1:
-        # List sites
-        SharePointFileList = [['..', '', '', '/']]
-        account = url.split('/')[0]
-        for i in sharepointsites(data, account):
-            detail = sharepointsite_details(data, account, i)
-            SharePointFileList.append([sharepointsite2alias(data, account, i), utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), '/' + url + '/' + sharepointsite2alias(data, account, i)])
-        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
-    if len(url.split('/')) == 2:
-        # List root files in site
-        SharePointFileList = [['..', '', '', '/' + url.split('/')[0]]]
-        account = url.split('/')[0]
-        site = sharepointalias2site(data, account, url.split('/')[1])
-        sharepointsite_root_files_dict = sharepointsite_root_files(
-            data, account, site)
-        for i in sharepointsite_root_files_dict:
-            name = i
-            time = utc_local_convert(
-                sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
-            size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
-            if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                SharePointFileList.append(
-                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
-            else:
-                SharePointFileList.append(
-                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-        [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
-        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
-    if len(url.split('/')) > 2:
-        # List files in path
-        SharePointFileList = [
-            ['..', '', '', '/' + url.split('/')[0] + '/' + '/'.join(url.split('/')[1:-1])]]
-        account = url.split('/')[0]
-        site = sharepointalias2site(data, account, url.split('/')[1])
-        path = '/'.join(url.split('/')[2:])
-        sharepointsite_path_files_dict = sharepointsite_path_files(
-            data, account, site, path)
-        for i in sharepointsite_path_files_dict:
-            name = i
-            time = utc_local_convert(
-                sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
-            size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
-            if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                SharePointFileList.append(
-                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
-            else:
-                SharePointFileList.append(
-                    [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-        [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
-        return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
-
+    try:
+        if url[-1] == '/':
+            # Back to Home Page
+            url = url[:-1]
+        if len(url.split('/')) == 1:
+            # List sites
+            SharePointFileList = [['..', '', '', '/']]
+            account = url.split('/')[0]
+            for i in sharepointsites(data, account):
+                detail = sharepointsite_details(data, account, i)
+                SharePointFileList.append([sharepointsite2alias(data, account, i), utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), '/' + url + '/' + sharepointsite2alias(data, account, i)])
+            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
+        if len(url.split('/')) == 2:
+            # List root files in site
+            SharePointFileList = [['..', '', '', '/' + url.split('/')[0]]]
+            account = url.split('/')[0]
+            site = sharepointalias2site(data, account, url.split('/')[1])
+            sharepointsite_root_files_dict = sharepointsite_root_files(
+                data, account, site)
+            for i in sharepointsite_root_files_dict:
+                name = i
+                time = utc_local_convert(
+                    sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
+                size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
+                if sharepointsite_root_files_dict[i]['type'] == 'folder':
+                    SharePointFileList.append(
+                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                else:
+                    SharePointFileList.append(
+                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+            [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
+            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
+        if len(url.split('/')) > 2:
+            # List files in path
+            SharePointFileList = [
+                ['..', '', '', '/' + url.split('/')[0] + '/' + '/'.join(url.split('/')[1:-1])]]
+            account = url.split('/')[0]
+            site = sharepointalias2site(data, account, url.split('/')[1])
+            path = '/'.join(url.split('/')[2:])
+            sharepointsite_path_files_dict = sharepointsite_path_files(
+                data, account, site, path)
+            for i in sharepointsite_path_files_dict:
+                name = i
+                time = utc_local_convert(
+                    sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
+                size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
+                if sharepointsite_path_files_dict[i]['type'] == 'folder':
+                    SharePointFileList.append(
+                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                else:
+                    SharePointFileList.append(
+                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+            [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
+            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
+    except:
+        return make_response('Page Not Found', 404)
 
 # 首頁，權限確認後列出帳號
 @app.route("/", methods=['POST', 'GET'])
