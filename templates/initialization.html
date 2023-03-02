@@ -86,20 +86,35 @@
         </br>
         <h1>SharePoint設定</h1>
             <div class="input-group mb-3">
+                <span class="input-group-text">Name</span>
+                <input type="text" class="form-control" name="alia"
+                    value="" />
+            </div>
+            <div class="input-group mb-3">
+                <span class="input-group-text">Type</span>
+                <select class="form-select" name="type">
+                    <option value="SharePointSite">SharePointSite</option>
+                </select>
+            </div>
+            <div class="input-group mb-3">
+                <span class="input-group-text">Site</span>
+                <input type="text" class="form-control" name="site"
+                    value="" />
+            </div>
+            <div class="input-group mb-3">
                 <span class="input-group-text">Host</span>
-                <input type="text" class="form-control" placeholder="填入https://xxxxxx.sharepoint.com/" name="Host">
+                <input type="text" class="form-control" placeholder=""
+                    name="endpoint" value="">
             </div>
             <div class="input-group mb-3">
                 <span class="input-group-text">Email address</span>
-                <input type="text" class="form-control" placeholder="填入帳號電子郵件" name="Account">
+                <input type="text" class="form-control" placeholder=""
+                    name="username" value="">
             </div>
             <div class="input-group mb-3">
                 <span class="input-group-text">Password</span>
-                <input type="password" class="form-control" placeholder="填入密碼" name="Password">
-            </div>
-            <div class="input-group mb-3">
-                <span class="input-group-text">Sites</span>
-                <input type="text" class="form-control" placeholder="填入網站名稱，多個網站以','隔開(以','結尾)" name="Sites">
+                <input type="password" class="form-control" placeholder=""
+                    name="password" value="">
             </div>
             <button type="submit" class="btn btn-primary">Submit</button>
         </form>

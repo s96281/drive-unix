@@ -519,27 +519,26 @@ def initialization(request):
         anonymous_viewlist = request.form.get('anonymous_viewlist')
         anonymous_download = request.form.get('anonymous_download')
         CACHE_TYPE = request.form.get('CACHE_TYPE')
-        endpoint = request.form.get('Host')
-        account = request.form.get('Account')
-        password = request.form.get('Password')
-        sites = request.form.get('Sites')
         top_md = request.form.get('top_md')
         bottom_md = request.form.get('bottom_md')
         page_encrypt = request.form.get('page_encrypt')
         passfile = request.form.get('passfile')
-        dic = {}
-        for i in sites.split(',')[:-1]:
-            try:
-                dic[i.split("|")[0]] = i.split("|")[1]
-            except:
-                dic[i.split("|")[0]] = i.split("|")[0]
+        alia = request.form.get('alia')
+        type = request.form.get('type')
+        site = request.form.get('site')
+        endpoint = request.form.get('endpoint')
+        username = request.form.get('username')
+        password = request.form.get('password')
+
         data = {
-            "SharePointAccountList": {
-                account: {
-                    "endpoint": endpoint if endpoint[-1] == '/' else endpoint + '/',
-                    "username": account,
+            "Sites": {
+                alia: {
+                    "type": type,
+                    "site": site,
+                    "endpoint": endpoint,
+                    "username": username,
                     "password": password,
-                    "sites": dic
+                    "alia": alia
                 }
             },
             "ApiOnedriveSetting": {
@@ -586,7 +585,8 @@ def login(request):
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
         else:
-            response = make_response(render_template('sharepoint_login.html', warning='錯誤'))
+            response = make_response(render_template(
+                'sharepoint_login.html', warning='錯誤'))
     return response
 
 
@@ -621,23 +621,32 @@ def setting(request):
                 data["ApiOnedriveSetting"]["bottom_md"] = True if bottom_md else bottom_md
                 data["ApiOnedriveSetting"]["page_encrypt"] = True if page_encrypt else page_encrypt
                 data["ApiOnedriveSetting"]["passfile"] = passfile
-            elif 'Host' in request.form:
-                endpoint = request.form.get('Host')
-                account = request.form.get('Account')
-                password = request.form.get('Password')
-                sites = request.form.get('Sites')
-                dic = {}
-                for i in sites.split(',')[:-1]:
+            elif 'type' in str(request.form):
+                n = 0
+                alia = ''
+                needdelete = []
+                for i in request.form:
+                    if request.form.get(i) == '':
+                        needdelete.append(
+                            '-'.join(i.split('-')[1:]).replace('%$%', ' '))
+                    if 'NEW' in str(i):
+                        if i.split('-')[1] == n:
+                            key = i.split('-')[0].replace('NEW', '')
+                            data["Sites"][alia][key] = request.form.get(i)
+                        else:
+                            alia = request.form.get(i)
+                            key = i.split('-')[0].replace('NEW', '')
+                            data["Sites"][alia] = {key: request.form.get(i)}
+                            n = i.split('-')[1]
+                    else:
+                        key = i.split('-')[0]
+                        val = '-'.join(i.split('-')[1:]).replace('%$%', ' ')
+                        data["Sites"][val][key] = request.form.get(i)
+                for i in needdelete:
                     try:
-                        dic[i.split("|")[0]] = i.split("|")[1]
+                        data["Sites"].pop(i)
                     except:
-                        dic[i.split("|")[0]] = i.split("|")[0]
-                data["SharePointAccountList"][account] = {
-                    "endpoint": endpoint,
-                    "username": account,
-                    "password": password,
-                    "sites": dic
-                }
+                        pass
             elif 'user' in request.form:
                 pop = request.form.get('pop')
                 if not pop:
@@ -654,10 +663,10 @@ def setting(request):
             write_data(data)
             response = make_response(redirect(request.base_url + "?setting"))
         else:
-            SharePointAccountList = data['SharePointAccountList']
+            Sites = data['Sites']
             Users = data["ApiOnedriveSetting"]["users"]
             passfile = data["ApiOnedriveSetting"]["passfile"]
-            response = make_response(render_template('sharepoint_setting.html', Users=Users, SharePointAccountList=SharePointAccountList,
+            response = make_response(render_template('sharepoint_setting.html', Users=Users, Sites=Sites,
                                      backgroud_image_list=BackgroundImageList, BackgroundImage=BackgroundImage, passfile=passfile))
     return response
 
@@ -691,6 +700,7 @@ def sharepointsite2alias(data, account, site) -> str:
     response = data['SharePointAccountList'][account]["sites"][site]
     return response
 
+
 def sharepointalias2site(data, account, alias) -> str:
     response = alias
     for i in data['SharePointAccountList'][account]["sites"]:
@@ -703,14 +713,16 @@ def sharepointalias2site(data, account, alias) -> str:
 
 
 # 返回下載地址，?download時執行
-def getdownloadlink(data, account, site, path):
-    endpoint = data['SharePointAccountList'][account]["endpoint"]
-    username = data['SharePointAccountList'][account]["username"]
-    password = data['SharePointAccountList'][account]["password"]
+def getdownloadlink(data, site, path):
+    endpoint = data['Sites'][site]["endpoint"]
+    username = data['Sites'][site]["username"]
+    password = data['Sites'][site]["password"]
     cookie = read_cookie(endpoint, username, password)
-    header = {'cookie': cookie, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+    header = {'cookie': cookie,
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
     path = urllib.parse.quote(path)
-    url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path
+    url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split(
+        '/')[-1] + '.sharepoint.com:/sites/' + site + ':/drive/root:' + path
     r = requests.get(url, headers=header).text
     r = json.loads(r)
     return r['@content.downloadUrl'] if '@content.downloadUrl' in r else 0
@@ -730,20 +742,23 @@ def status(request):
     return 'Online'
 
 # 讀取頁面加密密碼
+
+
 def get_page_encrypt_pw(data, path):
-    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(path.split('/')) < 2:
+    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(path.split('/')) < 1:
         return None
     path += '/' + data["ApiOnedriveSetting"]["passfile"]
-    account = path.split('/')[0]
-    site = path.split('/')[1]
-    path = '/'.join(path.split('/')[2:])
+    site = data['Sites'][path.split('/')[0]]['site']
+    path = '/'.join(path.split('/')[1:])
     try:
-        r = requests.get(getdownloadlink(data, account, site, path))
+        r = requests.get(getdownloadlink(data, site, path))
         return r.text if r.ok else None
     except:
         return None
 
 # 辨認檔案型態
+
+
 def get_file_type(extension):
     extension = extension.lower()
     video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
@@ -751,7 +766,8 @@ def get_file_type(extension):
     audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
     document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
     text_extensions = [".txt"]
-    program_extensions = [".json", ".py", ".c",".cpp",".java",".html",".htm"]
+    program_extensions = [".json", ".py",
+                          ".c", ".cpp", ".java", ".html", ".htm"]
 
     if extension in video_extensions:
         return "video"
@@ -769,6 +785,8 @@ def get_file_type(extension):
         return "unknown"
 
 # 檔案預覽
+
+
 def preview(request):
     data = read_data()
     # 檢查權限
@@ -777,28 +795,29 @@ def preview(request):
     mediatype = get_file_type('.'+request.path.split('.')[-1])
     if mediatype == 'text':
         account = request.path.split('/')[1]
-        site = request.path.split('/')[2]
-        path = '/'.join(request.path.split('/')[3:])
-        txt = requests.get(getdownloadlink(data, account, site, path)).content
+        site = request.path.split('/')[1]
+        path = '/'.join(request.path.split('/')[2:])
+        txt = requests.get(getdownloadlink(data, site, path)).content
         code = chardet.detect(txt)['encoding']
         txt = txt.decode(code)
         SUB = ''
     elif mediatype == 'programe':
-        account = request.path.split('/')[1]
-        site = request.path.split('/')[2]
-        path = '/'.join(request.path.split('/')[3:])
-        txt = requests.get(getdownloadlink(data, account, site, path)).text
+        account = request.path.split('/')[0]
+        site = request.path.split('/')[1]
+        path = '/'.join(request.path.split('/')[2:])
+        txt = requests.get(getdownloadlink(data, site, path)).text
         txt = '```' + '\n' + txt + '\n```'
-        exts = ['extra','codehilite','tables','toc']
+        exts = ['extra', 'codehilite', 'tables', 'toc']
         txt = markdown.markdown(txt, extensions=exts)
         txt = Markup(txt)
         SUB = ''
     elif mediatype == 'video':
-        SUB = request.url.replace('mp4?preview=1', 'ass?download=1').replace('mkv?preview=1', 'ass?download=1')
+        SUB = request.url.replace('mp4?preview=1', 'ass?download=1').replace(
+            'mkv?preview=1', 'ass?download=1')
         txt = ''
     else:
         txt = SUB = ''
-    return make_response(render_template("sharepoint_preview.html", source=request.url.replace('preview=1', 'download=1'),mediatype=mediatype,name=urllib.parse.unquote(request.base_url.split('/')[-1]),txt=txt,SUB=SUB))
+    return make_response(render_template("sharepoint_preview.html", source=request.url.replace('preview=1', 'download=1'), mediatype=mediatype, name=urllib.parse.unquote(request.base_url.split('/')[-1]), txt=txt, SUB=SUB))
 
 
 def download(url):
@@ -806,10 +825,9 @@ def download(url):
     # 檢查權限
     if data["ApiOnedriveSetting"]["anonymous_download"] == False and not loggined(data, request):
         return login(request)
-    account = url.split('/')[0]
-    site = url.split('/')[1]
-    path = '/'.join(url.split('/')[2:])
-    return redirect(getdownloadlink(data, account, site, path))
+    site = url.split('/')[0]
+    path = '/'.join(url.split('/')[1:])
+    return redirect(getdownloadlink(data, site, path))
 
 
 app = Flask(__name__)
@@ -855,7 +873,7 @@ def main(url):
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         url = endpoint + '_api/v2.1/sites/' + \
             endpoint.split('.')[0].split('/')[-1] + \
-                           '.sharepoint.com:/sites/' + site + ':/drive/root'
+            '.sharepoint.com:/sites/' + site + ':/drive/root'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         return r
@@ -873,17 +891,18 @@ def main(url):
             response.update(nextpage(header, r["@odata.nextLink"]))
         return response
 
-    def sharepointsite_root_files(data, account, site) -> dict:
+    def sharepointsite_root_files(data, site) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
-        endpoint = data['SharePointAccountList'][account]["endpoint"]
-        username = data['SharePointAccountList'][account]["username"]
-        password = data['SharePointAccountList'][account]["password"]
+        endpoint = data['Sites'][site]["endpoint"]
+        username = data['Sites'][site]["username"]
+        password = data['Sites'][site]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie,
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
-        site + ':/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+            site + ':/drive/root/children?$top=' + \
+            str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         if DEBUG:
@@ -898,15 +917,16 @@ def main(url):
     def sharepointsite_path_files(data, account, site, path) -> dict:
         # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
         response = {}
-        endpoint = data['SharePointAccountList'][account]["endpoint"]
-        username = data['SharePointAccountList'][account]["username"]
-        password = data['SharePointAccountList'][account]["password"]
+        endpoint = data['Sites'][site]["endpoint"]
+        username = data['Sites'][site]["username"]
+        password = data['Sites'][site]["password"]
         cookie = read_cookie(endpoint, username, password)
         header = {'cookie': cookie,
                   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
         path = urllib.parse.quote(path)
         url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + \
-        ':/drive/root:' + path + ':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+            ':/drive/root:' + path + ':/children?$top=' + \
+            str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
         r = requests.get(url, headers=header).text
         r = json.loads(r)
         if DEBUG:
@@ -917,18 +937,17 @@ def main(url):
         if "@odata.nextLink" in r:
             response.update(nextpage(header, r["@odata.nextLink"]))
         return response
-    
+
     def head_foot_note(data, url, SharePointFileList) -> list:
-        account = url.split('/')[0]
-        site = sharepointalias2site(data, account, url.split('/')[1])
+        site = url.split('/')[0]
         response = []
         if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
             _url = url+'/top.md'
-            path = '/'.join(_url.split('/')[2:])
-            r = requests.get(getdownloadlink(data, account, site, path))
+            path = '/'.join(_url.split('/')[1:])
+            r = requests.get(getdownloadlink(data, site, path))
             if r.ok:
                 txt = r.text
-                exts = ['extra','codehilite','tables','toc']
+                exts = ['extra', 'codehilite', 'tables', 'toc']
                 txt = markdown.markdown(txt, extensions=exts)
                 txt = Markup(txt)
                 response.append(txt)
@@ -938,11 +957,11 @@ def main(url):
             response.append(None)
         if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
             _url = url+'/bottom.md'
-            path = '/'.join(_url.split('/')[2:])
-            r = requests.get(getdownloadlink(data, account, site, path))
+            path = '/'.join(_url.split('/')[1:])
+            r = requests.get(getdownloadlink(data, site, path))
             if r.ok:
                 txt = r.text
-                exts = ['extra','codehilite','tables','toc']
+                exts = ['extra', 'codehilite', 'tables', 'toc']
                 txt = markdown.markdown(txt, extensions=exts)
                 txt = Markup(txt)
                 response.append(txt)
@@ -951,30 +970,21 @@ def main(url):
         else:
             response.append(None)
         return response
-    
+
     headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
 
     BackgroundImage = randombackground(data)
     try:
         if url[-1] == '/':
-            # Back to Home Page
             url = url[:-1]
         if len(url.split('/')) == 1:
-            # List sites
-            SharePointFileList = [['..', '', '', '/']]
-            account = url.split('/')[0]
-            for i in sharepointsites(data, account):
-                detail = sharepointsite_details(data, account, i)
-                SharePointFileList.append([sharepointsite2alias(data, account, i), utc_local_convert(detail['lastModifiedDateTime']), sizeof_fmt(detail['size']), '/' + url + '/' + sharepointsite2alias(data, account, i)])
-            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList))
-        if len(url.split('/')) == 2:
             # List root files in site
-            SharePointFileList = [['..', '', '', '/' + url.split('/')[0]]]
-            account = url.split('/')[0]
-            site = sharepointalias2site(data, account, url.split('/')[1])
+            SharePointFileList = [['..', '', '', '/']]
+            account = data["Sites"][url.split('/')[0]]["username"]
+            site = data["Sites"][url.split('/')[0]]["site"]
             sharepointsite_root_files_dict = sharepointsite_root_files(
-                data, account, site)
+                data, site)
             for i in sharepointsite_root_files_dict:
                 name = i
                 time = utc_local_convert(
@@ -986,15 +996,16 @@ def main(url):
                 else:
                     SharePointFileList.append(
                         [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-            [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
-            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
-        if len(url.split('/')) > 2:
+            [headnote, footnote] = head_foot_note(
+                data, url, SharePointFileList)
+            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+        if len(url.split('/')) > 1:
             # List files in path
             SharePointFileList = [
-                ['..', '', '', '/' + url.split('/')[0] + '/' + '/'.join(url.split('/')[1:-1])]]
-            account = url.split('/')[0]
-            site = sharepointalias2site(data, account, url.split('/')[1])
-            path = '/'.join(url.split('/')[2:])
+                ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+            account = data["Sites"][url.split('/')[0]]["username"]
+            site = data["Sites"][url.split('/')[0]]["site"]
+            path = '/'.join(url.split('/')[1:])
             sharepointsite_path_files_dict = sharepointsite_path_files(
                 data, account, site, path)
             for i in sharepointsite_path_files_dict:
@@ -1008,19 +1019,19 @@ def main(url):
                 else:
                     SharePointFileList.append(
                         [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-            [headnote,footnote] = head_foot_note(data, url, SharePointFileList)
-            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList = SharePointFileList, headnote = headnote, footnote = footnote))
+            [headnote, footnote] = head_foot_note(
+                data, url, SharePointFileList)
+            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
     except:
         return make_response('Page Not Found', 404)
 
 # 首頁，權限確認後列出帳號
+
+
 @app.route("/", methods=['POST', 'GET'])
 def home():
     def sharepointaccounts(data) -> list:
-        response = []
-        for i in data['SharePointAccountList']:
-            response.append(i)
-        return response
+        return list(data['Sites'])
 
     headings = ['Name', 'Last edit time', 'Size']
 
@@ -1078,7 +1089,8 @@ def dir(path):
         if request.form.get('password') == password:
             response = main(url=path)
         else:
-            response = make_response(render_template("sharepoint_encrypt.html", warning="密碼錯誤"))
+            response = make_response(render_template(
+                "sharepoint_encrypt.html", warning="密碼錯誤"))
         return response
 
     if data == None:
@@ -1112,12 +1124,13 @@ def dir(path):
         if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
-            if get_page_encrypt_pw(data, path):
-                password = get_page_encrypt_pw(data, path)
+            password = get_page_encrypt_pw(data, path)
+            if password:
                 if request.method == "POST":
                     response = decrypt(password, path)
                 else:
-                    response = make_response(render_template("sharepoint_encrypt.html", warning="加密資料夾，請輸入密碼"))
+                    response = make_response(render_template(
+                        "sharepoint_encrypt.html", warning="加密資料夾，請輸入密碼"))
             else:
                 response = main(url=path)
         return response
