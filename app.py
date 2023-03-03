@@ -858,172 +858,185 @@ def main(url):
         with open("cache-arg", 'w') as f:
             f.write(url)
 
-    def sharepointsites(data, account) -> list:
-        response = []
-        for i in data['SharePointAccountList'][account]["sites"]:
-            response.append(i)
-        return response
-
-    def sharepointsite_details(data, account, site) -> dict:
-        endpoint = data['SharePointAccountList'][account]["endpoint"]
-        username = data['SharePointAccountList'][account]["username"]
-        password = data['SharePointAccountList'][account]["password"]
-        cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie,
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + \
-            endpoint.split('.')[0].split('/')[-1] + \
-            '.sharepoint.com:/sites/' + site + ':/drive/root'
-        r = requests.get(url, headers=header).text
-        r = json.loads(r)
-        return r
-
-    def nextpage(header, url) -> dict:
-        response = {}
-        r = requests.get(url, headers=header).text
-        r = json.loads(r)
-        if DEBUG:
-            print(r)
-        for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
-                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
-        if "@odata.nextLink" in r:
-            response.update(nextpage(header, r["@odata.nextLink"]))
-        return response
-
-    def sharepointsite_root_files(data, site) -> dict:
-        # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
-        response = {}
-        endpoint = data['Sites'][site]["endpoint"]
-        username = data['Sites'][site]["username"]
-        password = data['Sites'][site]["password"]
-        cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie,
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
-            site + ':/drive/root/children?$top=' + \
-            str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
-        r = requests.get(url, headers=header).text
-        r = json.loads(r)
-        if DEBUG:
-            print(url, r)
-        for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
-                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
-        if "@odata.nextLink" in r:
-            response.update(nextpage(header, r["@odata.nextLink"]))
-        return response
-
-    def sharepointsite_path_files(data, account, site, path) -> dict:
-        # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
-        response = {}
-        endpoint = data['Sites'][site]["endpoint"]
-        username = data['Sites'][site]["username"]
-        password = data['Sites'][site]["password"]
-        cookie = read_cookie(endpoint, username, password)
-        header = {'cookie': cookie,
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
-        path = urllib.parse.quote(path)
-        url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + \
-            ':/drive/root:' + path + ':/children?$top=' + \
-            str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
-        r = requests.get(url, headers=header).text
-        r = json.loads(r)
-        if DEBUG:
-            print(r)
-        for i in r['value']:
-            response[i["name"]] = {"type": "folder" if "folder" in i else "file",
-                                   "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
-        if "@odata.nextLink" in r:
-            response.update(nextpage(header, r["@odata.nextLink"]))
-        return response
-
-    def head_foot_note(data, url, SharePointFileList) -> list:
-        site = url.split('/')[0]
-        response = []
-        if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
-            _url = url+'/top.md'
-            path = '/'.join(_url.split('/')[1:])
-            r = requests.get(getdownloadlink(data, site, path))
-            if r.ok:
-                txt = r.text
-                exts = ['extra', 'codehilite', 'tables', 'toc']
-                txt = markdown.markdown(txt, extensions=exts)
-                txt = Markup(txt)
-                response.append(txt)
-            else:
-                response.append(None)
-        else:
-            response.append(None)
-        if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
-            _url = url+'/bottom.md'
-            path = '/'.join(_url.split('/')[1:])
-            r = requests.get(getdownloadlink(data, site, path))
-            if r.ok:
-                txt = r.text
-                exts = ['extra', 'codehilite', 'tables', 'toc']
-                txt = markdown.markdown(txt, extensions=exts)
-                txt = Markup(txt)
-                response.append(txt)
-            else:
-                response.append(None)
-        else:
-            response.append(None)
-        return response
-
-    headings = ['Name', 'Last edit time', 'Size']
     data = read_data()
 
-    BackgroundImage = randombackground(data)
-    try:
-        if url[-1] == '/':
-            url = url[:-1]
-        if len(url.split('/')) == 1:
-            # List root files in site
-            SharePointFileList = [['..', '', '', '/']]
-            account = data["Sites"][url.split('/')[0]]["username"]
-            site = data["Sites"][url.split('/')[0]]["site"]
-            sharepointsite_root_files_dict = sharepointsite_root_files(
-                data, site)
-            for i in sharepointsite_root_files_dict:
-                name = i
-                time = utc_local_convert(
-                    sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
-                size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
-                if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                    SharePointFileList.append(
-                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+    def drivetype(data, url):
+        try:
+            return data["Sites"][url.split('/')[0]]['type']
+        except:
+            return None
+    
+    DriveType = drivetype(data, url)
+    if DriveType == "SharePointSitePW":
+        def sharepointsite_details(data, account, site) -> dict:
+            endpoint = data['SharePointAccountList'][account]["endpoint"]
+            username = data['SharePointAccountList'][account]["username"]
+            password = data['SharePointAccountList'][account]["password"]
+            cookie = read_cookie(endpoint, username, password)
+            header = {'cookie': cookie,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+            url = endpoint + '_api/v2.1/sites/' + \
+                endpoint.split('.')[0].split('/')[-1] + \
+                '.sharepoint.com:/sites/' + site + ':/drive/root'
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            return r
+
+        def nextpage(header, url) -> dict:
+            response = {}
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            if DEBUG:
+                print(r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+
+        def sharepointsite_root_files(data, site) -> dict:
+            # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
+            response = {}
+            endpoint = data['Sites'][site]["endpoint"]
+            username = data['Sites'][site]["username"]
+            password = data['Sites'][site]["password"]
+            cookie = read_cookie(endpoint, username, password)
+            header = {'cookie': cookie,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+            url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
+                site + ':/drive/root/children?$top=' + \
+                str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            if DEBUG:
+                print(url, r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+
+        def sharepointsite_path_files(data, account, site, path) -> dict:
+            # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
+            response = {}
+            endpoint = data['Sites'][site]["endpoint"]
+            username = data['Sites'][site]["username"]
+            password = data['Sites'][site]["password"]
+            cookie = read_cookie(endpoint, username, password)
+            header = {'cookie': cookie,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+            path = urllib.parse.quote(path)
+            url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + site + \
+                ':/drive/root:' + path + ':/children?$top=' + \
+                str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            if DEBUG:
+                print(r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+
+        def head_foot_note(data, url, SharePointFileList) -> list:
+            site = url.split('/')[0]
+            response = []
+            if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
+                _url = url+'/top.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
                 else:
-                    SharePointFileList.append(
-                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-            [headnote, footnote] = head_foot_note(
-                data, url, SharePointFileList)
-            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
-        if len(url.split('/')) > 1:
-            # List files in path
-            SharePointFileList = [
-                ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
-            account = data["Sites"][url.split('/')[0]]["username"]
-            site = data["Sites"][url.split('/')[0]]["site"]
-            path = '/'.join(url.split('/')[1:])
-            sharepointsite_path_files_dict = sharepointsite_path_files(
-                data, account, site, path)
-            for i in sharepointsite_path_files_dict:
-                name = i
-                time = utc_local_convert(
-                    sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
-                size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
-                if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                    SharePointFileList.append(
-                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    response.append(None)
+            else:
+                response.append(None)
+            if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
+                _url = url+'/bottom.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
                 else:
-                    SharePointFileList.append(
-                        [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-            [headnote, footnote] = head_foot_note(
-                data, url, SharePointFileList)
-            return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
-    except:
-        return make_response('Page Not Found', 404)
+                    response.append(None)
+            else:
+                response.append(None)
+            return response
+
+        headings = ['Name', 'Last edit time', 'Size']
+
+        BackgroundImage = randombackground(data)
+        try:
+            if url[-1] == '/':
+                url = url[:-1]
+            if len(url.split('/')) == 1:
+                # List root files in site
+                SharePointFileList = [['..', '', '', '/']]
+                account = data["Sites"][url.split('/')[0]]["username"]
+                site = data["Sites"][url.split('/')[0]]["site"]
+                sharepointsite_root_files_dict = sharepointsite_root_files(
+                    data, site)
+                for i in sharepointsite_root_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
+                    if sharepointsite_root_files_dict[i]['type'] == 'folder':
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+            if len(url.split('/')) > 1:
+                # List files in path
+                SharePointFileList = [
+                    ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+                account = data["Sites"][url.split('/')[0]]["username"]
+                site = data["Sites"][url.split('/')[0]]["site"]
+                path = '/'.join(url.split('/')[1:])
+                sharepointsite_path_files_dict = sharepointsite_path_files(
+                    data, account, site, path)
+                for i in sharepointsite_path_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
+                    if sharepointsite_path_files_dict[i]['type'] == 'folder':
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+        except:
+            return make_response('Page Not Found', 404)
+    elif DriveType ==  "SharePointSiteAPI":
+        pass
+    elif DriveType == "OneDrivePW":
+        pass
+    elif DriveType == "OneDriveAPI":
+        pass
+    elif DriveType == "GoogleDriveAPI":
+        pass
+    else:
+        return make_response("Drive Type Not Support.")
 
 # 首頁，權限確認後列出帳號
 
