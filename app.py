@@ -36,15 +36,15 @@ if os.name == 'nt':  # Windows
     data_location = './data'
     cookies_location = './cookies'
 else:  # Linux、MacOS
-    data_location = '/tmp/data'
-    cookies_location = '/tmp/cookies'
-    CACHE_LOCATION = '/tmp/cache'
+    data_location = './data'
+    cookies_location = './cookies'
+    CACHE_LOCATION = './cache'
 
 # 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
 REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
-Redis_sync = True
+Redis_sync = False
 
 # 設定資料庫
 if Redis_sync:
@@ -251,6 +251,7 @@ def getSecurityTokenFederated(username, password, endpoint, stsurl):
         req = Request(stsurl, authReq.encode('utf-8'),
                       {"Content-Type": "application/soap+xml; charset=utf-8"})
         request = urlopen(req)
+    # pylint: disable=unused-variable
     except URLError as x:
         raise RuntimeError("Failed to send login request.")
     ns = {"soap": "http://www.w3.org/2003/05/soap-envelope",
@@ -307,6 +308,7 @@ def get_cookie(endpoint, username, password):
         try:
             request = Request("{0}://{1}/_forms/default.aspx?wa=wsignin1.0".format(
                 endpointUrl.scheme, endpointUrl.netloc))
+            # pylint: disable=unused-variable
             response = opener.open(request, data=authToken.encode('utf-8'))
             cookieStr = ""
             cookiesFound = []
@@ -695,23 +697,6 @@ def reflash(path):
     return response
 
 
-#
-def sharepointsite2alias(data, account, site) -> str:
-    response = data['SharePointAccountList'][account]["sites"][site]
-    return response
-
-
-def sharepointalias2site(data, account, alias) -> str:
-    response = alias
-    for i in data['SharePointAccountList'][account]["sites"]:
-        if data['SharePointAccountList'][account]["sites"][i] == alias:
-            response = i
-    if response:
-        return response
-    else:
-        return None
-
-
 # 返回下載地址，?download時執行
 def getdownloadlink(data, site, path):
     endpoint = data['Sites'][site]["endpoint"]
@@ -794,7 +779,6 @@ def preview(request):
         return login(request)
     mediatype = get_file_type('.'+request.path.split('.')[-1])
     if mediatype == 'text':
-        account = request.path.split('/')[1]
         site = request.path.split('/')[1]
         path = '/'.join(request.path.split('/')[2:])
         txt = requests.get(getdownloadlink(data, site, path)).content
@@ -802,7 +786,6 @@ def preview(request):
         txt = txt.decode(code)
         SUB = ''
     elif mediatype == 'programe':
-        account = request.path.split('/')[0]
         site = request.path.split('/')[1]
         path = '/'.join(request.path.split('/')[2:])
         txt = requests.get(getdownloadlink(data, site, path)).text
@@ -829,6 +812,62 @@ def download(url):
     path = '/'.join(url.split('/')[1:])
     return redirect(getdownloadlink(data, site, path))
 
+
+def init_access_token(data, request):
+    path = request.path
+    site = path.split('/')[1]
+    client_id = data["Sites"][site]["client_id"]
+    client_secret = data["Sites"][site]["client_secret"]
+    redirect_uri = data["Sites"][site]["redirect_uri"]
+    authorization_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+client_id+'&response_type=code&redirect_uri=' + urllib.parse.quote(redirect_uri) + '%2F&scope=https%3A%2F%2Fgraph.microsoft.com%2FFiles.ReadWrite.All%20Sites.ReadWrite.All%20offline_access'
+    if request.method == "GET":
+        response = make_response(render_template("init_access_token.html", authorization_url=authorization_url))
+    else:
+        code = request.form.get("code")
+        HEADERS = {'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'}
+        url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+        FormData = {'client_id':client_id,'scope':'https://graph.microsoft.com/Files.ReadWrite.All Sites.ReadWrite.All offline_access','redirect_uri':redirect_uri,'client_secret':client_secret,'grant_type':'authorization_code','code':code}
+        FormData = urllib.parse.urlencode(FormData)
+        r = requests.post(url=url, headers=HEADERS, data=FormData).json()
+        try:
+            access_token = r['access_token']
+            refresh_token = r['refresh_token']
+            data["Sites"][site]["access_token"] = access_token
+            data["Sites"][site]["refresh_token"] = refresh_token
+            data["Sites"][site]["t"] = time.time()
+            write_data(data)
+            response = make_response(redirect(request.url.split('?')[0]))
+        except:
+            response = make_response(render_template("init_access_token.html", authorization_url=authorization_url, warning="Error!" + json.dumps(r)))
+    return response
+
+def reflash_token(data, site):
+    client_id = data["Sites"][site]['client_id']
+    client_secret = data["Sites"][site]['client_secret']
+    redirect_uri = data["Sites"][site]['redirect_uri']
+    refresh_token = data["Sites"][site]['refresh_token']
+    url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+    HEADERS = {'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'}
+    formdata = 'client_id='+client_id+'&scope=https%3A%2F%2Fgraph.microsoft.com%2FFiles.ReadWrite.All%20Sites.ReadWrite.All%20offline_access&redirect_uri=' + redirect_uri + '&client_secret='+client_secret+'&grant_type=refresh_token&refresh_token='+refresh_token
+    try:
+        retur = requests.post(url=url, headers=HEADERS, data=formdata).json()
+        access_token = retur['access_token']
+        refresh_token = retur['refresh_token']
+        data["Sites"][site]["access_token"] = access_token
+        data["Sites"][site]["refresh_token"] = refresh_token
+        data["Sites"][site]["t"] = time.time()
+        write_data(data)
+    except:
+        return "Error, Unable to reflash token. Please check setting."
+
+def get_access_token(data, site) -> str:
+    if time.time() - data["Sites"][site]['t'] > 60*60:
+        reflash_token(data, site)
+    access_token = data["Sites"][site]["access_token"]
+    return access_token
+
+def print_code(request):
+    return make_response(request.args.get("code").split('&')[0])
 
 app = Flask(__name__)
 app.config.from_mapping(CacheConfig)
@@ -868,6 +907,7 @@ def main(url):
     
     DriveType = drivetype(data, url)
     if DriveType == "SharePointSitePW":
+        # pylint: disable=unused-variable
         def sharepointsite_details(data, account, site) -> dict:
             endpoint = data['SharePointAccountList'][account]["endpoint"]
             username = data['SharePointAccountList'][account]["username"]
@@ -907,8 +947,7 @@ def main(url):
             url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
                 site + ':/drive/root/children?$top=' + \
                 str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
-            r = requests.get(url, headers=header).text
-            r = json.loads(r)
+            r = requests.get(url, headers=header).json()
             if DEBUG:
                 print(url, r)
             for i in r['value']:
@@ -918,7 +957,7 @@ def main(url):
                 response.update(nextpage(header, r["@odata.nextLink"]))
             return response
 
-        def sharepointsite_path_files(data, account, site, path) -> dict:
+        def sharepointsite_path_files(data, site, path) -> dict:
             # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
             response = {}
             endpoint = data['Sites'][site]["endpoint"]
@@ -984,7 +1023,6 @@ def main(url):
             if len(url.split('/')) == 1:
                 # List root files in site
                 SharePointFileList = [['..', '', '', '/']]
-                account = data["Sites"][url.split('/')[0]]["username"]
                 site = data["Sites"][url.split('/')[0]]["site"]
                 sharepointsite_root_files_dict = sharepointsite_root_files(
                     data, site)
@@ -999,6 +1037,7 @@ def main(url):
                     else:
                         SharePointFileList.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
                 return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
@@ -1006,11 +1045,10 @@ def main(url):
                 # List files in path
                 SharePointFileList = [
                     ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
-                account = data["Sites"][url.split('/')[0]]["username"]
                 site = data["Sites"][url.split('/')[0]]["site"]
                 path = '/'.join(url.split('/')[1:])
                 sharepointsite_path_files_dict = sharepointsite_path_files(
-                    data, account, site, path)
+                    data, site, path)
                 for i in sharepointsite_path_files_dict:
                     name = i
                     time = utc_local_convert(
@@ -1022,13 +1060,148 @@ def main(url):
                     else:
                         SharePointFileList.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
                 return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
         except:
             return make_response('Page Not Found', 404)
     elif DriveType ==  "SharePointSiteAPI":
-        pass
+        def sitename2id(site):
+            access_token = get_access_token(data, site)
+            headers = {'Authorization': 'Bearer '+access_token}
+            url = "https://graph.microsoft.com/v1.0/sites?search='" + site + "'"
+            r = requests.get(url, headers=headers).json()['value']
+            for i in r:
+                if i["webUrl"].split('/')[-1] == site:
+                    return i["id"].split(',')[1]
+            return None
+
+        def nextpage(header, url) -> dict:
+            response = {}
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            if DEBUG:
+                print(r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response            
+        
+        def sharepointsite_root_files(data, site) -> dict:
+            response = {}
+            url = "https://graph.microsoft.com/v1.0/sites/" + sitename2id(site) + "/drive/root/children"
+            access_token = get_access_token(data, site)
+            headers = {'Authorization': 'Bearer '+access_token}
+            r = requests.get(url, headers=headers).json()
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(headers, r["@odata.nextLink"]))
+            return response
+
+        def sharepointsite_path_files(data, site, path) -> dict:
+            response = {}
+            url = "https://graph.microsoft.com/v1.0/sites/" + sitename2id(site) + "/drive/root:/" + path + ":/children"
+            access_token = get_access_token(data, site)
+            headers = {'Authorization': 'Bearer '+access_token}
+            r = requests.get(url, headers=headers).json()
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(headers, r["@odata.nextLink"]))
+            return response
+
+        def head_foot_note(data, url, SharePointFileList) -> list:
+            response = []
+            if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
+                _url = url+'/top.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
+                else:
+                    response.append(None)
+            else:
+                response.append(None)
+            if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
+                _url = url+'/bottom.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
+                else:
+                    response.append(None)
+            else:
+                response.append(None)
+            return response
+
+        headings = ['Name', 'Last edit time', 'Size']
+
+        BackgroundImage = randombackground(data)
+
+        try:
+            if url[-1] == '/':
+                url = url[:-1]
+            if len(url.split('/')) == 1:
+                # List root files in site
+                SharePointFileList = [['..', '', '', '/']]
+                site = data["Sites"][url.split('/')[0]]["site"]
+                sharepointsite_root_files_dict = sharepointsite_root_files(
+                    data, site)
+                for i in sharepointsite_root_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
+                    if sharepointsite_root_files_dict[i]['type'] == 'folder':
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                # pylint: disable=unbalanced-tuple-unpacking
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+            if len(url.split('/')) > 1:
+                # List files in path
+                SharePointFileList = [
+                    ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+                site = data["Sites"][url.split('/')[0]]["site"]
+                path = '/'.join(url.split('/')[1:])
+                sharepointsite_path_files_dict = sharepointsite_path_files(
+                    data, site, path)
+                for i in sharepointsite_path_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
+                    if sharepointsite_path_files_dict[i]['type'] == 'folder':
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                # pylint: disable=unbalanced-tuple-unpacking
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+        except:
+            return make_response('Page Not Found', 404)        
+        
     elif DriveType == "OneDrivePW":
         pass
     elif DriveType == "OneDriveAPI":
@@ -1072,6 +1245,8 @@ def home():
                 return cookie(request)
             elif i == "status":
                 return status(request)
+            elif i == "code":
+                return make_response(request.args.get('code').split('&')[0])
             else:
                 return redirect(request.base_url)
 
@@ -1109,6 +1284,7 @@ def dir(path):
     if data == None:
         return initialization(request)
 
+
     if request.args:
         for i in request.args:
             if i == "initialization":
@@ -1131,9 +1307,16 @@ def dir(path):
                 return download(path)
             elif i == "decrypt":
                 pass
+            elif i == "SharePointSiteAPI":
+                return init_access_token(data, request)
             else:
                 return redirect(request.base_url)
     else:
+        if data["Sites"][path.split('/')[0]]["type"] == "SharePointSiteAPI":
+            if data["Sites"][path.split('/')[0]]["refresh_token"] == "":
+                return init_access_token(data, request)
+            elif time.time() - data["Sites"][path.split('/')[0]]["t"] > 60*60:
+                reflash_token(data, path.split('/')[0])
         if data["ApiOnedriveSetting"]["anonymous_viewlist"] == False and not loggined(data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
