@@ -717,8 +717,11 @@ def getdownloadlink(data, site, path):
 def cookie(request):
     user = request.args.get("cookie")
     data = read_data()
-    cookie = read_cookie(data["SharePointAccountList"][user]["endpoint"],
-                         user, data["SharePointAccountList"][user]["password"])
+    try:
+        cookie = read_cookie(data["Sites"][user]["endpoint"],
+                             data["Sites"][user]["site"], data["Sites"][user]["password"])
+    except:
+        cookie = "Site Not Found or Site Type Is Not SharePointSitePW"
     return cookie
 
 
