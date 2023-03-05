@@ -715,12 +715,14 @@ def getdownloadlink(data, site, path):
 
 # 回傳使用者憑證，?cookie=user時執行
 def cookie(request):
-    user = request.args.get("cookie")
+    site = request.args.get("cookie")
     data = read_data()
-    try:
-        cookie = read_cookie(data["Sites"][user]["endpoint"],
-                             data["Sites"][user]["site"], data["Sites"][user]["password"])
-    except:
+    if site in data['Sites']:
+        endpoint = data['Sites'][site]["endpoint"]
+        username = data['Sites'][site]["username"]
+        password = data['Sites'][site]["password"]
+        cookie = read_cookie(endpoint, username, password)
+    else:
         cookie = "Site Not Found or Site Type Is Not SharePointSitePW"
     return cookie
 
