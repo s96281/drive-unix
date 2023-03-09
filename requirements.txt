@@ -9,3 +9,4 @@ pyinstrument
 markdown
 Pygments
 pymdown-extensions
+natsort

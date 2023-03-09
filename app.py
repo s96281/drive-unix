@@ -20,6 +20,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen, build_opener, HTTPCookieProcessor, Request
 import xml.etree.ElementTree as ET
+from natsort import os_sorted, natsorted
 
 
 DEBUG = False
@@ -699,9 +700,13 @@ def reflash(path):
 
 # 返回下載地址，?download時執行
 def getdownloadlink(data, site, path):
-    endpoint = data['Sites'][site]["endpoint"]
-    username = data['Sites'][site]["username"]
-    password = data['Sites'][site]["password"]
+    alia = ''
+    for i in data["Sites"]:
+        if data["Sites"][i]["site"] == site:
+            alia = data["Sites"][i]["alia"]
+    endpoint = data['Sites'][alia]["endpoint"]
+    username = data['Sites'][alia]["username"]
+    password = data['Sites'][alia]["password"]
     cookie = read_cookie(endpoint, username, password)
     header = {'cookie': cookie,
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
@@ -937,7 +942,7 @@ def main(url):
 
         def sharepointsite_root_files(data, site) -> dict:
             # {name: {"type": folder/file, "lastModifiedDateTime": time, "size": size}}
-            response = {}
+            response = {}        
             endpoint = data['Sites'][site]["endpoint"]
             username = data['Sites'][site]["username"]
             password = data['Sites'][site]["password"]
@@ -945,7 +950,7 @@ def main(url):
             header = {'cookie': cookie,
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
             url = endpoint + '_api/v2.1/sites/' + endpoint.split('.')[0].split('/')[-1] + '.sharepoint.com:/sites/' + \
-                site + ':/drive/root/children?$top=' + \
+                data['Sites'][site]["site"] + ':/drive/root/children?$top=' + \
                 str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
             r = requests.get(url, headers=header).json()
             if DEBUG:
@@ -1023,7 +1028,9 @@ def main(url):
             if len(url.split('/')) == 1:
                 # List root files in site
                 SharePointFileList = [['..', '', '', '/']]
-                site = data["Sites"][url.split('/')[0]]["site"]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
+                site = url.split('/')[0]
                 sharepointsite_root_files_dict = sharepointsite_root_files(
                     data, site)
                 for i in sharepointsite_root_files_dict:
@@ -1032,11 +1039,15 @@ def main(url):
                         sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
                     size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
                     if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                        SharePointFileList.append(
+                        SharePointFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList.append(
+                        SharePointFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
@@ -1045,6 +1056,8 @@ def main(url):
                 # List files in path
                 SharePointFileList = [
                     ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
                 site = data["Sites"][url.split('/')[0]]["site"]
                 path = '/'.join(url.split('/')[1:])
                 sharepointsite_path_files_dict = sharepointsite_path_files(
@@ -1055,11 +1068,15 @@ def main(url):
                         sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
                     size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
                     if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                        SharePointFileList.append(
+                        SharePointFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList.append(
+                        SharePointFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
@@ -1088,7 +1105,7 @@ def main(url):
                                     "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
             if "@odata.nextLink" in r:
                 response.update(nextpage(header, r["@odata.nextLink"]))
-            return response            
+            return response
         
         def sharepointsite_root_files(data, site) -> dict:
             response = {}
@@ -1158,7 +1175,9 @@ def main(url):
             if len(url.split('/')) == 1:
                 # List root files in site
                 SharePointFileList = [['..', '', '', '/']]
-                site = data["Sites"][url.split('/')[0]]["site"]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
+                site = url.split('/')[0]
                 sharepointsite_root_files_dict = sharepointsite_root_files(
                     data, site)
                 for i in sharepointsite_root_files_dict:
@@ -1167,11 +1186,15 @@ def main(url):
                         sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
                     size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
                     if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                        SharePointFileList.append(
+                        SharePointFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList.append(
+                        SharePointFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
@@ -1180,6 +1203,8 @@ def main(url):
                 # List files in path
                 SharePointFileList = [
                     ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
                 site = data["Sites"][url.split('/')[0]]["site"]
                 path = '/'.join(url.split('/')[1:])
                 sharepointsite_path_files_dict = sharepointsite_path_files(
@@ -1190,20 +1215,131 @@ def main(url):
                         sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
                     size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
                     if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                        SharePointFileList.append(
+                        SharePointFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList.append(
+                        SharePointFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
                     data, url, SharePointFileList)
                 return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
         except:
-            return make_response('Page Not Found', 404)        
-        
+            return make_response('Page Not Found', 404)
     elif DriveType == "OneDrivePW":
-        pass
+        def nextpage(header, url) -> dict:
+            response = {}
+            r = requests.get(url, headers=header).text
+            r = json.loads(r)
+            if DEBUG:
+                print(r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+        def onedrive_root_files(data, site) -> dict:
+            response = {}
+            endpoint = data["Sites"][site].get("endpoint")
+            username = data["Sites"][site].get("username")
+            password = data["Sites"][site].get("password")
+            cookie = read_cookie(endpoint, username, password)
+            url = endpoint + '_api/v2.1/drive/root/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'
+            header = {'cookie': cookie,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+            r = requests.get(url, headers=header).json()
+            if DEBUG:
+                print(url, r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+        def onedrive_path_files(data, site, path) -> dict:
+            response = {}
+            endpoint = data["Sites"][site].get("endpoint")
+            username = data["Sites"][site].get("username")
+            password = data["Sites"][site].get("password")
+            cookie = read_cookie(endpoint, username, password)
+            url = endpoint + '_api/v2.1/drive/root:/'+path+':/children?$top='+str(REQUEST_SIZE)+'&select=name,folder,lastModifiedDateTime,size'            
+            header = {'cookie': cookie,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0', 'Sec-Fetch-User': '?1'}
+            r = requests.get(url, headers=header).json()
+            if DEBUG:
+                print(url, r)
+            for i in r['value']:
+                response[i["name"]] = {"type": "folder" if "folder" in i else "file",
+                                    "lastModifiedDateTime": i["lastModifiedDateTime"], "size": i["size"]}
+            if "@odata.nextLink" in r:
+                response.update(nextpage(header, r["@odata.nextLink"]))
+            return response
+        try:
+            if url[-1] == '/':
+                url = url[:-1]
+            if len(url.split('/')) == 1:
+                # List root files in site
+                SharePointFileList = [['..', '', '', '/']]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
+                site = url.split('/')[0]
+                sharepointsite_root_files_dict = sharepointsite_root_files(
+                    data, site)
+                for i in sharepointsite_root_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
+                    if sharepointsite_root_files_dict[i]['type'] == 'folder':
+                        SharePointFileList_FOLDERS.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList_FILES.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
+                # pylint: disable=unbalanced-tuple-unpacking
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+            if len(url.split('/')) > 1:
+                # List files in path
+                SharePointFileList = [
+                    ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
+                SharePointFileList_FOLDERS = []
+                SharePointFileList_FILES = []
+                site = data["Sites"][url.split('/')[0]]["site"]
+                path = '/'.join(url.split('/')[1:])
+                sharepointsite_path_files_dict = sharepointsite_path_files(
+                    data, site, path)
+                for i in sharepointsite_path_files_dict:
+                    name = i
+                    time = utc_local_convert(
+                        sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
+                    if sharepointsite_path_files_dict[i]['type'] == 'folder':
+                        SharePointFileList_FOLDERS.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
+                    else:
+                        SharePointFileList_FILES.append(
+                            [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
+                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
+                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
+                SharePointFileList.extend(SharePointFileList_FOLDERS)
+                SharePointFileList.extend(SharePointFileList_FILES)
+                # pylint: disable=unbalanced-tuple-unpacking
+                [headnote, footnote] = head_foot_note(
+                    data, url, SharePointFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+        except:
+            return make_response('Page Not Found', 404)
     elif DriveType == "OneDriveAPI":
         pass
     elif DriveType == "GoogleDriveAPI":
