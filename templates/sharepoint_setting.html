@@ -53,7 +53,8 @@
     </nav>
     <div class="container-xxl"
         style="background-color: rgba(0, 0, 0, 0.4); margin-top: 20px; margin-bottom: 20px; padding: min(30px,1vw); border-radius: 10px">
-        <div id="globalvariable" style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
+        <div id="globalvariable"
+            style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
             <h1 style="color: white;">全域變數</h1>
             </br>
             <form method="post">
@@ -119,8 +120,170 @@
         </div>
         </br>
         </br>
-        <div id="webdrivevariable" style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
-            <h1 style="color: white;">Web Drive 設定</h1>
+        <div id="webdrivevariable"
+            style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
+            <div style="display: flex;align-items: center;justify-content: space-between;">
+                <h1 style="color: white;">Web Drive 設定</h1>
+                <script>
+                    var i = 1;
+                    function AddNewSite(value) {
+                        if (value == 'SharePointSitePW') {
+                            var newDiv = document.createElement("div");
+                            newDiv.id = "site-" + i.toString();
+                            newDiv.className = "tab-pane fade";
+                            newDiv.innerHTML =
+                                `
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Name</span>
+                            <input type="text" class="form-control" name="NEWalia-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            
+                            <span class="input-group-text">Type</span>
+                            <select class="form-select" name="NEWtype-` +
+                                i.toString() +
+                                `" disabled>
+                            <option value="SharePointSitePW" selected>SharePointSitePW</option>
+                            <option value="SharePointSiteAPI">SharePointSiteAPI</option>
+                            <option value="OneDrivePW">OneDrivePW</option>
+                            <option value="OneDriveAPI">OneDriveAPI</option>
+                            <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                            </select>
+                            </div>
+                            <input type="hidden" name="NEWtype-`+i.toString() +`" value="SharePointSitePW" />
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Site</span>
+                            <input type="text" class="form-control" name="NEWsite-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Host</span>
+                            <input type="text" class="form-control" name="NEWendpoint-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Email address</span>
+                            <input type="text" class="form-control" name="NEWusername-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Password</span>
+                            <input type="password" class="form-control" name="NEWpassword-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            `;
+                            var app = document.getElementById("SITESContent");
+                            app.appendChild(newDiv);
+
+                            var newnewDiv = document.createElement("li");
+                            newnewDiv.className = "nav-item";
+                            newnewDiv.role = "presentation";
+                            newnewDiv.innerHTML =
+                                '<button class="nav-link" id="account-' +
+                                i.toString() +
+                                '-tab" data-bs-toggle="tab" data-bs-target="#site-' +
+                                i.toString() +
+                                '" type="button" role="tab" aria-selected="true">NEW site-' +
+                                i.toString() +
+                                "</button>";
+                            document.getElementById("SITES").appendChild(newnewDiv);
+                            i++;
+                        }
+                        else if (value == 'SharePointSiteAPI') {
+                            var newDiv = document.createElement("div");
+                            newDiv.id = "site-" + i.toString();
+                            newDiv.className = "tab-pane fade";
+                            newDiv.innerHTML =
+                                `
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Name</span>
+                            <input type="text" class="form-control" name="NEWalia-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            
+                            <span class="input-group-text">Type</span>
+                            <select class="form-select" name="NEWtype-` +
+                                i.toString() +
+                                `" disabled>
+                            <option value="SharePointSitePW">SharePointSitePW</option>
+                            <option value="SharePointSiteAPI" selected>SharePointSiteAPI</option>
+                            <option value="OneDrivePW">OneDrivePW</option>
+                            <option value="OneDriveAPI">OneDriveAPI</option>
+                            <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                            </select>
+                            </div>
+                            <input type="hidden" name="NEWtype-`+i.toString() +`" value="SharePointSiteAPI" />
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Site</span>
+                            <input type="text" class="form-control" name="NEWsite-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">client_id</span>
+                            <input type="text" class="form-control" name="NEWclient_id-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">client_secret</span>
+                            <input type="text" class="form-control" name="NEWclient_secret-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">redirect_uri</span>
+                            <input type="redirect_uri" class="form-control" name="NEWredirect_uri-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            `;
+                            var app = document.getElementById("SITESContent");
+                            app.appendChild(newDiv);
+
+                            var newnewDiv = document.createElement("li");
+                            newnewDiv.className = "nav-item";
+                            newnewDiv.role = "presentation";
+                            newnewDiv.innerHTML =
+                                '<button class="nav-link" id="account-' +
+                                i.toString() +
+                                '-tab" data-bs-toggle="tab" data-bs-target="#site-' +
+                                i.toString() +
+                                '" type="button" role="tab" aria-selected="true">NEW site-' +
+                                i.toString() +
+                                "</button>";
+                            document.getElementById("SITES").appendChild(newnewDiv);
+                            i++;
+                        }
+                    }
+                </script>
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown"
+                        aria-expanded="false" style="float: right;">
+                        Add Site
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><button class="dropdown-item" type="button"
+                                onclick="AddNewSite('SharePointSitePW')">SharePointSitePW</button></li>
+                        <li><button class="dropdown-item" type="button"
+                                onclick="AddNewSite('SharePointSiteAPI')">SharePointSiteAPI</button></li>
+                        <li><button class="dropdown-item" type="button"
+                                onclick="AddNewSite('OneDrivePW')">OneDrivePW</button></li>
+                        <li><button class="dropdown-item" type="button"
+                                onclick="AddNewSite('OneDriveAPI')">OneDriveAPI</button></li>
+                        <li><button class="dropdown-item" type="button"
+                                onclick="AddNewSite('GoogleDriveAPI')">GoogleDriveAPI</button></li>
+                    </ul>
+                </div>
+            </div>
             </br>
             <ul class="nav nav-tabs" id="SITES" role="tablist"
                 style="overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;white-space:nowrap">
@@ -144,14 +307,42 @@
                         </div>
                         <div class="input-group mb-3">
                             <span class="input-group-text">Type</span>
-                            <select class="form-select" name="type-{{key|replace(' ', '%$%')}}">
-                                <option value="SharePointSitePW">SharePointSitePW</option>
+                            <select class="form-select" name="type-{{key|replace(' ', '%$%')}}" disabled>
+                                {% if value['type'] == 'SharePointSitePW' %}
+                                <option value="SharePointSitePW" selected>SharePointSitePW</option>
                                 <option value="SharePointSiteAPI">SharePointSiteAPI</option>
                                 <option value="OneDrivePW">OneDrivePW</option>
                                 <option value="OneDriveAPI">OneDriveAPI</option>
                                 <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                                {% elif value['type'] == 'SharePointSiteAPI' %}
+                                <option value="SharePointSitePW">SharePointSitePW</option>
+                                <option value="SharePointSiteAPI" selected>SharePointSiteAPI</option>
+                                <option value="OneDrivePW">OneDrivePW</option>
+                                <option value="OneDriveAPI">OneDriveAPI</option>
+                                <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                                {% elif value['type'] == 'OneDrivePW' %}
+                                <option value="SharePointSitePW">SharePointSitePW</option>
+                                <option value="SharePointSiteAPI">SharePointSiteAPI</option>
+                                <option value="OneDrivePW" selected>OneDrivePW</option>
+                                <option value="OneDriveAPI">OneDriveAPI</option>
+                                <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                                {% elif value['type'] == 'OneDriveAPI' %}
+                                <option value="SharePointSitePW">SharePointSitePW</option>
+                                <option value="SharePointSiteAPI">SharePointSiteAPI</option>
+                                <option value="OneDrivePW">OneDrivePW</option>
+                                <option value="OneDriveAPI" selected>OneDriveAPI</option>
+                                <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                                {% elif value['type'] == 'GoogleDriveAPI' %}
+                                <option value="SharePointSitePW">SharePointSitePW</option>
+                                <option value="SharePointSiteAPI">SharePointSiteAPI</option>
+                                <option value="OneDrivePW">OneDrivePW</option>
+                                <option value="OneDriveAPI">OneDriveAPI</option>
+                                <option value="GoogleDriveAPI" selected>GoogleDriveAPI</option>
+                                {% endif %}
                             </select>
                         </div>
+                        {% if value['type'] == 'SharePointSitePW' %}
+                        <input type="hidden" name="type-{{key|replace(' ', '%$%')}}" value="SharePointSitePW" />
                         <div class="input-group mb-3">
                             <span class="input-group-text">Site</span>
                             <input type="text" class="form-control" name="site-{{key|replace(' ', '%$%')}}"
@@ -172,16 +363,42 @@
                             <input type="password" class="form-control" placeholder=""
                                 name="password-{{key|replace(' ', '%$%')}}" value="{{value['password']}}">
                         </div>
+                        {% elif value['type'] == 'SharePointSiteAPI' %}
+                        <input type="hidden" name="type-{{key|replace(' ', '%$%')}}" value="SharePointSiteAPI" />
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Site</span>
+                            <input type="text" class="form-control" name="site-{{key|replace(' ', '%$%')}}"
+                                value="{{value['site']}}" />
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">client_id</span>
+                            <input type="text" class="form-control" name="client_id-{{key|replace(' ', '%$%')}}"
+                                value="{{value['client_id']}}" />
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">client_secret</span>
+                            <input type="password" class="form-control" placeholder=""
+                                name="client_secret-{{key|replace(' ', '%$%')}}" value="{{value['client_secret']}}">
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">redirect_uri</span>
+                            <input type="text" class="form-control" placeholder=""
+                                name="redirect_uri-{{key|replace(' ', '%$%')}}" value="{{value['redirect_uri']}}">
+                        </div>
+                        {% elif value['type'] == 'OneDrivePW' %}
+                        {% elif value['type'] == 'OneDriveAPI' %}
+                        {% elif value['type'] == 'GoogleDriveAPI' %}
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
                 <button type="submit" class="btn btn-primary">Submit</button>
-                <a id="addnewdiv" class="btn btn-primary" style="float: right;">New Site</a>
             </form>
         </div>
         </br>
         </br>
-        <div id="uservariable" style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
+        <div id="uservariable"
+            style="backdrop-filter: blur(5px); padding: 10px;background-color: rgba(0,0,0,0.6);border-radius: 10px;">
             <h1 style="color: white;">帳號設定</h1>
             </br>
             <ul class="nav nav-tabs" id="myTab" role="tablist">
@@ -264,9 +481,6 @@
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN"
-        crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"
         integrity="sha384-oBqDVmMz9ATKxIep9tiCxS/Z9fNfEXiDAYTujMAeBAsjFuCZSmKbSSUnQlmh/jp3"
         crossorigin="anonymous"></script>
@@ -284,80 +498,10 @@
                 el.parentNode.removeChild(el);
             }, duration);
             document.body.appendChild(el);
-        }
-    </script>
-    <script>
-        var i = 1;
-
-        function addNewDiv() {
-            // Create a new div element
-            var newDiv = document.createElement("div");
-            newDiv.id = "site-" + i.toString();
-            newDiv.className = "tab-pane fade";
-            newDiv.innerHTML =
-                `
-        <div class="input-group mb-3">
-        <span class="input-group-text">Name</span>
-        <input type="text" class="form-control" name="NEWalia-` +
-                i.toString() +
-                `" />
-        </div>
-        <div class="input-group mb-3">
-        
-        <span class="input-group-text">Type</span>
-        <select class="form-select" name="NEWtype-` +
-                i.toString() +
-                `">
-          <option value="SharePointSite">SharePointSite</option>
-        </select>
-        </div>
-        <div class="input-group mb-3">
-        <span class="input-group-text">Site</span>
-        <input type="text" class="form-control" name="NEWsite-` +
-                i.toString() +
-                `" />
-        </div>
-        <div class="input-group mb-3">
-        <span class="input-group-text">Host</span>
-        <input type="text" class="form-control" name="NEWendpoint-` +
-                i.toString() +
-                `" />
-        </div>
-        <div class="input-group mb-3">
-        <span class="input-group-text">Email address</span>
-        <input type="text" class="form-control" name="NEWusername-` +
-                i.toString() +
-                `" />
-        </div>
-        <div class="input-group mb-3">
-        <span class="input-group-text">Password</span>
-        <input type="password" class="form-control" name="NEWpassword-` +
-                i.toString() +
-                `" />
-        </div>
-        `;
-            // Get the app element
-            var app = document.getElementById("SITESContent");
-
-            // Add the new div to the app element
-            app.appendChild(newDiv);
-
-            var newnewDiv = document.createElement("li");
-            newnewDiv.className = "nav-item";
-            newnewDiv.role = "presentation";
-            newnewDiv.innerHTML =
-                '<button class="nav-link" id="account-' +
-                i.toString() +
-                '-tab" data-bs-toggle="tab" data-bs-target="#site-' +
-                i.toString() +
-                '" type="button" role="tab" aria-selected="true">NEW site-' +
-                i.toString() +
-                "</button>";
-            document.getElementById("SITES").appendChild(newnewDiv);
-            i++;
-        }
-        var addNewDivButton = document.getElementById("addnewdiv");
-        addNewDivButton.addEventListener("click", addNewDiv);
+        };
+        //自動展開第一個NAV-TAB
+        document.evaluate("/html/body/div/div[2]/ul/li[1]/button",document,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue.click();
+        document.evaluate("/html/body/div/div[3]/ul/li[1]/button",document,null,XPathResult.FIRST_ORDERED_NODE_TYPE,null).singleNodeValue.click();
     </script>
 </body>
 

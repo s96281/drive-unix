@@ -829,11 +829,11 @@ def init_access_token(data, request):
     client_id = data["Sites"][site]["client_id"]
     client_secret = data["Sites"][site]["client_secret"]
     redirect_uri = data["Sites"][site]["redirect_uri"]
-    authorization_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+client_id+'&response_type=code&redirect_uri=' + urllib.parse.quote(redirect_uri) + '%2F&scope=https%3A%2F%2Fgraph.microsoft.com%2FFiles.ReadWrite.All%20Sites.ReadWrite.All%20offline_access'
-    if request.method == "GET":
+    authorization_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id='+client_id+'&response_type=code&redirect_uri=' + urllib.parse.quote(redirect_uri) + '&scope=https%3A%2F%2Fgraph.microsoft.com%2FFiles.ReadWrite.All%20Sites.ReadWrite.All%20offline_access'
+    if not request.args.get("code") and not request.form.get("code"):
         response = make_response(render_template("init_access_token.html", authorization_url=authorization_url))
     else:
-        code = request.form.get("code")
+        code = request.form.get("code") if request.form.get("code") else request.args.get("code")
         HEADERS = {'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'}
         url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
         FormData = {'client_id':client_id,'scope':'https://graph.microsoft.com/Files.ReadWrite.All Sites.ReadWrite.All offline_access','redirect_uri':redirect_uri,'client_secret':client_secret,'grant_type':'authorization_code','code':code}
@@ -1284,65 +1284,96 @@ def main(url):
             if "@odata.nextLink" in r:
                 response.update(nextpage(header, r["@odata.nextLink"]))
             return response
+        def head_foot_note(data, url, SharePointFileList) -> list:
+            response = []
+            if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(SharePointFileList):
+                _url = url+'/top.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
+                else:
+                    response.append(None)
+            else:
+                response.append(None)
+            if data['ApiOnedriveSetting'].get('bottom_md') and 'bottom.md' in str(SharePointFileList):
+                _url = url+'/bottom.md'
+                path = '/'.join(_url.split('/')[1:])
+                r = requests.get(getdownloadlink(data, site, path))
+                if r.ok:
+                    txt = r.text
+                    exts = ['extra', 'codehilite', 'tables', 'toc']
+                    txt = markdown.markdown(txt, extensions=exts)
+                    txt = Markup(txt)
+                    response.append(txt)
+                else:
+                    response.append(None)
+            else:
+                response.append(None)
+            return response
         try:
             if url[-1] == '/':
                 url = url[:-1]
             if len(url.split('/')) == 1:
                 # List root files in site
-                SharePointFileList = [['..', '', '', '/']]
-                SharePointFileList_FOLDERS = []
-                SharePointFileList_FILES = []
+                onedriveFileList = [['..', '', '', '/']]
+                onedriveFileList_FOLDERS = []
+                onedriveFileList_FILES = []
                 site = url.split('/')[0]
-                sharepointsite_root_files_dict = sharepointsite_root_files(
+                onedrive_root_files_dict = onedrive_root_files(
                     data, site)
-                for i in sharepointsite_root_files_dict:
+                for i in onedrive_root_files_dict:
                     name = i
                     time = utc_local_convert(
-                        sharepointsite_root_files_dict[i]['lastModifiedDateTime'])
-                    size = sizeof_fmt(sharepointsite_root_files_dict[i]['size'])
-                    if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                        SharePointFileList_FOLDERS.append(
+                        onedrive_root_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(onedrive_root_files_dict[i]['size'])
+                    if onedrive_root_files_dict[i]['type'] == 'folder':
+                        onedriveFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList_FILES.append(
+                        onedriveFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
-                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
-                SharePointFileList.extend(SharePointFileList_FOLDERS)
-                SharePointFileList.extend(SharePointFileList_FILES)
+                onedriveFileList_FOLDERS = os_sorted(onedriveFileList_FOLDERS, key=lambda x: x[0])
+                onedriveFileList_FILES = os_sorted(onedriveFileList_FILES, key=lambda x: x[0])
+                onedriveFileList.extend(onedriveFileList_FOLDERS)
+                onedriveFileList.extend(onedriveFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
-                    data, url, SharePointFileList)
-                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+                    data, url, onedriveFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=onedriveFileList, headnote=headnote, footnote=footnote))
             if len(url.split('/')) > 1:
                 # List files in path
-                SharePointFileList = [
+                onedriveFileList = [
                     ['..', '', '', '/' + '/'.join(url.split('/')[0:-1])]]
-                SharePointFileList_FOLDERS = []
-                SharePointFileList_FILES = []
+                onedriveFileList_FOLDERS = []
+                onedriveFileList_FILES = []
                 site = data["Sites"][url.split('/')[0]]["site"]
                 path = '/'.join(url.split('/')[1:])
-                sharepointsite_path_files_dict = sharepointsite_path_files(
+                onedrive_path_files_dict = onedrive_path_files(
                     data, site, path)
-                for i in sharepointsite_path_files_dict:
+                for i in onedrive_path_files_dict:
                     name = i
                     time = utc_local_convert(
-                        sharepointsite_path_files_dict[i]['lastModifiedDateTime'])
-                    size = sizeof_fmt(sharepointsite_path_files_dict[i]['size'])
-                    if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                        SharePointFileList_FOLDERS.append(
+                        onedrive_path_files_dict[i]['lastModifiedDateTime'])
+                    size = sizeof_fmt(onedrive_path_files_dict[i]['size'])
+                    if onedrive_path_files_dict[i]['type'] == 'folder':
+                        onedriveFileList_FOLDERS.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name)])
                     else:
-                        SharePointFileList_FILES.append(
+                        onedriveFileList_FILES.append(
                             [name, time, size, '/' + url + '/' + urllib.parse.quote(name) + '?preview=1'])
-                SharePointFileList_FOLDERS = os_sorted(SharePointFileList_FOLDERS, key=lambda x: x[0])
-                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES, key=lambda x: x[0])
-                SharePointFileList.extend(SharePointFileList_FOLDERS)
-                SharePointFileList.extend(SharePointFileList_FILES)
+                onedriveFileList_FOLDERS = os_sorted(onedriveFileList_FOLDERS, key=lambda x: x[0])
+                onedriveFileList_FILES = os_sorted(onedriveFileList_FILES, key=lambda x: x[0])
+                onedriveFileList.extend(onedriveFileList_FOLDERS)
+                onedriveFileList.extend(onedriveFileList_FILES)
                 # pylint: disable=unbalanced-tuple-unpacking
                 [headnote, footnote] = head_foot_note(
-                    data, url, SharePointFileList)
-                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=SharePointFileList, headnote=headnote, footnote=footnote))
+                    data, url, onedriveFileList)
+                return make_response(render_template('sharepoint_main.html', headings=headings, BackgroundImage=BackgroundImage, SharePointFileList=onedriveFileList, headnote=headnote, footnote=footnote))
         except:
             return make_response('Page Not Found', 404)
     elif DriveType == "OneDriveAPI":
@@ -1448,13 +1479,15 @@ def dir(path):
                 return download(path)
             elif i == "decrypt":
                 pass
+            elif i == "code":
+                init_access_token(data, request)            
             elif i == "SharePointSiteAPI":
                 return init_access_token(data, request)
             else:
                 return redirect(request.base_url)
     else:
         if data["Sites"][path.split('/')[0]]["type"] == "SharePointSiteAPI":
-            if data["Sites"][path.split('/')[0]]["refresh_token"] == "":
+            if data["Sites"][path.split('/')[0]].get("refresh_token") == None:
                 return init_access_token(data, request)
             elif time.time() - data["Sites"][path.split('/')[0]]["t"] > 60*60:
                 reflash_token(data, path.split('/')[0])
