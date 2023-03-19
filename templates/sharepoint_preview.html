@@ -86,7 +86,11 @@
                 document.getElementById('player').src = URL;
             </script>
             <!-- Captions are optional -->
-            <!-- <track kind="captions" label="Zh-tw captions" src="/path/to/captions.vtt" srclang="tw" default /> -->
+            <track id="subtitle" kind="captions" label="Zh-tw captions" src="" srclang="tw" default />
+            <script>
+                var captions = window.location.href.replace('preview=1', 'download=1').replace('.mkv','.vtt').replace('.mp4','.vtt');
+                document.getElementById('subtitle').src = URL;
+            </script>
         </video>
         <script src="https://cdn.plyr.io/3.7.3/plyr.polyfilled.js"></script>
         <script>
