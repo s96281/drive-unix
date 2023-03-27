@@ -45,7 +45,7 @@ else:  # Linux、MacOS
 REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
-Redis_sync = False
+Redis_sync = True
 
 # 設定資料庫
 if Redis_sync:
