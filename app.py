@@ -69,7 +69,7 @@ UTC = 8
 CacheConfig = {
     "DEBUG": False,
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DEFAULT_TIMEOUT": 432000,
+    "CACHE_DEFAULT_TIMEOUT": 4320000,
     "CACHE_IGNORE_ERRORS": False,
     "CACHE_DIR": CACHE_LOCATION,
     "CACHE_THRESHOLD": 500
