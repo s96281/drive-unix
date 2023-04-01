@@ -1448,6 +1448,7 @@ def dir(path):
     def decrypt(password, path):
         if request.form.get('password') == password:
             response = main(url=path)
+            response.set_cookie(key=path+"_pw", value = hashlib.sha256(password.encode()).hexdigest(), max_age = 86400, path='/'+path)
         else:
             response = make_response(render_template(
                 "sharepoint_encrypt.html", warning="密碼錯誤"))
@@ -1499,8 +1500,11 @@ def dir(path):
                 if request.method == "POST":
                     response = decrypt(password, path)
                 else:
-                    response = make_response(render_template(
-                        "sharepoint_encrypt.html", warning="加密資料夾，請輸入密碼"))
+                    if request.cookies.get(path+"_pw") == hashlib.sha256(password.encode()).hexdigest():
+                        response = main(url=path)
+                    else:
+                        response = make_response(render_template(
+                            "sharepoint_encrypt.html", warning="加密資料夾，請輸入密碼"))
             else:
                 response = main(url=path)
         return response
