@@ -759,7 +759,7 @@ def get_file_type(extension):
     video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
     image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
     audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
-    document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
+    document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf"]
     text_extensions = [".txt"]
     program_extensions = [".json", ".py",
                           ".c", ".cpp", ".java", ".html", ".htm"]
