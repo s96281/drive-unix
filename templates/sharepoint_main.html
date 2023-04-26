@@ -89,7 +89,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for row in SharePointFileList %}
+                {% for row in FILELIST %}
                 <tr style="height: 50px;vertical-align: middle;"
                     oncontextmenu='navigator.clipboard.writeText("{{ row[3] }}");tempAlert("已複製鏈結",1000)'
                     onclick="window.location='{{ row[3] }}';">

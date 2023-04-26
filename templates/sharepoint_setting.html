@@ -263,6 +263,68 @@
                             document.getElementById("SITES").appendChild(newnewDiv);
                             i++;
                         }
+                        else if (value == 'OneDrivePW') {
+                            var newDiv = document.createElement("div");
+                            newDiv.id = "site-" + i.toString();
+                            newDiv.className = "tab-pane fade";
+                            newDiv.innerHTML =
+                                `
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Name</span>
+                            <input type="text" class="form-control" name="NEWalia-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            
+                            <span class="input-group-text">Type</span>
+                            <select class="form-select" name="NEWtype-` +
+                                i.toString() +
+                                `" disabled>
+                            <option value="SharePointSitePW">SharePointSitePW</option>
+                            <option value="SharePointSiteAPI">SharePointSiteAPI</option>
+                            <option value="OneDrivePW" selected>OneDrivePW</option>
+                            <option value="OneDriveAPI">OneDriveAPI</option>
+                            <option value="GoogleDriveAPI">GoogleDriveAPI</option>
+                            </select>
+                            </div>
+                            <input type="hidden" name="NEWtype-`+i.toString() +`" value="OneDrivePW" />
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Host</span>
+                            <input type="text" class="form-control" name="NEWendpoint-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Email address</span>
+                            <input type="text" class="form-control" name="NEWusername-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            <div class="input-group mb-3">
+                            <span class="input-group-text">Password</span>
+                            <input type="password" class="form-control" name="NEWpassword-` +
+                                i.toString() +
+                                `" />
+                            </div>
+                            `;
+                            var app = document.getElementById("SITESContent");
+                            app.appendChild(newDiv);
+
+                            var newnewDiv = document.createElement("li");
+                            newnewDiv.className = "nav-item";
+                            newnewDiv.role = "presentation";
+                            newnewDiv.innerHTML =
+                                '<button class="nav-link" id="account-' +
+                                i.toString() +
+                                '-tab" data-bs-toggle="tab" data-bs-target="#site-' +
+                                i.toString() +
+                                '" type="button" role="tab" aria-selected="true">NEW site-' +
+                                i.toString() +
+                                "</button>";
+                            document.getElementById("SITES").appendChild(newnewDiv);
+                            i++;
+                        }
                     }
                 </script>
                 <div class="dropdown">
