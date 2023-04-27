@@ -6,7 +6,8 @@ import urllib.parse
 import requests
 import markdown
 from flask import Flask, redirect, request, render_template
-from flask import make_response, Markup, send_file
+from flask import make_response, send_file
+from markupsafe import Markup
 from flask_caching import Cache
 from natsort import os_sorted
 from module.config import DEBUG, CACHE_LOCATION, CACHE_CONFIG, HEADINGS

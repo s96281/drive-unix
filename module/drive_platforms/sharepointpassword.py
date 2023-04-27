@@ -4,7 +4,7 @@ Read SharePoint Sites with password.
 import urllib.parse
 import markdown
 import requests
-from flask import Markup
+from markupsafe import Markup
 from module.auth.cookie_auth import read_cookie
 from module import config
 
