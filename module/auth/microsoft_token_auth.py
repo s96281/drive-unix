@@ -79,7 +79,7 @@ def init_access_token(data: str, request: Request) -> Response:
     return response
 
 
-def reflash_token(data: dict, site: str) -> None:
+def reflash_token(data: dict, alia: str) -> None:
     """
     Refreshes the access token for a given site
     using the refresh token stored in the data dictionary.
@@ -94,10 +94,10 @@ def reflash_token(data: dict, site: str) -> None:
     Raises:
         KeyError: If the JSON response from the token endpoint does not contain the expected keys.
     """
-    client_id = data["Sites"][site]['client_id']
-    client_secret = data["Sites"][site]['client_secret']
-    redirect_uri = data["Sites"][site]['redirect_uri']
-    refresh_token = data["Sites"][site]['refresh_token']
+    client_id = data["Sites"][alia]['client_id']
+    client_secret = data["Sites"][alia]['client_secret']
+    redirect_uri = data["Sites"][alia]['redirect_uri']
+    refresh_token = data["Sites"][alia]['refresh_token']
     url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8'
@@ -115,15 +115,15 @@ def reflash_token(data: dict, site: str) -> None:
                               timeout=config.REQUEST_TIME_OUT).json()
         access_token = retur['access_token']
         refresh_token = retur['refresh_token']
-        data["Sites"][site]["access_token"] = access_token
-        data["Sites"][site]["refresh_token"] = refresh_token
-        data["Sites"][site]["t"] = time.time()
+        data["Sites"][alia]["access_token"] = access_token
+        data["Sites"][alia]["refresh_token"] = refresh_token
+        data["Sites"][alia]["t"] = time.time()
         write_data(data)
     except KeyError:
         print(f"Error, {json.dumps(retur)}")
 
 
-def read_token(data: dict, site: str) -> str:
+def read_token(data: dict, alia: str) -> str:
     """
     Get the access token for the specified site from the data dictionary.
     If the access token has expired (more than 1 hour old), the function refreshes the token 
@@ -137,7 +137,7 @@ def read_token(data: dict, site: str) -> str:
     Returns:
         str: The access token for the specified site.
     """
-    if time.time() - data["Sites"][site]['t'] > 60*60:
-        reflash_token(data, site)
-    access_token = data["Sites"][site]["access_token"]
+    if time.time() - data["Sites"][alia]['t'] > 60*60:
+        reflash_token(data, alia)
+    access_token = data["Sites"][alia]["access_token"]
     return access_token

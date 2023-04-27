@@ -2,7 +2,7 @@
 IDK
 """
 import requests
-from module.drive_platforms import sharepointpassword, onedrivepassword
+from module.drive_platforms import sharepointpassword, onedrivepassword, sharepointapi
 from module import config
 
 
@@ -45,10 +45,9 @@ def get_downloadlink(data: dict, alia: str, path: str) -> str | None:
     """
     site_type = data["Sites"][alia]["type"]
     if site_type == "SharePointSitePW":
-        ret = sharepointpassword.sharepointpw_getdownloadlink(
-            data, alia, path)
+        ret = sharepointpassword.sharepointpw_getdownloadlink(data, alia, path)
     elif site_type == "SharePointSiteAPI":
-        pass
+        ret = sharepointapi.sharepointapi_getdownloadlink(data, alia, path)
     elif site_type == "OneDrivePW":
         ret = onedrivepassword.ondrivepw_getdownloadlink(data, alia, path)
     elif site_type == "OneDriveAPI":
@@ -71,7 +70,8 @@ def get_page_encrypt_pw(data: dict, path: str) -> str | None:
     - The encryption password if page encryption is enabled and the password file
       exists, or None otherwise.
     """
-    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(path.split('/')) < 1:
+    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(
+            path.split('/')) < 1:
         return None
     path += '/' + data["ApiOnedriveSetting"]["passfile"]
     alia = path.split('/')[0]
@@ -101,7 +101,7 @@ def details(data: dict, alia: str) -> dict:
     if drive_type == "SharePointSitePW":
         ret = sharepointpassword.sharepointpw_details(data, alia)
     elif drive_type == "SharePointSiteAPI":
-        pass
+        ret = sharepointapi.sharepointapi_details(data, alia)
     elif drive_type == "OneDrivePW":
         ret = onedrivepassword.ondrivepw_detail(data, alia)
     elif drive_type == "OneDriveAPI":
@@ -116,7 +116,7 @@ def files(data: dict, alia: str, path: str = None) -> dict:
     if drive_type == "SharePointSitePW":
         ret = sharepointpassword.sharepointpw_files(data, alia, path)
     elif drive_type == "SharePointSiteAPI":
-        pass
+        ret = sharepointapi.sharepointapi_files(data, alia, path)
     elif drive_type == "OneDrivePW":
         ret = onedrivepassword.onedrivepw_files(data, alia, path)
     elif drive_type == "OneDriveAPI":
@@ -129,11 +129,14 @@ def files(data: dict, alia: str, path: str = None) -> dict:
 def head_foot_note(data: dict, alia: str, path: str, file_list: list) -> list:
     drive_type = drivetype(data, alia)
     if drive_type == "SharePointSitePW":
-        ret = sharepointpassword.sharepointpw_head_foot_note(data, alia, path, file_list)
+        ret = sharepointpassword.sharepointpw_head_foot_note(
+            data, alia, path, file_list)
     elif drive_type == "SharePointSiteAPI":
-        pass
+        ret = sharepointapi.sharepointapi_head_foot_note(
+            data, alia, path, file_list)
     elif drive_type == "OneDrivePW":
-        ret = onedrivepassword.onedrivepw_head_foot_note(data, alia, path, file_list)
+        ret = onedrivepassword.onedrivepw_head_foot_note(
+            data, alia, path, file_list)
     elif drive_type == "OneDriveAPI":
         pass
     elif drive_type == "GoogleDriveAPI":

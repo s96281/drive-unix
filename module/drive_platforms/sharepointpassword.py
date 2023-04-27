@@ -5,7 +5,7 @@ import urllib.parse
 import markdown
 import requests
 from markupsafe import Markup
-from module.auth.cookie_auth import read_cookie
+from module.auth.microsoft_cookie_auth import read_cookie
 from module import config
 
 
@@ -121,7 +121,7 @@ def nextpage(header: dict, url: str) -> dict:
     return response
 
 
-def sharepointsite_root_files(data: dict, alia: str) -> dict:
+def sharepointpw_root_files(data: dict, alia: str) -> dict:
     """
     Retrieves the root files and folders of a SharePoint site using the provided
     authentication credentials.
@@ -173,7 +173,7 @@ def sharepointsite_root_files(data: dict, alia: str) -> dict:
         return {"error": f"Drive {alia} not found."}
 
 
-def sharepointsite_path_files(data: dict, alia: str, path: str) -> dict:
+def sharepointpw_path_files(data: dict, alia: str, path: str) -> dict:
     """
     Returns a dictionary of SharePoint site files and folders located in the specified path.
     
@@ -241,9 +241,9 @@ def sharepointpw_files(data: dict, alia: str, path: str = None) -> dict:
         and size of each file and folder at the specified site or path.
     """
     if path:
-        ret = sharepointsite_path_files(data, alia, path)
+        ret = sharepointpw_path_files(data, alia, path)
     else:
-        ret = sharepointsite_root_files(data, alia)
+        ret = sharepointpw_root_files(data, alia)
     return ret
 
 

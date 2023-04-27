@@ -5,7 +5,7 @@ import urllib.parse
 import markdown
 import requests
 from flask import Markup
-from module.auth.cookie_auth import read_cookie
+from module.auth.microsoft_cookie_auth import read_cookie
 from module import config
 
 
@@ -103,7 +103,7 @@ def nextpage(header: dict, url: str) -> dict:
     return response
 
 
-def onedrive_root_files(data: dict, drive: str) -> dict:
+def onedrivepw_root_files(data: dict, drive: str) -> dict:
     try:
         response = {}
         endpoint = data["Sites"][drive].get("endpoint")
@@ -135,7 +135,7 @@ def onedrive_root_files(data: dict, drive: str) -> dict:
         return {"error": f"Drive {drive} not found."}
 
 
-def onedrive_path_files(data: dict, drive: str, path: str) -> dict:
+def onedrivepw_path_files(data: dict, drive: str, path: str) -> dict:
     try:
         response = {}
         endpoint = data["Sites"][drive].get("endpoint")
@@ -169,9 +169,9 @@ def onedrive_path_files(data: dict, drive: str, path: str) -> dict:
 
 def onedrivepw_files(data: dict, drive: str, path: str = None) -> dict:
     if path:
-        ret = onedrive_path_files(data, drive, path)
+        ret = onedrivepw_path_files(data, drive, path)
     else:
-        ret = onedrive_root_files(data, drive)
+        ret = onedrivepw_root_files(data, drive)
     return ret
 
 

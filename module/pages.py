@@ -11,7 +11,7 @@ import requests
 from flask import render_template, make_response, redirect, url_for, Request, Response, Markup
 from flask_caching import Cache
 from module.read_write_data import write_data, read_data
-from module.auth.cookie_auth import read_cookie
+from module.auth.microsoft_cookie_auth import read_cookie
 from module.functions import random_background, get_file_type
 from module.permission import is_login, is_admin, logout, login
 from module.drive_platforms.drive import get_downloadlink
