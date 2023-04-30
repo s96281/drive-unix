@@ -20,7 +20,7 @@ else:  # Linux、MacOS
 REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
-REDIS_SYNC = False
+REDIS_SYNC = True
 # 設定Redis資料庫
 REDIS = Redis(
     host='global-liked-dassie-31251.upstash.io',
