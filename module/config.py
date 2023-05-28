@@ -48,3 +48,5 @@ CACHE_CONFIG = {
 }
 
 HEADINGS = ['Name', 'Last edit time', 'Size']
+
+thumbnail_size = "large" # or "medium", "small"

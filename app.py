@@ -1,10 +1,12 @@
+"""
+flask-sharepoint-explorer
+"""
 import os
 import time
 import hashlib
 import urllib.parse
-import requests
 from flask import Flask, redirect, request, render_template
-from flask import make_response, send_file
+from flask import make_response, send_file, g
 from flask_caching import Cache
 from natsort import os_sorted
 from module.config import DEBUG, CACHE_LOCATION, CACHE_CONFIG, HEADINGS
@@ -14,10 +16,7 @@ from module.drive_platforms import drive
 
 # 效能分析工具
 if DEBUG:
-    from flask import g
     from pyinstrument import Profiler
-
-requests = requests.Session()
 
 app = Flask(__name__)
 app.config.from_mapping(CACHE_CONFIG)
@@ -27,11 +26,28 @@ cache = Cache(app)
 if DEBUG:
     @app.before_request
     def before_request():
+        """
+        Starts profiling using a `Profiler` object if 'profile' is present in the request arguments.
+
+        Returns:
+            None
+        """
         if "profile" in request.args:
             g.profiler = Profiler()
             g.profiler.start()
     @app.after_request
     def after_request(response):
+        """
+        Modify the response object to include profiling data if `g.profiler` exists.
+
+        Args:
+            response: Flask response object.
+
+        Returns:
+            Response object if profiling data exists, else original response.
+            If the response contains profiling data, the response body will be an HTML
+            document containing profiling information.
+        """
         if not hasattr(g, "profiler"):
             return response
         g.profiler.stop()
@@ -41,9 +57,12 @@ if DEBUG:
 
 @cache.memoize()
 def main(url):
+    """
+    Main function to return webpage.
+    """
     data = read_write_data.read_data()
     drive_type = drive.drivetype(data, url)
-    if drive_type in ["SharePointSitePW", "OneDrivePW", "SharePointSiteAPI"]:
+    if drive_type in ["SharePointSitePW", "OneDrivePW", "SharePointSiteAPI", "OneDriveAPI"]:
         background = functions.random_background(data)
         if url[-1] == '/':
             url = url[:-1]
@@ -79,8 +98,6 @@ def main(url):
                             FILELIST=item_list,
                             headnote=note[0],
                             footnote=note[1]))
-    elif drive_type == "OneDriveAPI":
-        ret = make_response("Drive type not support yet.")
     elif drive_type == "GoogleDriveAPI":
         ret = make_response("Drive type not support yet.")
     else:
@@ -93,12 +110,15 @@ def main(url):
 
 @app.route("/", methods=['POST', 'GET'])
 def home():
+    """
+    Home page.
+    """
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
 
     data = read_write_data.read_data()
 
-    if data == None:
+    if data is None:
         return pages.initialization(request)
 
     if request.args:
@@ -123,7 +143,7 @@ def home():
                 return redirect(request.base_url)
 
     if data["ApiOnedriveSetting"][
-            "anonymous_viewlist"] == False and not permission.is_login(
+            "anonymous_viewlist"] is False and not permission.is_login(
                 data, request):
         response = pages.login(request)
     else:
@@ -141,6 +161,9 @@ def home():
 # 權限確認後列出檔案
 @app.route("/<path:path>", methods=['POST', 'GET'])
 def sub_dir(path):
+    """
+    List files under folder path.
+    """
     if path.split('/')[0] == 'static':
         return send_file('./' + path)
     if path == 'favicon.ico':
@@ -163,7 +186,7 @@ def sub_dir(path):
                 render_template("sharepoint_encrypt.html", warning="密碼錯誤"))
         return response
 
-    if data == None:
+    if data is None:
         return pages.initialization(request)
 
     if request.args:
@@ -196,13 +219,13 @@ def sub_dir(path):
                 return redirect(request.base_url)
     else:
         if data["Sites"][path.split('/')[0]]["type"] == "SharePointSiteAPI":
-            if data["Sites"][path.split('/')[0]].get("refresh_token") == None:
+            if data["Sites"][path.split('/')[0]].get("refresh_token") is None:
                 return microsoft_token_auth.init_access_token(data, request)
             elif time.time() - data["Sites"][path.split('/')
                                              [0]]["t"] > 60 * 60:
                 microsoft_token_auth.reflash_token(data, path.split('/')[0])
         if data["ApiOnedriveSetting"][
-                "anonymous_viewlist"] == False and not permission.is_login(
+                "anonymous_viewlist"] is False and not permission.is_login(
                     data, request):
             response = redirect(request.base_url + '/?login=1')
         else:

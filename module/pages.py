@@ -8,7 +8,8 @@ from typing import Callable
 import markdown
 import chardet
 import requests
-from flask import render_template, make_response, redirect, url_for, Request, Response, Markup
+from flask import render_template, make_response, redirect, url_for, Request, Response
+from markupsafe import Markup
 from flask_caching import Cache
 from module.read_write_data import write_data, read_data
 from module.auth.microsoft_cookie_auth import read_cookie
@@ -21,19 +22,20 @@ from module import config
 def reflash(path: str, cache: Cache, func: Callable,
             user_request: Request) -> Response:
     """
-    Reflashes the cache for a given path and redirects the user to the previous page.
+    Clears the cache for the given path and redirects the user back to the
+    referrer or to the home page if there is no referrer.
 
     Args:
-        path (str): The path for which the cache needs to be cleared.
-        cache (Cache): The cache object used to store cached data.
-        func (Callable): The function whose cache needs to be cleared.
-        user_request (Request): A request object containing information about the user.
+    -   path (str): The path for which the cache needs to be cleared.
+    -   cache (Cache): The cache object used to store cached data.
+    -   func (Callable): The function whose cache needs to be cleared.
+    -   user_request (Request): A request object containing information about the user.
 
     Returns:
-        Response: A response object that redirects the user to the previous page.
+    -   Response: A response object that redirects the user to the previous page or to the home page.
 
     Raises:
-        N/A
+    -   N/A
     """
     if path != '':
         cache.delete_memoized(func, path)
@@ -46,19 +48,19 @@ def reflash(path: str, cache: Cache, func: Callable,
 def initialization(user_request: Request) -> str | Response:
     """
     Initializes the application with user-provided data, clears the cache for a given path,
-        and redirects the user to the previous page.
+    and redirects the user to the previous page.
 
     Args:
-        user_request (Request): A request object containing information about the user.
+    -   user_request (Request): A request object containing information about the user.
 
     Returns:
-        Union[str, Response]: If the request method is 'GET',
+    -   Union[str, Response]: If the request method is 'GET',
             returns a rendered template for the initialization page.
             Otherwise, initializes the application with the user-provided data,
             clears the cache for a given path, and redirects the user to the previous page.
 
     Raises:
-        N/A
+    -   KeyError: If a required form field is missing.
     """
     if user_request.method == 'GET':
         return render_template('initialization.html')
@@ -123,21 +125,20 @@ def setting(user_request: Request) -> Response:
     If the form is not submitted, it renders the setting page.
 
     Args:
-    - user_request (Request): A request object containing information about the user.
+    -   user_request (Request): A request object containing information about the user.
 
     Returns:
-    - Response: A response object that cotain setting page.
+    -   Response: A response object that cotain setting page.
 
     Raises:
-    - None
-
+    -   N/A
     """
     data = read_data()
     if not is_login(data, user_request):
         response = redirect(user_request.base_url + '/?login')
     elif not is_admin(data, user_request) and is_login(data, user_request):
         response = 'Permission not allow'
-    if 'logout' in user_request.args:
+    elif 'logout' in user_request.args:
         response = logout(user_request)
     elif user_request.form:
         if 'background' in user_request.form:
@@ -227,6 +228,8 @@ def report_cookie(user_request: Request) -> str:
     -   str: The cookie value for the site, or an error message if the site is not found or not
             a SharePoint site with a password.
 
+    Raises:
+    -   N/A
     """
     site = user_request.args.get("cookie")
     data = read_data()
@@ -250,22 +253,29 @@ def status() -> str:
     Return 'Online' if website is online.
 
     Args:
-        N/A
+    -   N/A
 
     Returns:
     -   str: 'Online'
 
+    Raises:
+    -   N/A
     """
     return 'Online'
 
 
 def preview(user_request: Request) -> Response:
     """
-    Displays a preview of the requested file.
+    Displays a preview of the requested file if anonymous_viewlist is True or user logged in.
+
     Args:
-        user_request: A Request object containing user information.
+    -   user_request (Request): A request object containing information about the user.
+
     Returns:
-        A Response object containing the preview page.
+    -   A Response object containing the preview page.
+
+    Raises:
+    -   N/A
     """
     data = read_data()
     # 檢查權限
@@ -312,18 +322,17 @@ def preview(user_request: Request) -> Response:
 
 def download(url: str, user_request: Request) -> Response:
     """
-    Downloads the file at the given URL if the user has permission to do so.
+    Redirect the user to the download link of the file at the given URL if the user has permission to do so.
 
     Args:
-    - url (str): The URL of the file to download.
-    - user_request (Request): A request object containing information about the user.
+    -   url (str): The URL of the file to download.
+    -   user_request (Request): A request object containing information about the user.
 
     Returns:
-    - Response: A redirect response object that directs the user to the download link.
+    -   Response: A redirect response object that directs the user to the download link.
 
     Raises:
-    - None
-
+    -   N/A
     """
     data = read_data()
     # 檢查權限
@@ -341,11 +350,11 @@ def cookie(user_request: Request) -> str:
     Generates a cookie for the specified SharePoint site.
 
     Args:
-        user_request (Request): The HTTP request object containing the 
+    -   user_request (Request): The HTTP request object containing the 
         site's name in the 'cookie' parameter.
 
     Returns:
-        str: The generated cookie string if successful, or an error message 
+    -   str: The generated cookie string if successful, or an error message 
         if the site is not found or its type is not 'SharePointSitePW'.
     """
     alia = user_request.args.get("cookie")

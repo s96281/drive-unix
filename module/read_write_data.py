@@ -16,15 +16,18 @@ def read_data(redis: Redis | None = config.REDIS,
     Reads and returns data from Redis or a local cache file.
 
     Parameters:
-    redis (Redis): Redis instance to connect to.
-    redis_sync (bool): Flag to determine whether to use Redis as the data source.
-    redis_sync_key (str): Key to use for Redis.
-    data_location (str): Path to the local cache file.
-    redis_sync_expires (int): Expiration time (in seconds) for the Redis cache.
+    -   redis (Redis): Redis instance to connect to.
+    -   redis_sync (bool): Flag to determine whether to use Redis as the data source.
+    -   redis_sync_key (str): Key to use for Redis.
+    -   data_location (str): Path to the local cache file.
+    -   redis_sync_expires (int): Expiration time (in seconds) for the Redis cache.
 
     Returns:
-    dict or None: If Redis is used, returns a dictionary containing the retrieved data.
-    If a local cache file is used or Redis fails to retrieve data, returns None.
+    -   dict or None: If Redis is used, returns a dictionary containing the retrieved data.
+        If a local cache file is used or Redis fails to retrieve data, returns None.
+
+    Raises:
+    -   N/A
     """
     if redis_sync:
         print('讀取資料中...')
@@ -87,17 +90,17 @@ def write_data(data: dict,
     Writes data to a Redis database or local cache file.
 
     Args:
-        data (dict): The data to be written.
-        redis (Redis | None): A Redis client object.
-        redis_sync_key (str | None): The key to use for Redis storage.
-        data_location (str): The path to the local cache file.
-        redis_sync (bool): A boolean indicating whether to use Redis as the data source.
+    -   data (dict): The data to be written.
+    -   redis (Redis | None): A Redis client object.
+    -   redis_sync_key (str | None): The key to use for Redis storage.
+    -   data_location (str): The path to the local cache file.
+    -   redis_sync (bool): A boolean indicating whether to use Redis as the data source.
 
     Returns:
-        bool: True if the write was successful.
+    -   bool: True if the write was successful.
 
     Raises:
-        None
+    -   N/A
     """
     data = json.dumps(data)
     if redis_sync:

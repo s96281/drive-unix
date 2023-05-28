@@ -448,6 +448,22 @@
                                 name="redirect_uri-{{key|replace(' ', '%$%')}}" value="{{value['redirect_uri']}}">
                         </div>
                         {% elif value['type'] == 'OneDrivePW' %}
+                        <input type="hidden" name="type-{{key|replace(' ', '%$%')}}" value="OneDrivePW" />
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Host</span>
+                            <input type="text" class="form-control" placeholder=""
+                                name="endpoint-{{key|replace(' ', '%$%')}}" value="{{value['endpoint']}}">
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Email address</span>
+                            <input type="text" class="form-control" placeholder=""
+                                name="username-{{key|replace(' ', '%$%')}}" value="{{value['username']}}">
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Password</span>
+                            <input type="password" class="form-control" placeholder=""
+                                name="password-{{key|replace(' ', '%$%')}}" value="{{value['password']}}">
+                        </div>
                         {% elif value['type'] == 'OneDriveAPI' %}
                         {% elif value['type'] == 'GoogleDriveAPI' %}
                         {% endif %}

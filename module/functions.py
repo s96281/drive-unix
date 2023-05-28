@@ -12,12 +12,15 @@ def sizeof_fmt(num: float | int, suffix: str = "B") -> str:
     Formats the given size in bytes into a human-readable string with appropriate unit suffix.
 
     Args:
-        num (float or int): The size in bytes to be formatted.
-        suffix (str, optional): The unit suffix to be appended to the formatted string.
+    -   num (float or int): The size in bytes to be formatted.
+    -   suffix (str, optional): The unit suffix to be appended to the formatted string.
             Default is "B".
 
     Returns:
-        str: A human-readable string representing the size with appropriate unit suffix.
+    -   str: A human-readable string representing the size with appropriate unit suffix.
+
+    Raises:
+    -   N/A
 
     Examples:
         >>> sizeof_fmt(1024)
@@ -39,11 +42,11 @@ def utc_local_convert(time: float, utc: int = config.UTC) -> str:
     Converts a UTC timestamp into a local time string.
 
     Args:
-        time (float): A UTC timestamp in seconds since the epoch.
-        utc (int, optional): The offset from UTC in hours. Default is 0.
+    -   time (float): A UTC timestamp in seconds since the epoch.
+    -   utc (int, optional): The offset from UTC in hours. Default is 0.
 
     Returns:
-        str: A string representing the local time in the format "Day Mon DD HH:MM:SS YYYY", where:
+    -   str: A string representing the local time in the format "Day Mon DD HH:MM:SS YYYY", where:
             - Day is the abbreviated name of the day of the week (e.g. "Mon").
             - Mon is the abbreviated name of the month (e.g. "Jan").
             - DD is the day of the month as a zero-padded decimal number (e.g. "01").
@@ -51,6 +54,9 @@ def utc_local_convert(time: float, utc: int = config.UTC) -> str:
             - MM is the minute as a zero-padded decimal number (e.g. "59").
             - SS is the second as a zero-padded decimal number (e.g. "23").
             - YYYY is the year as a four-digit decimal number (e.g. "2022").
+
+    Raises:
+    -   N/A
 
     Examples:
         >>> utclocalconvert(1643108652.0)
@@ -69,41 +75,44 @@ def url_standardization(url: str) -> str:
     Converts a URL string to a standardized format.
 
     Args:
-        url (str): A string representing a URL.
+    -   url (str): A string representing a URL.
 
     Returns:
-        str: A string representing the standardized format of the input URL, where:
+    -   str: A string representing the standardized format of the input URL, where:
             - The URL is first unquoted using the urllib.parse.unquote() function.
             - The unquoted URL is then quoted again using the urllib.parse.quote() function,
                 using the safe characters '/?='.
+
+    Raises:
+    -   N/A
 
     Examples:
         >>> url_standardization("param1=value1&param2=value2")
         'param1=value1%26param2=value2'
     """
     url = urllib.parse.unquote(url)
-    url = urllib.parse.quote(url, safe='/?=')
+    url = urllib.parse.quote(url, safe='/?=:')
     return url
 
 
 def random_background(data: dict) -> str:
     """
     Returns a randomly selected background image from a list of images obtained from the input
-        dictionary.
+    dictionary.
 
     Args:
-        data (dict): A dictionary containing the 'ApiOnedriveSetting' key, which maps to another
+    -   data (dict): A dictionary containing the 'ApiOnedriveSetting' key, which maps to another
             dictionary containing the 'backgroudimagelist' key. The value of this key is a list of
             strings representing URLs of background images.
 
     Returns:
-        str: A string representing a URL of a randomly selected background image from the input.
+    -   str: A string representing a URL of a randomly selected background image from the input.
             If the list is empty or the keys are not present in the input dictionary,
             an empty string is returned.
 
     Raises:
-        IndexError: If the input list is empty.
-        KeyError: If the 'ApiOnedriveSetting' or 'backgroudimagelist' keys
+    -   IndexError: If the input list is empty.
+    -   KeyError: If the 'ApiOnedriveSetting' or 'backgroudimagelist' keys
             are not present in the input dictionary.
     """
     try:
@@ -126,7 +135,10 @@ def list_drive(data: dict) -> list:
     
     Returns:
     - A list of all the drives available in the data dictionary.
-    """
+
+    Raises:
+    -   N/A
+    """ 
     return list(data['Sites'])
 
 
@@ -135,11 +147,14 @@ def get_file_type(extension: str) -> str:
     Determines the type of a file based on its extension.
 
     Args:
-        extension (str): The file extension to check.
+    -   extension (str): The file extension to check.
 
     Returns:
-        str: The file type, which can be one of the following: 'video', 'image',
+    -   str: The file type, which can be one of the following: 'video', 'image',
              'audio', 'office', 'text', 'program', or 'unknown'.
+
+    Raises:
+    -   N/A
     """
     extension = extension.lower()
     video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
@@ -151,16 +166,17 @@ def get_file_type(extension: str) -> str:
                           ".c", ".cpp", ".java", ".html", ".htm"]
 
     if extension in video_extensions:
-        return "video"
+        result = "video"
     elif extension in image_extensions:
-        return "image"
+        result = "image"
     elif extension in audio_extensions:
-        return "audio"
+        result = "audio"
     elif extension in document_extensions:
-        return "office"
+        result = "office"
     elif extension in text_extensions:
-        return "text"
+        result = "text"
     elif extension in program_extensions:
-        return "programe"
+        result = "programe"
     else:
-        return "unknown"
+        result = "unknown"
+    return result

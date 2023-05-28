@@ -52,7 +52,7 @@ def sharepointpw_getdownloadlink(data: dict, alia: str,
 
     Args:
     -   data (dict): A dictionary containing information about the SharePoint sites.
-    -   site (str): The name of the SharePoint site.
+    -   alia (str): The alia of the SharePoint site.
     -   path (str): The path of the file in the SharePoint site.
 
     Returns:
@@ -245,6 +245,35 @@ def sharepointpw_files(data: dict, alia: str, path: str = None) -> dict:
     else:
         ret = sharepointpw_root_files(data, alia)
     return ret
+
+
+def sharepointapi_thumbnail(data: dict, alia: str, path: str) -> dict:
+    try:
+        response = {}
+        endpoint = data['Sites'][alia]["endpoint"]
+        username = data['Sites'][alia]["username"]
+        password = data['Sites'][alia]["password"]
+        site = data['Sites'][alia]["site"]
+        cookie = read_cookie(endpoint, username, password)
+        header = {
+            'cookie': cookie,
+            'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0',
+            'Sec-Fetch-User': '?1'
+        }
+        path = urllib.parse.quote(path)
+        url = endpoint + '_api/v2.1/sites/' + endpoint.split('/')[2] + ':/sites/' + \
+            site + ':/drive/root:' + path + ':/thumbnails'
+        res = requests.get(url,
+                           headers=header,
+                           timeout=config.REQUEST_TIME_OUT).json()
+        if 'error' in res:
+            response = {"error": res["error"]}
+        else:
+            response = {"url": res["value"][0][config.thumbnail_size]}
+        return response
+    except KeyError:
+        return {"error": f"Drive {alia} not found."}
 
 
 def sharepointpw_head_foot_note(data: dict, alia: str, path: str,

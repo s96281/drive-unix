@@ -6,10 +6,20 @@ import markdown
 import requests
 from markupsafe import Markup
 from module.auth import microsoft_token_auth
-from module import config
+from module import config, read_write_data
 
 
 def sitename2id(data: dict, alia: str) -> str | None:
+    """
+    Convert Site name to id.
+    
+    Args:
+    - data: A dictionary containing the SharePoint account list and its details.
+    - alia: A string representing the name of the SharePoint site to access.
+
+    Returns:
+    - str or None: Retuen id string of the drive if it is exist, else return None.
+    """
     try:
         if "id" not in data["Sites"][alia]:
             access_token = microsoft_token_auth.read_token(data, alia)
@@ -21,10 +31,13 @@ def sitename2id(data: dict, alia: str) -> str | None:
                                timeout=config.REQUEST_TIME_OUT).json()['value']
             site_id = None
             for i in res:
-                if i["webUrl"].split('/')[-1] == alia:
+                if i["displayName"] == site:
+                    site_id = i["id"].split(',')[1]
+                elif i["name"] == site:
                     site_id = i["id"].split(',')[1]
             if site_id:
                 data["Sites"][alia]["id"] = site_id
+                read_write_data.write_data(data)
                 return site_id
             raise RuntimeError(f"Can not get drive id of {alia}")
         return data["Sites"][alia]["id"]
@@ -33,6 +46,19 @@ def sitename2id(data: dict, alia: str) -> str | None:
 
 
 def sharepointapi_details(data: dict, alia: str) -> dict:
+    """
+    Retrieves the details of the SharePoint account, including the endpoint, username,
+    password, and cookie, and returns the JSON response obtained by sending a GET request
+    to the specified SharePoint site.
+
+    Args:
+    - data: A dictionary containing the SharePoint account list and its details.
+    - alia: A string representing the name of the SharePoint site to access.
+
+    Returns:
+    - A dictionary containing the JSON response obtained by sending a GET request to the
+    specified SharePoint site.
+    """
     try:
         site_id = sitename2id(data, alia)
         access_token = microsoft_token_auth.read_token(data, alia)
@@ -48,6 +74,18 @@ def sharepointapi_details(data: dict, alia: str) -> dict:
 
 def sharepointapi_getdownloadlink(data: dict, alia: str,
                                   path: str) -> str | dict:
+    """Get the download link of a file from a SharePoint site.
+
+    Args:
+    -   data (dict): A dictionary containing information about the SharePoint sites.
+    -   alia (str): The alia of the SharePoint site.
+    -   path (str): The path of the file in the SharePoint site.
+
+    Returns:
+    -   str or dict: The download link of the file if it exists,
+            otherwise dict that contain the reasion of error.
+
+    """
     try:
         site_id = sitename2id(data, alia)
         access_token = microsoft_token_auth.read_token(data, alia)
@@ -167,6 +205,10 @@ def sharepointapi_files(data: dict, alia: str, path: str = None) -> dict:
     else:
         ret = sharepointapi_root_files(data, alia)
     return ret
+
+
+def sharepointapi_thumbnail(data: dict, alia: str, path: str) -> dict:
+    pass
 
 
 def sharepointapi_head_foot_note(data: dict, alia: str, path: str,
