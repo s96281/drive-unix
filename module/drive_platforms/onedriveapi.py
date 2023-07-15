@@ -217,7 +217,7 @@ def onedriveapi_thumbnail(data: dict, alia: str, path: str) -> dict:
         if 'error' in res:
             response = {"error": res["error"]}
         else:
-            response = {"url": res["value"][0][config.thumbnail_size]}
+            response = {"url": res["value"][0][config.THUMBNAIL_SIZE]}
         return response
     except KeyError:
         return {"error": f"Drive {alia} not found."}

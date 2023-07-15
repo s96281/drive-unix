@@ -6,7 +6,7 @@ import markdown
 import requests
 from markupsafe import Markup
 from module.auth.microsoft_cookie_auth import read_cookie
-from module import config
+from module import config, functions
 
 
 def ondrivepw_detail(data: dict, drive: str) -> dict:
@@ -59,17 +59,7 @@ def ondrivepw_getdownloadlink(data: dict, drive: str, path: str) -> str | dict:
                            headers=header,
                            timeout=config.REQUEST_TIME_OUT).json()
         if "error" in res:
-            if config.DEBUG:
-                print({
-                    "error":
-                    f"SharePoint REST API response error: {res['error']}",
-                    "function":
-                    "sharepointpw_getdownloadlink",
-                    "arguments":
-                    f"data: {data}, drive: {drive}, path: {path}"
-                })
-            else:
-                pass
+            functions.log("ERROR", res['error'])
         elif '@content.downloadUrl' in res:
             return res['@content.downloadUrl']
         return {"error": res}

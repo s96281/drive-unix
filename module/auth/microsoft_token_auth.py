@@ -7,7 +7,7 @@ import urllib.parse
 import requests
 from flask import make_response, render_template, redirect, Request, Response
 from module.read_write_data import write_data
-from module import config
+from module import config, functions
 
 
 def init_access_token(data: str, request: Request) -> Response:
@@ -120,7 +120,7 @@ def reflash_token(data: dict, alia: str) -> None:
         data["Sites"][alia]["t"] = time.time()
         write_data(data)
     except KeyError:
-        print(f"Error, {json.dumps(retur)}")
+        functions.log("ERROR", json.dumps(retur))
 
 
 def read_token(data: dict, alia: str) -> str:

@@ -3,6 +3,7 @@ Permission control.
 """
 import hashlib
 from flask import Request, Response, make_response, redirect, render_template, url_for
+from module import functions
 from module.read_write_data import read_data
 
 def is_login(data: dict, user_request: Request) -> bool:
@@ -30,7 +31,7 @@ def is_login(data: dict, user_request: Request) -> bool:
     try:
         password_hash = data["ApiOnedriveSetting"]["users"][user]["password"]
     except KeyError as esc:
-        print({"error": esc})
+        functions.log("ERROR", esc)
         return False
     if password_hash == password:
         return True
@@ -62,7 +63,7 @@ def is_admin(data: dict, user_request: Request) -> bool:
     try:
         if data["ApiOnedriveSetting"]["users"][user]["rank"] == "admin":
             return True
-        return True
+        return False
     except KeyError:
         return False
 

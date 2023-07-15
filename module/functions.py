@@ -37,7 +37,7 @@ def sizeof_fmt(num: float | int, suffix: str = "B") -> str:
     return f"{num:.1f}Yi{suffix}"
 
 
-def utc_local_convert(time: float, utc: int = config.UTC) -> str:
+def utc_local_convert(time: float, utc: int = int(config.UTC)) -> str:
     """
     Converts a UTC timestamp into a local time string.
 
@@ -120,8 +120,7 @@ def random_background(data: dict) -> str:
             'backgroud_image_list']
         background_image = background_image_list[
             random.randint(0, len(background_image_list)) - 1]
-    except (IndexError, KeyError) as esc:
-        print({"error": esc})
+    except (IndexError, KeyError):
         background_image = ''
     return background_image
 
@@ -138,7 +137,7 @@ def list_drive(data: dict) -> list:
 
     Raises:
     -   N/A
-    """ 
+    """
     return list(data['Sites'])
 
 
@@ -158,12 +157,17 @@ def get_file_type(extension: str) -> str:
     """
     extension = extension.lower()
     video_extensions = [".mp4", ".mkv", ".flv", ".avi", ".mov", ".wmv"]
-    image_extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
-    audio_extensions = [".mp3", ".wav", ".flac", ".aac"]
-    document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".pdf"]
+    image_extensions = [
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".avif"
+    ]
+    audio_extensions = [".mp3", ".wav", ".flac", ".aac", ".weba", ".m4a"]
+    document_extensions = [".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"]
+    pdf = [".pdf"]
     text_extensions = [".txt"]
-    program_extensions = [".json", ".py",
-                          ".c", ".cpp", ".java", ".html", ".htm"]
+    program_extensions = [
+        ".json", ".py", ".c", ".cpp", ".java", ".html", ".htm"
+    ]
+    ebook = [".epub"]
 
     if extension in video_extensions:
         result = "video"
@@ -177,6 +181,35 @@ def get_file_type(extension: str) -> str:
         result = "text"
     elif extension in program_extensions:
         result = "programe"
+    elif extension in ebook:
+        result = "ebook"
+    elif extension in pdf:
+        result = "pdf"
     else:
         result = "unknown"
     return result
+
+
+def log(level: str,
+        message: str,
+        log_location: str = config.LOG_LOCATION) -> None:
+    """
+    Write log message into log file.
+
+    Args:
+    - level (str): Message level. Could be "ERROR", "WARN" or "INFO".
+    - message (str): Message to describe situation.
+    - log_location (str): Location to storage log file. Default is LOG_LOCATION in config.
+
+    Returns:
+    - None
+
+    Raises:
+    - None
+    """
+    with open(log_location, '+a', encoding="UTF-8") as file_descriptor:
+        file_descriptor.write(
+            f"\n[{level}] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}"
+        )
+    if config.DEBUG:
+        print(f"\n[{level}] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")

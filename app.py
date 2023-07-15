@@ -10,9 +10,8 @@ from flask import make_response, send_file, g
 from flask_caching import Cache
 from natsort import os_sorted
 from module.config import DEBUG, CACHE_LOCATION, CACHE_CONFIG, HEADINGS
-from module import permission, functions, pages, read_write_data
+from module import permission, functions, pages, read_write_data, drive
 from module.auth import microsoft_token_auth
-from module.drive_platforms import drive
 
 # 效能分析工具
 if DEBUG:
@@ -72,34 +71,40 @@ def main(url):
         site = url.split('/')[0]
         path = '/'.join(url.split('/')[1:])
         sharepointsite_files_dict = drive.files(data, site, path)
-        for key, values in sharepointsite_files_dict.items():
-            last_modified_datetime = functions.utc_local_convert(
-                values['lastModifiedDateTime'])
-            size = functions.sizeof_fmt(values['size'])
-            if values['type'] == 'folder':
-                folder_list.append([
-                    key, last_modified_datetime, size,
-                    f"/{url}/{urllib.parse.quote(key)}"
-                ])
+        if "warning" in sharepointsite_files_dict or "error" in sharepointsite_files_dict:
+            if path.split("/")[-1] in drive.files(data, site, "/".join(path.split("/")[:-1])):
+                ret = {"message": f"{path} is a file, not a folder.", "site": site, "path": path}
             else:
-                file_list.append([
-                    key, last_modified_datetime, size,
-                    f"/{url}/{urllib.parse.quote(key)}?preview=1"
-                ])
-        folder_list = os_sorted(folder_list, key=lambda x: x[0])
-        file_list = os_sorted(file_list, key=lambda x: x[0])
-        item_list.extend(folder_list)
-        item_list.extend(file_list)
-        note = drive.head_foot_note(data, site, path, item_list)
-        ret = make_response(
-            render_template('sharepoint_main.html',
-                            headings=HEADINGS,
-                            BackgroundImage=background,
-                            FILELIST=item_list,
-                            headnote=note[0],
-                            footnote=note[1]))
+                ret = sharepointsite_files_dict
+        else:
+            for key, values in sharepointsite_files_dict.items():
+                last_modified_datetime = functions.utc_local_convert(
+                    values['lastModifiedDateTime'])
+                size = functions.sizeof_fmt(values['size'])
+                if values['type'] == 'folder':
+                    folder_list.append([
+                        key, last_modified_datetime, size,
+                        f"/{url}/{urllib.parse.quote(key)}"
+                    ])
+                else:
+                    file_list.append([
+                        key, last_modified_datetime, size,
+                        f"/{url}/{urllib.parse.quote(key)}?preview=1"
+                    ])
+            folder_list = os_sorted(folder_list, key=lambda x: x[0])
+            file_list = os_sorted(file_list, key=lambda x: x[0])
+            item_list.extend(folder_list)
+            item_list.extend(file_list)
+            note = drive.head_foot_note(data, site, path, item_list)
+            ret = make_response(
+                render_template('sharepoint_main.html',
+                                headings=HEADINGS,
+                                BackgroundImage=background,
+                                FILELIST=item_list,
+                                headnote=note[0],
+                                footnote=note[1]))
     elif drive_type == "GoogleDriveAPI":
-        ret = make_response("Drive type not support yet.")
+        ret = make_response(f"{drive_type} not support yet.")
     else:
         ret = make_response("Drive Type Not Support.")
     return ret
@@ -189,6 +194,10 @@ def sub_dir(path):
     if data is None:
         return pages.initialization(request)
 
+    if path.split('/')[0] not in data["Sites"]:
+        ret = make_response({"error": f"Drive {path.split('/')[0]} not found."}, 404)
+        return ret
+
     if request.args:
         for i in request.args:
             if i == "initialization":
@@ -236,13 +245,26 @@ def sub_dir(path):
                 else:
                     if request.cookies.get(path + "_pw") == hashlib.sha256(
                             password.encode()).hexdigest():
-                        response = main(url=path)
+                        main_response = main(url=path)
+                        if isinstance(main_response, dict) and "message" in main_response:
+                            response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                        elif isinstance(main_response, dict) and "warning" in main_response:
+                            response = make_response(main_response, 404)
+                        else:
+                            response = make_response(main_response)
                     else:
                         response = make_response(
                             render_template("sharepoint_encrypt.html",
                                             warning="加密資料夾，請輸入密碼"))
             else:
-                response = main(url=path)
+                main_response = main(url=path)
+                if isinstance(main_response, dict) and "message" in main_response:
+                    response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                elif isinstance(main_response, dict) and "warning" in main_response:
+                    response = make_response(main_response, 404)
+                else:
+                    response = make_response(main_response)
+        response.headers["Access-Control-Allow-Origin"] = "*"
         return response
 
 

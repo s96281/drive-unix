@@ -6,7 +6,7 @@ import markdown
 import requests
 from markupsafe import Markup
 from module.auth import microsoft_token_auth
-from module import config, read_write_data
+from module import config, read_write_data, functions
 
 
 def sitename2id(data: dict, alia: str) -> str | None:
@@ -25,7 +25,7 @@ def sitename2id(data: dict, alia: str) -> str | None:
             access_token = microsoft_token_auth.read_token(data, alia)
             headers = {'Authorization': 'Bearer ' + access_token}
             site = data['Sites'][alia]["site"]
-            url = "https://graph.microsoft.com/v1.0/sites?search='" + site + "'"
+            url = "https://graph.microsoft.com/v1.0/sites?search=*"
             res = requests.get(url,
                                headers=headers,
                                timeout=config.REQUEST_TIME_OUT).json()['value']
@@ -91,22 +91,14 @@ def sharepointapi_getdownloadlink(data: dict, alia: str,
         access_token = microsoft_token_auth.read_token(data, alia)
         headers = {'Authorization': 'Bearer ' + access_token}
         path = urllib.parse.quote(path)
-        url = "https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive/root:" + path
+        url = "https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive/root:/" + path
         res = requests.get(url,
                            headers=headers,
                            timeout=config.REQUEST_TIME_OUT).json()
         if "error" in res:
-            if config.DEBUG:
-                print({
-                    "error":
-                    f"SharePoint REST API response error: {res['error']}",
-                    "function": "sharepointpw_getdownloadlink",
-                    "arguments": f"data: {data}, alia: {alia}, path: {path}"
-                })
-            else:
-                pass
-        elif '@content.downloadUrl' in res:
-            return res['@content.downloadUrl']
+            functions.log("ERROR", res['error'])
+        elif '@microsoft.graph.downloadUrl' in res:
+            return res['@microsoft.graph.downloadUrl']
         return {"error": res}
     except KeyError:
         return {"error": f"Drive {alia} not found."}

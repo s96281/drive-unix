@@ -4,3 +4,5 @@ cache
 env
 cookies
 *env
+.space
+data/*
