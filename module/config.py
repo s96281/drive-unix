@@ -4,39 +4,38 @@ Provides configuration variables and functions for the application.
 import os
 from redis import Redis
 
-DEBUG = False
-
 # 設定設定檔、金鑰、快取存放位置
 if os.name == 'nt':  # Windows
     CACHE_LOCATION = './data/cache'
     DATA_LOCATION = './data/data'
     COOKIES_LOCATION = './data/cookies'
+    LOG_LOCATION = './data/log.txt'
 else:  # Linux、MacOS
     DATA_LOCATION = './data/data'
     COOKIES_LOCATION = './data/cookies'
     CACHE_LOCATION = './data/cache'
+    LOG_LOCATION = './data/log.txt'
 
-# 如果你的資料庫擁有上萬文件，可以適當調高此參數(建議不高於5000)
+# 如果你的資料庫中單個文件夾擁有大量文件，可以適當調高此參數(建議不高於5000)
 REQUEST_SIZE = 2000
 
 # 設定是否由資料庫同步資料
-REDIS_SYNC = True
+REDIS_SYNC = os.environ.get("REDIS_SYNC") != "False"
 # 設定Redis資料庫
 REDIS = Redis(
-    host='global-liked-dassie-31251.upstash.io',
-    port='31251',
-    password='585f5b3af15540d381dc46bf429a7420',
+    host=os.environ.get("REDIS_host") or 'global-liked-dassie-31251.upstash.io',
+    port=os.environ.get("REDIS_port") or '31251',
+    password=os.environ.get("REDIS_password") or '585f5b3af15540d381dc46bf429a7420',
     ssl=True,
     decode_responses=True
 )
 # 設定同步資料間隔時間
-REDIS_SYNC_EXPIRES = 432000
+REDIS_SYNC_EXPIRES = os.environ.get("REDIS_SYNC_EXPIRES") or 3600 # Sync per hour
 # 設定資料庫鍵
-REDIS_SYNC_KEY = 'HenrySharePoint'
+REDIS_SYNC_KEY = os.environ.get("REDIS_SYNC_KEY") or 'TEMP_DATA'
 
-REQUEST_TIME_OUT = 30
 
-UTC = 8
+UTC = os.environ.get("UTC") or 8
 
 CACHE_CONFIG = {
     "DEBUG": False,
@@ -47,4 +46,11 @@ CACHE_CONFIG = {
     "CACHE_THRESHOLD": 500
 }
 
+
+DEBUG = False
+
 HEADINGS = ['Name', 'Last edit time', 'Size']
+
+REQUEST_TIME_OUT = 30
+
+THUMBNAIL_SIZE = "large" # or "medium", "small"

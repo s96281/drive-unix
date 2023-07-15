@@ -61,30 +61,55 @@
                 <div class="input-group mb-3">
                     <span class="input-group-text">網頁背景圖</span>
                     <input type="text" class="form-control" placeholder='URL1,URL2,...(以","結尾)' name="background"
-                        value="{% for i in backgroud_image_list %}{{ i }},{% endfor %}">
+                        value="{% for i in DATA.ApiOnedriveSetting.backgroud_image_list %}{{ i }},{% endfor %}">
+                </div>
+                <div class="input-group mb-3">
+                    <span class="input-group-text">反代伺服器</span>
+                    <input type="text" class="form-control" placeholder='https://XXX.XXX?url=' name="proxy_server"
+                        value="{{ DATA.ApiOnedriveSetting.proxy_server }}">
                 </div>
                 <div class="input-group mb-3">
                     <span class="input-group-text">公開網站</span>
                     <select class="form-select" name="anonymous_viewlist">
                         <option selected>是否開放網站(不須登入即可檢視目錄)</option>
-                        <option value="0">是</option>
+                        {% if DATA.ApiOnedriveSetting.anonymous_viewlist %}
+                        <option value="0" selected>是</option>
                         <option value="1">否</option>
+                        {% else %}
+                        <option value="0">是</option>
+                        <option value="1" selected>否</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="input-group mb-3">
                     <span class="input-group-text">匿名下載</span>
                     <select class="form-select" name="anonymous_download">
                         <option selected>是否開放匿名下載(不須登入即可下載)</option>
-                        <option value="0">是</option>
+                        {% if DATA.ApiOnedriveSetting.anonymous_download %}
+                        <option value="0" selected>是</option>
                         <option value="1">否</option>
+                        {% else %}
+                        <option value="0">是</option>
+                        <option value="1" selected>否</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="input-group mb-3">
                     <span class="input-group-text">快取</span>
                     <select class="form-select" name="CACHE_TYPE">
+                        {% if DATA.ApiOnedriveSetting.CACHE_TYPE == "FileSystemCache" %}
+                        <option>設定伺服器快取形式</option>
+                        <option value="NullCache">NullCache</option>
+                        <option selected value="FileSystemCache">FileSystemCache</option>
+                        {% elif DATA.ApiOnedriveSetting.CACHE_TYPE == "NullCache" %}
+                        <option>設定伺服器快取形式</option>
+                        <option selected value="NullCache">NullCache</option>
+                        <option value="FileSystemCache">FileSystemCache</option>
+                        {% else %}
                         <option selected>設定伺服器快取形式</option>
                         <option value="NullCache">NullCache</option>
                         <option value="FileSystemCache">FileSystemCache</option>
+                        {% endif %}
                     </select>
                 </div>
                 <div class="input-group mb-3">
@@ -96,21 +121,31 @@
                 <div class="row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5" style="color: white;">
                     <div class="col">
                         <div class="mb-3 form-check">
+                            {% if DATA.ApiOnedriveSetting.top_md %}
+                            <input checked type="checkbox" class="form-check-input" value="True" name="top_md" id="top_md">
+                            {% else %}
                             <input type="checkbox" class="form-check-input" value="True" name="top_md" id="top_md">
+                            {% endif %}
                             <label class="form-check-label" for="top_md">顯示Header</label>
                         </div>
                     </div>
                     <div class="col">
                         <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" value="True" name="bottom_md"
-                                id="bottom_md">
+                            {% if DATA.ApiOnedriveSetting.bottom_md %}
+                            <input checked type="checkbox" class="form-check-input" value="True" name="bottom_md" id="bottom_md">
+                            {% else %}
+                            <input type="checkbox" class="form-check-input" value="True" name="bottom_md" id="bottom_md">
+                            {% endif %}
                             <label class="form-check-label" for="bottom_md">顯示footer</label>
                         </div>
                     </div>
                     <div class="col">
                         <div class="mb-3 form-check">
-                            <input type="checkbox" class="form-check-input" value="True" name="page_encrypt"
-                                id="page_encrypt">
+                            {% if DATA.ApiOnedriveSetting.page_encrypt %}
+                            <input checked type="checkbox" class="form-check-input" value="True" name="page_encrypt" id="page_encrypt">
+                            {% else %}
+                            <input type="checkbox" class="form-check-input" value="True" name="page_encrypt" id="page_encrypt">
+                            {% endif %}
                             <label class="form-check-label" for="page_encrypt">單頁面加密</label>
                         </div>
                     </div>
@@ -448,6 +483,22 @@
                                 name="redirect_uri-{{key|replace(' ', '%$%')}}" value="{{value['redirect_uri']}}">
                         </div>
                         {% elif value['type'] == 'OneDrivePW' %}
+                        <input type="hidden" name="type-{{key|replace(' ', '%$%')}}" value="OneDrivePW" />
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Host</span>
+                            <input type="text" class="form-control" placeholder=""
+                                name="endpoint-{{key|replace(' ', '%$%')}}" value="{{value['endpoint']}}">
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Email address</span>
+                            <input type="text" class="form-control" placeholder=""
+                                name="username-{{key|replace(' ', '%$%')}}" value="{{value['username']}}">
+                        </div>
+                        <div class="input-group mb-3">
+                            <span class="input-group-text">Password</span>
+                            <input type="password" class="form-control" placeholder=""
+                                name="password-{{key|replace(' ', '%$%')}}" value="{{value['password']}}">
+                        </div>
                         {% elif value['type'] == 'OneDriveAPI' %}
                         {% elif value['type'] == 'GoogleDriveAPI' %}
                         {% endif %}

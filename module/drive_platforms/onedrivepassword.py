@@ -4,9 +4,9 @@ Read OneDrive with password.
 import urllib.parse
 import markdown
 import requests
-from flask import Markup
-from module.auth.cookie_auth import read_cookie
-from module import config
+from markupsafe import Markup
+from module.auth.microsoft_cookie_auth import read_cookie
+from module import config, functions
 
 
 def ondrivepw_detail(data: dict, drive: str) -> dict:
@@ -59,17 +59,7 @@ def ondrivepw_getdownloadlink(data: dict, drive: str, path: str) -> str | dict:
                            headers=header,
                            timeout=config.REQUEST_TIME_OUT).json()
         if "error" in res:
-            if config.DEBUG:
-                print({
-                    "error":
-                    f"SharePoint REST API response error: {res['error']}",
-                    "function":
-                    "sharepointpw_getdownloadlink",
-                    "arguments":
-                    f"data: {data}, drive: {drive}, path: {path}"
-                })
-            else:
-                pass
+            functions.log("ERROR", res['error'])
         elif '@content.downloadUrl' in res:
             return res['@content.downloadUrl']
         return {"error": res}
@@ -103,7 +93,7 @@ def nextpage(header: dict, url: str) -> dict:
     return response
 
 
-def onedrive_root_files(data: dict, drive: str) -> dict:
+def onedrivepw_root_files(data: dict, drive: str) -> dict:
     try:
         response = {}
         endpoint = data["Sites"][drive].get("endpoint")
@@ -135,7 +125,7 @@ def onedrive_root_files(data: dict, drive: str) -> dict:
         return {"error": f"Drive {drive} not found."}
 
 
-def onedrive_path_files(data: dict, drive: str, path: str) -> dict:
+def onedrivepw_path_files(data: dict, drive: str, path: str) -> dict:
     try:
         response = {}
         endpoint = data["Sites"][drive].get("endpoint")
@@ -169,9 +159,9 @@ def onedrive_path_files(data: dict, drive: str, path: str) -> dict:
 
 def onedrivepw_files(data: dict, drive: str, path: str = None) -> dict:
     if path:
-        ret = onedrive_path_files(data, drive, path)
+        ret = onedrivepw_path_files(data, drive, path)
     else:
-        ret = onedrive_root_files(data, drive)
+        ret = onedrivepw_root_files(data, drive)
     return ret
 
 

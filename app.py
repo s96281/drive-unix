@@ -1,25 +1,21 @@
-import json
+"""
+flask-sharepoint-explorer
+"""
 import os
 import time
 import hashlib
 import urllib.parse
-import requests
-import markdown
 from flask import Flask, redirect, request, render_template
-from flask import make_response, Markup, send_file
+from flask import make_response, send_file, g
 from flask_caching import Cache
 from natsort import os_sorted
 from module.config import DEBUG, CACHE_LOCATION, CACHE_CONFIG, HEADINGS
-from module import permission, functions, pages, read_write_data
-from module.auth import token_auth
-from module.drive_platforms import drive
+from module import permission, functions, pages, read_write_data, drive
+from module.auth import microsoft_token_auth
 
 # 效能分析工具
 if DEBUG:
-    from flask import g
     from pyinstrument import Profiler
-
-requests = requests.Session()
 
 app = Flask(__name__)
 app.config.from_mapping(CACHE_CONFIG)
@@ -27,15 +23,30 @@ cache = Cache(app)
 
 # 效能分析工具
 if DEBUG:
-
     @app.before_request
     def before_request():
+        """
+        Starts profiling using a `Profiler` object if 'profile' is present in the request arguments.
+
+        Returns:
+            None
+        """
         if "profile" in request.args:
             g.profiler = Profiler()
             g.profiler.start()
-
     @app.after_request
     def after_request(response):
+        """
+        Modify the response object to include profiling data if `g.profiler` exists.
+
+        Args:
+            response: Flask response object.
+
+        Returns:
+            Response object if profiling data exists, else original response.
+            If the response contains profiling data, the response body will be an HTML
+            document containing profiling information.
+        """
         if not hasattr(g, "profiler"):
             return response
         g.profiler.stop()
@@ -45,10 +56,13 @@ if DEBUG:
 
 @cache.memoize()
 def main(url):
+    """
+    Main function to return webpage.
+    """
     data = read_write_data.read_data()
-    DriveType = drive.drivetype(data, url)
-    if DriveType == "SharePointSitePW" or DriveType == "OneDrivePW":
-        BackgroundImage = functions.random_background(data)
+    drive_type = drive.drivetype(data, url)
+    if drive_type in ["SharePointSitePW", "OneDrivePW", "SharePointSiteAPI", "OneDriveAPI"]:
+        background = functions.random_background(data)
         if url[-1] == '/':
             url = url[:-1]
         item_list = [['..', '', '', f"/{'/'.join(url.split('/')[0:-1])}"]]
@@ -57,226 +71,43 @@ def main(url):
         site = url.split('/')[0]
         path = '/'.join(url.split('/')[1:])
         sharepointsite_files_dict = drive.files(data, site, path)
-        for key, values in sharepointsite_files_dict.items():
-            last_modified_datetime = functions.utc_local_convert(
-                values['lastModifiedDateTime'])
-            size = functions.sizeof_fmt(values['size'])
-            if values['type'] == 'folder':
-                folder_list.append([
-                    key, last_modified_datetime, size,
-                    f"/{url}/{urllib.parse.quote(key)}"
-                ])
+        if "warning" in sharepointsite_files_dict or "error" in sharepointsite_files_dict:
+            if path.split("/")[-1] in drive.files(data, site, "/".join(path.split("/")[:-1])):
+                ret = {"message": f"{path} is a file, not a folder.", "site": site, "path": path}
             else:
-                file_list.append([
-                    key, last_modified_datetime, size,
-                    f"/{url}/{urllib.parse.quote(key)}?preview=1"
-                ])
-        folder_list = os_sorted(folder_list, key=lambda x: x[0])
-        file_list = os_sorted(file_list, key=lambda x: x[0])
-        item_list.extend(folder_list)
-        item_list.extend(file_list)
-        note = drive.head_foot_note(data, site, path, item_list)
-        return make_response(
-            render_template('sharepoint_main.html',
-                            headings=HEADINGS,
-                            BackgroundImage=BackgroundImage,
-                            FILELIST=item_list,
-                            headnote=note[0],
-                            footnote=note[1]))
-    elif DriveType == "SharePointSiteAPI":
-
-        def sitename2id(site):
-            access_token = token_auth.read_token(data, site)
-            headers = {'Authorization': 'Bearer ' + access_token}
-            url = "https://graph.microsoft.com/v1.0/sites?search='" + site + "'"
-            r = requests.get(url, headers=headers).json()['value']
-            for i in r:
-                if i["webUrl"].split('/')[-1] == site:
-                    return i["id"].split(',')[1]
-            return None
-
-        def nextpage(header, url) -> dict:
-            response = {}
-            r = requests.get(url, headers=header).text
-            r = json.loads(r)
-            if DEBUG:
-                print(r)
-            for i in r['value']:
-                response[i["name"]] = {
-                    "type": "folder" if "folder" in i else "file",
-                    "lastModifiedDateTime": i["lastModifiedDateTime"],
-                    "size": i["size"]
-                }
-            if "@odata.nextLink" in r:
-                response.update(nextpage(header, r["@odata.nextLink"]))
-            return response
-
-        def sharepointsite_root_files(data, site) -> dict:
-            response = {}
-            url = "https://graph.microsoft.com/v1.0/sites/" + sitename2id(
-                site) + "/drive/root/children"
-            access_token = token_auth.read_token(data, site)
-            headers = {'Authorization': 'Bearer ' + access_token}
-            r = requests.get(url, headers=headers).json()
-            for i in r['value']:
-                response[i["name"]] = {
-                    "type": "folder" if "folder" in i else "file",
-                    "lastModifiedDateTime": i["lastModifiedDateTime"],
-                    "size": i["size"]
-                }
-            if "@odata.nextLink" in r:
-                response.update(nextpage(headers, r["@odata.nextLink"]))
-            return response
-
-        def sharepointsite_path_files(data, site, path) -> dict:
-            response = {}
-            url = "https://graph.microsoft.com/v1.0/sites/" + sitename2id(
-                site) + "/drive/root:/" + path + ":/children"
-            access_token = token_auth.read_token(data, site)
-            headers = {'Authorization': 'Bearer ' + access_token}
-            r = requests.get(url, headers=headers).json()
-            for i in r['value']:
-                response[i["name"]] = {
-                    "type": "folder" if "folder" in i else "file",
-                    "lastModifiedDateTime": i["lastModifiedDateTime"],
-                    "size": i["size"]
-                }
-            if "@odata.nextLink" in r:
-                response.update(nextpage(headers, r["@odata.nextLink"]))
-            return response
-
-        def head_foot_note(data, url, SharePointFileList) -> list:
-            response = []
-            if data['ApiOnedriveSetting'].get('top_md') and 'top.md' in str(
-                    SharePointFileList):
-                _url = url + '/top.md'
-                path = '/'.join(_url.split('/')[1:])
-                r = requests.get(drive.get_downloadlink(data, site, path))
-                if r.ok:
-                    txt = r.text
-                    exts = ['extra', 'codehilite', 'tables', 'toc']
-                    txt = markdown.markdown(txt, extensions=exts)
-                    txt = Markup(txt)
-                    response.append(txt)
+                ret = sharepointsite_files_dict
+        else:
+            for key, values in sharepointsite_files_dict.items():
+                last_modified_datetime = functions.utc_local_convert(
+                    values['lastModifiedDateTime'])
+                size = functions.sizeof_fmt(values['size'])
+                if values['type'] == 'folder':
+                    folder_list.append([
+                        key, last_modified_datetime, size,
+                        f"/{url}/{urllib.parse.quote(key)}"
+                    ])
                 else:
-                    response.append(None)
-            else:
-                response.append(None)
-            if data['ApiOnedriveSetting'].get(
-                    'bottom_md') and 'bottom.md' in str(SharePointFileList):
-                _url = url + '/bottom.md'
-                path = '/'.join(_url.split('/')[1:])
-                r = requests.get(drive.get_downloadlink(data, site, path))
-                if r.ok:
-                    txt = r.text
-                    exts = ['extra', 'codehilite', 'tables', 'toc']
-                    txt = markdown.markdown(txt, extensions=exts)
-                    txt = Markup(txt)
-                    response.append(txt)
-                else:
-                    response.append(None)
-            else:
-                response.append(None)
-            return response
-
-        BackgroundImage = functions.random_background(data)
-
-        try:
-            if url[-1] == '/':
-                url = url[:-1]
-            if len(url.split('/')) == 1:
-                # List root files in site
-                SharePointFileList = [['..', '', '', '/']]
-                SharePointFileList_FOLDERS = []
-                SharePointFileList_FILES = []
-                site = url.split('/')[0]
-                sharepointsite_root_files_dict = sharepointsite_root_files(
-                    data, site)
-                for i in sharepointsite_root_files_dict:
-                    name = i
-                    time = functions.utc_local_convert(
-                        sharepointsite_root_files_dict[i]
-                        ['lastModifiedDateTime'])
-                    size = functions.sizeof_fmt(
-                        sharepointsite_root_files_dict[i]['size'])
-                    if sharepointsite_root_files_dict[i]['type'] == 'folder':
-                        SharePointFileList_FOLDERS.append([
-                            name, time, size,
-                            '/' + url + '/' + urllib.parse.quote(name)
-                        ])
-                    else:
-                        SharePointFileList_FILES.append([
-                            name, time, size, '/' + url + '/' +
-                            urllib.parse.quote(name) + '?preview=1'
-                        ])
-                SharePointFileList_FOLDERS = os_sorted(
-                    SharePointFileList_FOLDERS, key=lambda x: x[0])
-                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES,
-                                                     key=lambda x: x[0])
-                SharePointFileList.extend(SharePointFileList_FOLDERS)
-                SharePointFileList.extend(SharePointFileList_FILES)
-                # pylint: disable=unbalanced-tuple-unpacking
-                [headnote, footnote] = head_foot_note(data, url,
-                                                      SharePointFileList)
-                return make_response(
-                    render_template('sharepoint_main.html',
-                                    headings=HEADINGS,
-                                    BackgroundImage=BackgroundImage,
-                                    SharePointFileList=SharePointFileList,
-                                    headnote=headnote,
-                                    footnote=footnote))
-            if len(url.split('/')) > 1:
-                # List files in path
-                SharePointFileList = [[
-                    '..', '', '', '/' + '/'.join(url.split('/')[0:-1])
-                ]]
-                SharePointFileList_FOLDERS = []
-                SharePointFileList_FILES = []
-                site = data["Sites"][url.split('/')[0]]["site"]
-                path = '/'.join(url.split('/')[1:])
-                sharepointsite_path_files_dict = sharepointsite_path_files(
-                    data, site, path)
-                for i in sharepointsite_path_files_dict:
-                    name = i
-                    time = functions.utc_local_convert(
-                        sharepointsite_path_files_dict[i]
-                        ['lastModifiedDateTime'])
-                    size = functions.sizeof_fmt(
-                        sharepointsite_path_files_dict[i]['size'])
-                    if sharepointsite_path_files_dict[i]['type'] == 'folder':
-                        SharePointFileList_FOLDERS.append([
-                            name, time, size,
-                            '/' + url + '/' + urllib.parse.quote(name)
-                        ])
-                    else:
-                        SharePointFileList_FILES.append([
-                            name, time, size, '/' + url + '/' +
-                            urllib.parse.quote(name) + '?preview=1'
-                        ])
-                SharePointFileList_FOLDERS = os_sorted(
-                    SharePointFileList_FOLDERS, key=lambda x: x[0])
-                SharePointFileList_FILES = os_sorted(SharePointFileList_FILES,
-                                                     key=lambda x: x[0])
-                SharePointFileList.extend(SharePointFileList_FOLDERS)
-                SharePointFileList.extend(SharePointFileList_FILES)
-                # pylint: disable=unbalanced-tuple-unpacking
-                [headnote, footnote] = head_foot_note(data, url,
-                                                      SharePointFileList)
-                return make_response(
-                    render_template('sharepoint_main.html',
-                                    headings=HEADINGS,
-                                    BackgroundImage=BackgroundImage,
-                                    SharePointFileList=SharePointFileList,
-                                    headnote=headnote,
-                                    footnote=footnote))
-        except:
-            return make_response('Page Not Found', 404)
-    elif DriveType == "OneDriveAPI":
-        pass
-    elif DriveType == "GoogleDriveAPI":
-        pass
+                    file_list.append([
+                        key, last_modified_datetime, size,
+                        f"/{url}/{urllib.parse.quote(key)}?preview=1"
+                    ])
+            folder_list = os_sorted(folder_list, key=lambda x: x[0])
+            file_list = os_sorted(file_list, key=lambda x: x[0])
+            item_list.extend(folder_list)
+            item_list.extend(file_list)
+            note = drive.head_foot_note(data, site, path, item_list)
+            ret = make_response(
+                render_template('sharepoint_main.html',
+                                headings=HEADINGS,
+                                BackgroundImage=background,
+                                FILELIST=item_list,
+                                headnote=note[0],
+                                footnote=note[1]))
+    elif drive_type == "GoogleDriveAPI":
+        ret = make_response(f"{drive_type} not support yet.")
     else:
-        return make_response("Drive Type Not Support.")
+        ret = make_response("Drive Type Not Support.")
+    return ret
 
 
 # 首頁，權限確認後列出帳號
@@ -284,12 +115,15 @@ def main(url):
 
 @app.route("/", methods=['POST', 'GET'])
 def home():
+    """
+    Home page.
+    """
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
 
     data = read_write_data.read_data()
 
-    if data == None:
+    if data is None:
         return pages.initialization(request)
 
     if request.args:
@@ -314,7 +148,7 @@ def home():
                 return redirect(request.base_url)
 
     if data["ApiOnedriveSetting"][
-            "anonymous_viewlist"] == False and not permission.is_login(
+            "anonymous_viewlist"] is False and not permission.is_login(
                 data, request):
         response = pages.login(request)
     else:
@@ -332,6 +166,9 @@ def home():
 # 權限確認後列出檔案
 @app.route("/<path:path>", methods=['POST', 'GET'])
 def sub_dir(path):
+    """
+    List files under folder path.
+    """
     if path.split('/')[0] == 'static':
         return send_file('./' + path)
     if path == 'favicon.ico':
@@ -354,8 +191,12 @@ def sub_dir(path):
                 render_template("sharepoint_encrypt.html", warning="密碼錯誤"))
         return response
 
-    if data == None:
+    if data is None:
         return pages.initialization(request)
+
+    if path.split('/')[0] not in data["Sites"]:
+        ret = make_response({"error": f"Drive {path.split('/')[0]} not found."}, 404)
+        return ret
 
     if request.args:
         for i in request.args:
@@ -380,20 +221,20 @@ def sub_dir(path):
             elif i == "decrypt":
                 pass
             elif i == "code":
-                token_auth.init_access_token(data, request)
+                microsoft_token_auth.init_access_token(data, request)
             elif i == "SharePointSiteAPI":
-                return token_auth.init_access_token(data, request)
+                return microsoft_token_auth.init_access_token(data, request)
             else:
                 return redirect(request.base_url)
     else:
         if data["Sites"][path.split('/')[0]]["type"] == "SharePointSiteAPI":
-            if data["Sites"][path.split('/')[0]].get("refresh_token") == None:
-                return token_auth.init_access_token(data, request)
+            if data["Sites"][path.split('/')[0]].get("refresh_token") is None:
+                return microsoft_token_auth.init_access_token(data, request)
             elif time.time() - data["Sites"][path.split('/')
                                              [0]]["t"] > 60 * 60:
-                token_auth.reflash_token(data, path.split('/')[0])
+                microsoft_token_auth.reflash_token(data, path.split('/')[0])
         if data["ApiOnedriveSetting"][
-                "anonymous_viewlist"] == False and not permission.is_login(
+                "anonymous_viewlist"] is False and not permission.is_login(
                     data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
@@ -404,13 +245,26 @@ def sub_dir(path):
                 else:
                     if request.cookies.get(path + "_pw") == hashlib.sha256(
                             password.encode()).hexdigest():
-                        response = main(url=path)
+                        main_response = main(url=path)
+                        if isinstance(main_response, dict) and "message" in main_response:
+                            response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                        elif isinstance(main_response, dict) and "warning" in main_response:
+                            response = make_response(main_response, 404)
+                        else:
+                            response = make_response(main_response)
                     else:
                         response = make_response(
                             render_template("sharepoint_encrypt.html",
                                             warning="加密資料夾，請輸入密碼"))
             else:
-                response = main(url=path)
+                main_response = main(url=path)
+                if isinstance(main_response, dict) and "message" in main_response:
+                    response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                elif isinstance(main_response, dict) and "warning" in main_response:
+                    response = make_response(main_response, 404)
+                else:
+                    response = make_response(main_response)
+        response.headers["Access-Control-Allow-Origin"] = "*"
         return response
 
 

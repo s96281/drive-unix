@@ -3,6 +3,7 @@ Permission control.
 """
 import hashlib
 from flask import Request, Response, make_response, redirect, render_template, url_for
+from module import functions
 from module.read_write_data import read_data
 
 def is_login(data: dict, user_request: Request) -> bool:
@@ -10,19 +11,19 @@ def is_login(data: dict, user_request: Request) -> bool:
     Determines if a user is logged in based on their cookies and the data dictionary.
 
     Args:
-        data (dict): A dictionary containing the 'ApiOnedriveSetting' key,
+    -   data (dict): A dictionary containing the 'ApiOnedriveSetting' key,
             which maps to another dictionary containing the 'users' key.
             The value of this key is a dictionary mapping usernames to another
             dictionary containing the 'password' key.
             The value of this key is the hashed password for the user.
-        user_request (request): A request object containing the user's cookies.
+    -   user_request (request): A request object containing the user's cookies.
 
     Returns:
-        bool: True if the user is logged in and their password matches the
+    -   bool: True if the user is logged in and their password matches the
             hashed password in the data dictionary, False otherwise.
 
     Raises:
-        KeyError: If the 'ApiOnedriveSetting' or 'users' keys are not present
+    -   KeyError: If the 'ApiOnedriveSetting' or 'users' keys are not present
             in the input dictionary.
     """
     user = user_request.cookies.get('user')
@@ -30,7 +31,7 @@ def is_login(data: dict, user_request: Request) -> bool:
     try:
         password_hash = data["ApiOnedriveSetting"]["users"][user]["password"]
     except KeyError as esc:
-        print({"error": esc})
+        functions.log("ERROR", esc)
         return False
     if password_hash == password:
         return True
@@ -42,26 +43,29 @@ def is_admin(data: dict, user_request: Request) -> bool:
     Determines if a user is logged in as an admin based on their cookies and the data dictionary.
 
     Args:
-        data (dict): A dictionary containing the 'ApiOnedriveSetting' key,
+    -   data (dict): A dictionary containing the 'ApiOnedriveSetting' key,
             which maps to another dictionary containing the 'users' key.
             The value of this key is a dictionary mapping usernames to
             another dictionary containing the 'password' and 'rank' keys.
             The value of the 'password' key is the hashed password for
             the user and the value of the 'rank' key is their user rank.
-        user_request (request): A request object containing the user's cookies.
+    -   user_request (request): A request object containing the user's cookies.
 
     Returns:
-        bool: True if the user is logged in and their rank is 'admin' in the data dictionary,
+    -   bool: True if the user is logged in and their rank is 'admin' in the data dictionary,
             False otherwise.
 
     Raises:
-        KeyError: If the 'ApiOnedriveSetting' or 'users' keys are not present in the input
+    -   KeyError: If the 'ApiOnedriveSetting' or 'users' keys are not present in the input
             dictionary.
     """
     user = user_request.cookies.get('user')
-    if data["ApiOnedriveSetting"]["users"][user]["rank"] == "admin":
-        return True
-    return False
+    try:
+        if data["ApiOnedriveSetting"]["users"][user]["rank"] == "admin":
+            return True
+        return False
+    except KeyError:
+        return False
 
 
 def login(user_request: Request) -> Response:
@@ -69,13 +73,13 @@ def login(user_request: Request) -> Response:
     Handles user login authentication and sets cookies.
 
     Args:
-        user_request (Request): The HTTP request object containing user login information.
+    -   user_request (Request): The HTTP request object containing user login information.
 
     Returns:
-        Response: The HTTP response object with the appropriate redirection or error message.
+    -   Response: The HTTP response object with the appropriate redirection or error message.
 
     Raises:
-        N/A
+    -   N/A
     """
     data = read_data()
     users = data["ApiOnedriveSetting"]["users"]
@@ -105,11 +109,14 @@ def logout(request: Request) -> Response:
     Clears user cookies and redirects back to the previous page or to the home page.
 
     Args:
-        request (Request): The request object containing the cookies to be cleared.
+    -   request (Request): The request object containing the cookies to be cleared.
 
     Returns:
-        Response: A response object with cleared cookies and a redirect to the previous
+    -   Response: A response object with cleared cookies and a redirect to the previous
             page or home page.
+
+    Raises:
+    -   N/A
     """
     if request.referrer:
         response = make_response(redirect(request.referrer))

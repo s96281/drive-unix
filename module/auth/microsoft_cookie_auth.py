@@ -15,7 +15,7 @@ from urllib.request import build_opener, HTTPCookieProcessor, Request, urlopen
 import xml.etree.ElementTree as ET
 from office365.runtime.auth.user_credential import UserCredential
 from office365.sharepoint.client_context import ClientContext
-from module import config
+from module import config, functions
 
 # 獲取使用者Cookie
 # 作者：Krzysztof Nowicki
@@ -389,11 +389,11 @@ def get_cookie(endpoint: str, username: str, password: str) -> str | None:
             auth_token = get_security_token_federated(username, password,
                                                       stsurl)
     except RuntimeError as esc:
-        print(str(esc), file=sys.stderr)
+        functions.log("ERROR", str(esc))
         sys.exit(1)
     endpoint_url = urlparse(endpoint)
     if endpoint_url.scheme not in ["http", "https"] or not endpoint_url.netloc:
-        print(f"Invalid endpoint URL: {endpoint}", file=sys.stderr)
+        functions.log("ERROR", f"Invalid endpoint URL: {endpoint}")
         sys.exit(1)
     cookiejar = CookieJar()
     opener = build_opener(HTTPCookieProcessor(cookiejar))
@@ -413,7 +413,7 @@ def get_cookie(endpoint: str, username: str, password: str) -> str | None:
                 cookie_str += cookie.name + "=" + cookie.value + "; "
                 cookies_found.append(cookie.name)
         if "FedAuth" not in cookies_found or "rtFa" not in cookies_found:
-            print("Incomplete cookies retrieved.", file=sys.stderr)
+            functions.log("ERROR", "Incomplete cookies retrieved.")
             sys.exit(1)
         return cookie_str
     except URLError:
@@ -439,67 +439,51 @@ def read_cookie(endpoint: str, username: str, password: str) -> str:
     Example:
         read_cookie('https://example.com', 'johndoe', 'password123')
     """
-    print('讀取憑證中...')
+    functions.log("INFO", '讀取憑證中...')
     if os.path.isfile(config.COOKIES_LOCATION):
-        print('存在憑證資料...')
+        functions.log("INFO", '存在憑證資料...')
         with open(config.COOKIES_LOCATION, 'r', encoding='utf-8') as file:
             cookies = json.loads(file.read())
-            print('讀取憑證資料...')
-        print('檢查憑證資料...')
+            functions.log("INFO", '讀取憑證資料...')
+        functions.log("INFO", '檢查憑證資料...')
         if username in cookies:
-            print('用戶存在...')
+            functions.log("INFO", '用戶存在...')
             if cookies[username]['TIME'] < (time.time() - 86400):
-                print('憑證過期...')
+                functions.log("INFO", '憑證過期...')
                 time_of_now = time.time()
                 cookies[username] = {
                     'cookie': get_cookie(endpoint, username, password),
                     'TIME': time_of_now
                 }
-                print('線上取得憑證...')
+                functions.log("INFO", '線上取得憑證...')
                 with open(config.COOKIES_LOCATION, 'w',
                           encoding='utf-8') as file:
                     file.write(json.dumps(cookies))
-                    print('寫入憑證...')
-            print('成功讀取憑證')
+                    functions.log("INFO", '寫入憑證...')
+            functions.log("INFO", '成功讀取憑證')
         else:
-            print('用戶不存在...')
+            functions.log("INFO", '用戶不存在...')
             time_of_now = time.time()
             cookies[username] = {
                 'cookie': get_cookie(endpoint, username, password),
                 'TIME': time_of_now
             }
-            print('線上取得憑證...')
+            functions.log("INFO", '線上取得憑證...')
             with open(config.COOKIES_LOCATION, 'w', encoding='utf-8') as file:
                 file.write(json.dumps(cookies))
-                print('寫入憑證...')
-            print('成功讀取憑證')
+                functions.log("INFO", '寫入憑證...')
+            functions.log("INFO", '成功讀取憑證')
     else:
-        print('不存在憑證資料...')
+        functions.log("INFO", '不存在憑證資料...')
         cookies = {}
         time_of_now = time.time()
         cookies[username] = {
             'cookie': get_cookie(endpoint, username, password),
             'TIME': time_of_now
         }
-        print('線上取得憑證...')
+        functions.log("INFO", '線上取得憑證...')
         with open(config.COOKIES_LOCATION, 'w', encoding='utf-8') as file:
             file.write(json.dumps(cookies))
-            print('寫入憑證...')
-        print('成功讀取憑證')
+            functions.log("INFO", '寫入憑證...')
+        functions.log("INFO", '成功讀取憑證')
     return cookies[username]['cookie']
-
-
-if __name__ == "__main__":
-    print("Run test.")
-    print(
-        get_cookie("https://mailswdpsntpcedutw.sharepoint.com/",
-                   "s96281@mails.wdps.ntpc.edu.tw",
-                   "HenryloveGillandCindy.78523"))
-    print(
-        get_cookie("https://niuo365.sharepoint.com/",
-                   "b0831042@365.niu.edu.tw",
-                   "7yAiA9JtGcAmEDcEgdHNp!@@^RLw5xx@^xXw$BMJL^VY$hq*Sf"))
-    print(
-        get_cookie("https://mailswdpsntpcedutw-my.sharepoint.com/",
-                   "s96281@mails.wdps.ntpc.edu.tw",
-                   "HenryloveGillandCindy.78523"))

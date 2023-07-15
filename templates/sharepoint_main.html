@@ -91,7 +91,7 @@
             <tbody>
                 {% for row in FILELIST %}
                 <tr style="height: 50px;vertical-align: middle;"
-                    oncontextmenu='navigator.clipboard.writeText("{{ row[3] }}");tempAlert("已複製鏈結",1000)'
+                    oncontextmenu='navigator.clipboard.writeText("https:/\/"+window.location.host + "{{ row[3] }}".replace("preview", "download"));tempAlert("已複製鏈結",1000)'
                     onclick="window.location='{{ row[3] }}';">
                     <td style="cursor: pointer;width:60%">{{ row[0] }}</td>
                     <td style="cursor: pointer;width:25%">{{ row[1] }}</td>
@@ -123,7 +123,7 @@
         function tempAlert(msg, duration) {
             var el = document.createElement("div");
             el.setAttribute("class", "alert alert-warning show");
-            el.setAttribute("style", "position: absolute;left: 10px;bottom: 10px;")
+            el.setAttribute("style", "position: fixed;left: 10px;bottom: 10px;")
             el.innerHTML = msg;
             setTimeout(function () {
                 el.parentNode.removeChild(el);
