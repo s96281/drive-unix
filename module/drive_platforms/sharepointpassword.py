@@ -241,13 +241,13 @@ def sharepointpw_root_files(data: dict,
             url = (f"{endpoint}_api/v2.1/sites/{endpoint.split('/')[2]}:"
                    f"/sites/{site}:/drive/root/children"
                    f"?$top={str(config.REQUEST_SIZE)}"
-                   f"&select=name,folder,lastModifiedDateTime,size"
-                   f"&$expand=thumbnails")
+                   f"&select=name,folder,lastModifiedDateTime,size")
         else:
             url = (f"{endpoint}_api/v2.1/sites/{endpoint.split('/')[2]}:"
                    f"/sites/{site}:/drive/root/children"
                    f"?$top={str(config.REQUEST_SIZE)}"
-                   f"&select=name,folder,lastModifiedDateTime,size")
+                   f"&select=name,folder,lastModifiedDateTime,size"
+                   f"&$expand=thumbnails")
         res = requests.get(url,
                            headers=header,
                            timeout=config.REQUEST_TIME_OUT).json()
@@ -267,9 +267,12 @@ def sharepointpw_root_files(data: dict,
                     response[i["name"]] = {
                         "type":
                         "folder" if "folder" in i else "file",
-                        "lastModifiedDateTime": i["lastModifiedDateTime"],
-                        "size": i["size"],
-                        "thumbnails": i["thumbnails"][thumbnails]["url"]
+                        "lastModifiedDateTime":
+                        i["lastModifiedDateTime"],
+                        "size":
+                        i["size"],
+                        "thumbnails":
+                        i["thumbnails"][thumbnails]["url"]
                         if "folder" in i else "NONE"
                     }
         else:
@@ -359,10 +362,14 @@ def sharepointpw_path_files(data: dict,
             else:
                 for i in res['value']:
                     response[i["name"]] = {
-                        "type": "folder" if "folder" in i else "file",
-                        "lastModifiedDateTime": i["lastModifiedDateTime"],
-                        "size": i["size"],
-                        "thumbnails": i["thumbnails"][thumbnails]["url"]
+                        "type":
+                        "folder" if "folder" in i else "file",
+                        "lastModifiedDateTime":
+                        i["lastModifiedDateTime"],
+                        "size":
+                        i["size"],
+                        "thumbnails":
+                        i["thumbnails"][thumbnails]["url"]
                         if "folder" in i else "NONE"
                     }
         else:
