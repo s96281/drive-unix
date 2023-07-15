@@ -361,7 +361,7 @@ def download(url: str, user_request: Request) -> Response:
         if not data.get("counter"):
             data["counter"] = {}
         {}.update()
-        data["counter"][f"alia/{urllib.parse.unquote(path)}"] = data["counter"].get(alia/{urllib.parse.unquote(path)},0) + 1
+        data["counter"][f"alia/{urllib.parse.unquote(path)}"] = data["counter"].get(f"alia/{urllib.parse.unquote(path)}",0) + 1
         write_data(data)
         response = make_response(redirect(link))
     response.headers["Access-Control-Allow-Origin"] = "*"
