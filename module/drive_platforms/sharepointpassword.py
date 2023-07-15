@@ -333,18 +333,18 @@ def sharepointpw_path_files(data: dict,
         }
         path = urllib.parse.quote(path)
         if thumbnails is None:
-            url = {
+            url = (
                 f"{endpoint}_api/v2.1/sites/{endpoint.split('/')[2]}"
                 f":/sites/{site}:/drive/root:{path}:/children"
                 f"?$top={str(config.REQUEST_SIZE)}&select=name,folder,lastModifiedDateTime,size"
-            }
+            )
         else:
-            url = {
+            url = (
                 f"{endpoint}_api/v2.1/sites/{endpoint.split('/')[2]}"
                 f":/sites/{site}:/drive/root:{path}:/children"
                 f"?$top={str(config.REQUEST_SIZE)}&select=name,folder,lastModifiedDateTime,size"
                 f"&$expand=thumbnails"
-            }
+            )
         res = requests.get(url,
                            headers=header,
                            timeout=config.REQUEST_TIME_OUT).json()
