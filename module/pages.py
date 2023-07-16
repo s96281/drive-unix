@@ -288,19 +288,18 @@ def preview(user_request: Request) -> Response:
     mediatype = functions.get_file_type('.' + user_request.path.split('.')[-1])
     alia = user_request.path.split('/')[1]
     path = '/'.join(user_request.path.split('/')[2:])
+    name=urllib.parse.unquote(user_request.base_url.split('/')[-1])
+    source = get_downloadlink(data, alia, path)
     if mediatype == "ebook":
         return render_template("epub_render.html",
-                               name=urllib.parse.unquote(
-                                   user_request.base_url.split('/')[-1]),
-                               source=get_downloadlink(data, alia, path))
+                               name=name,
+                               source=Markup(source))
     elif mediatype == 'pdf':
         return render_template("pdf_render.html",
-                               name=urllib.parse.unquote(
-                                   user_request.base_url.split('/')[-1]),
-                               source=get_downloadlink(data, alia, path))
+                               name=name,
+                               source=Markup(source))
     elif mediatype == 'text':
-        txt = requests.get(get_downloadlink(data, alia, path),
-                           timeout=config.REQUEST_TIME_OUT).content
+        txt = requests.get(source, timeout=config.REQUEST_TIME_OUT).content
         code = chardet.detect(txt)['encoding']
         if code is None:
             txt = '文字編碼錯誤'
@@ -308,8 +307,7 @@ def preview(user_request: Request) -> Response:
             txt = txt.decode(code)
         sub = ''
     elif mediatype == 'programe':
-        txt = requests.get(get_downloadlink(data, alia, path),
-                           timeout=config.REQUEST_TIME_OUT).text
+        txt = requests.get(source, timeout=config.REQUEST_TIME_OUT).text
         txt = '```' + '\n' + txt + '\n```'
         exts = ['extra', 'codehilite', 'tables', 'toc']
         txt = markdown.markdown(txt, extensions=exts)
