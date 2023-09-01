@@ -390,7 +390,7 @@ def get_cookie(endpoint: str, username: str, password: str) -> str | None:
                                                       stsurl)
     except RuntimeError as esc:
         functions.log("ERROR", str(esc))
-        sys.exit(1)
+        return get_cookie_backup(endpoint, username, password)
     endpoint_url = urlparse(endpoint)
     if endpoint_url.scheme not in ["http", "https"] or not endpoint_url.netloc:
         functions.log("ERROR", f"Invalid endpoint URL: {endpoint}")

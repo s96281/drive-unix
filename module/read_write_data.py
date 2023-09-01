@@ -7,13 +7,15 @@ import time
 from redis import Redis
 from module import config, functions
 
-def read_data(redis: Redis | None = config.REDIS,
-              redis_sync_key: str | None = config.REDIS_SYNC_KEY,
+def read_data(redis: Redis = config.REDIS,
+              redis_sync_key: str = config.REDIS_SYNC_KEY,
               data_location: str = config.DATA_LOCATION,
               redis_sync_expires: int = int(config.REDIS_SYNC_EXPIRES),
               redis_sync: bool = config.REDIS_SYNC) -> dict | None:
+
     """
-    Reads and returns data from Redis or a local cache file.
+    Reads and returns data from Redis or a local cache file
+    and reflash local cache file if cache expired.
 
     Parameters:
     -   redis (Redis): Redis instance to connect to.
@@ -82,8 +84,8 @@ def read_data(redis: Redis | None = config.REDIS,
 
 
 def write_data(data: dict,
-               redis: Redis | None = config.REDIS,
-               redis_sync_key: str | None = config.REDIS_SYNC_KEY,
+               redis: Redis = config.REDIS,
+               redis_sync_key: str = config.REDIS_SYNC_KEY,
                data_location: str = config.DATA_LOCATION,
                redis_sync: bool = config.REDIS_SYNC) -> bool:
     """
@@ -102,9 +104,9 @@ def write_data(data: dict,
     Raises:
     -   N/A
     """
-    data = json.dumps(data, ensure_ascii=False)
+    dump_data = json.dumps(data, ensure_ascii=False)
     if redis_sync:
-        redis.set(redis_sync_key, data)
+        redis.set(redis_sync_key, dump_data)
     with open(data_location, 'w', encoding='utf-8') as file:
-        file.write(data)
+        file.write(dump_data)
     return True

@@ -13,46 +13,9 @@ from module.config import DEBUG, CACHE_LOCATION, CACHE_CONFIG, HEADINGS
 from module import permission, functions, pages, read_write_data, drive
 from module.auth import microsoft_token_auth
 
-# 效能分析工具
-if DEBUG:
-    from pyinstrument import Profiler
-
 app = Flask(__name__)
 app.config.from_mapping(CACHE_CONFIG)
 cache = Cache(app)
-
-# 效能分析工具
-if DEBUG:
-    @app.before_request
-    def before_request():
-        """
-        Starts profiling using a `Profiler` object if 'profile' is present in the request arguments.
-
-        Returns:
-            None
-        """
-        if "profile" in request.args:
-            g.profiler = Profiler()
-            g.profiler.start()
-    @app.after_request
-    def after_request(response):
-        """
-        Modify the response object to include profiling data if `g.profiler` exists.
-
-        Args:
-            response: Flask response object.
-
-        Returns:
-            Response object if profiling data exists, else original response.
-            If the response contains profiling data, the response body will be an HTML
-            document containing profiling information.
-        """
-        if not hasattr(g, "profiler"):
-            return response
-        g.profiler.stop()
-        output_html = g.profiler.output_html()
-        return make_response(output_html)
-
 
 @cache.memoize()
 def main(url):
@@ -272,4 +235,4 @@ def sub_dir(path):
 if __name__ == '__main__':
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
-    app.run(debug=False)
+    app.run(debug=True)
