@@ -123,6 +123,8 @@ def files(data: dict, alia: str, path: str = None) -> dict:
         pass
     elif drive_type == "GoogleDriveAPI":
         pass
+    if data["ApiOnedriveSetting"]["page_encrypt"] is True:
+        ret.pop(data["ApiOnedriveSetting"]["passfile"], None)
     return ret
 
 
@@ -131,9 +133,9 @@ def file_exist(data: dict, alia: str, path: str) -> bool:
     if drive_type == "SharePointSitePW":
         ret = sharepointpassword.sharepointpw_file_exist(data, alia, path)
     elif drive_type == "SharePointSiteAPI":
-        pass
+        ret = sharepointapi.sharepointapi_file_exist(data, alia, path)
     elif drive_type == "OneDrivePW":
-        pass
+        ret = onedrivepassword.onedrivepw_files_exist(data, alia, path)
     elif drive_type == "OneDriveAPI":
         pass
     elif drive_type == "GoogleDriveAPI":

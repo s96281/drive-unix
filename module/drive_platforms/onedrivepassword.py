@@ -40,6 +40,32 @@ def ondrivepw_detail(data: dict, drive: str) -> dict:
     except KeyError:
         return {"error": f"Drive {drive} not found."}
 
+def onedrivepw_files_exist(data: dict, drive: str, path: str) -> bool:
+    try:
+        endpoint = data['Sites'][drive]["endpoint"]
+        username = data['Sites'][drive]["username"]
+        password = data['Sites'][drive]["password"]
+        cookie = read_cookie(endpoint, username, password)
+        header = {
+            'cookie': cookie,
+            'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:108.0) Gecko/20100101 Firefox/108.0',
+            'Sec-Fetch-User': '?1'
+        }
+        path = urllib.parse.quote(path)
+        url = f"{endpoint}_api/v2.1/drive/root:{path}"
+        res = requests.get(url,
+                           headers=header,
+                           timeout=config.REQUEST_TIME_OUT).json()
+        return res.get('@content.downloadUrl') is not None
+    except KeyError as esc:
+        if drive not in data['Sites']:
+            functions.log("ERROR", f"Drive {drive} not found in data['Sites'].")
+            return {"error": f"Drive {drive} not found in data['Sites']."}
+        functions.log("ERROR", f"{esc} not found in data['Sites']['{drive}'].")
+        return {"error": f"{esc} not found in data['Sites']['{drive}']."}
+    except requests.JSONDecodeError:
+        return False
 
 def ondrivepw_getdownloadlink(data: dict, drive: str, path: str) -> str | dict:
     try:

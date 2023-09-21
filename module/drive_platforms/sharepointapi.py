@@ -71,6 +71,26 @@ def sharepointapi_details(data: dict, alia: str) -> dict:
     except KeyError:
         return {"error": f"Drive {alia} not found."}
 
+def sharepointapi_file_exist(data: dict, alia: str, path: str) -> bool:
+    """Return if file exist or not."""
+    try:
+        site_id = sitename2id(data, alia)
+        access_token = microsoft_token_auth.read_token(data, alia)
+        headers = {'Authorization': 'Bearer ' + access_token}
+        path = urllib.parse.quote(path)
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{path}"
+        res = requests.get(url,
+                           headers=headers,
+                           timeout=config.REQUEST_TIME_OUT).json()
+        return res.get('@content.downloadUrl') is not None
+    except KeyError as esc:
+        if alia not in data['Sites']:
+            functions.log("ERROR", f"Drive {alia} not found in data['Sites'].")
+            return {"error": f"Drive {alia} not found in data['Sites']."}
+        functions.log("ERROR", f"{esc} not found in data['Sites']['{alia}'].")
+        return {"error": f"{esc} not found in data['Sites']['{alia}']."}
+    except requests.JSONDecodeError:
+        return False
 
 def sharepointapi_getdownloadlink(data: dict, alia: str,
                                   path: str) -> str | dict:
