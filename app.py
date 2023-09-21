@@ -201,13 +201,13 @@ def sub_dir(path):
                     data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
-            password = drive.get_page_encrypt_pw(data, path)
+            password = drive.get_encrypt_pw(data, path)
             if password:
                 if request.method == "POST":
                     response = decrypt(password, path)
                 else:
                     if request.cookies.get(path + "_pw") == hashlib.sha256(
-                            password.encode()).hexdigest():
+                            password.encode()).hexdigest() or permission.is_admin(data, request) is True:
                         main_response = main(url=path)
                         if isinstance(main_response, dict) and "message" in main_response:
                             response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))

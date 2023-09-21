@@ -58,6 +58,14 @@
                 </select>
             </div>
             <div class="input-group mb-3">
+                <span class="input-group-text">加密</span>
+                <select class="form-select" name="CACHE_TYPE">
+                    <option selected>設定頁面加密方式</option>
+                    <option value="page">資料夾加密</option>
+                    <option value="drive">全盤加密</option>
+                </select>
+            </div>
+            <div class="input-group mb-3">
                 <span class="input-group-text">passfile</span>
                 <input type="text" class="form-control" placeholder="自訂密碼文件的名字，可以是'pppppp'，也可以是'aaaa.txt'等等；列目錄時不會顯示，只有知道密碼才能查看或下載此文件。密碼是這個文件的內容，可以空格、可以中文；" name="passfile"
                     value="">
@@ -73,12 +81,6 @@
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" value="True" name="bottom_md" id="bottom_md">
                         <label class="form-check-label" for="bottom_md">顯示footer</label>
-                    </div>
-                </div>
-                <div class="col">
-                    <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" value="True" name="page_encrypt" id="page_encrypt">
-                        <label class="form-check-label" for="page_encrypt">單頁面加密</label>
                     </div>
                 </div>
             </div>

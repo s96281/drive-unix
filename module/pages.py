@@ -89,8 +89,8 @@ def initialization(user_request: Request) -> str | Response:
                 user_request.form.get('top_md') == "True",
                 "bottom_md":
                 user_request.form.get('bottom_md') == "True",
-                "page_encrypt":
-                user_request.form.get('page_encrypt') == "True",
+                "encrypt":
+                user_request.form.get('encrypt', "None"),
                 "passfile":
                 user_request.form['passfile'],
                 "users": {
@@ -158,8 +158,8 @@ def setting(user_request: Request) -> Response:
                 'top_md') == "True"
             data["ApiOnedriveSetting"]["bottom_md"] = user_request.form.get(
                 'bottom_md') == "True"
-            data["ApiOnedriveSetting"]["page_encrypt"] = user_request.form.get(
-                'page_encrypt') == "True"
+            data["ApiOnedriveSetting"]["encrypt"] = user_request.form.get(
+                'encrypt', "None")
             data["ApiOnedriveSetting"]["passfile"] = user_request.form.get(
                 'passfile')
         elif 'type' in str(user_request.form):

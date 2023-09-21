@@ -57,7 +57,7 @@ def get_downloadlink(data: dict, alia: str, path: str) -> str | None:
     return ret
 
 
-def get_page_encrypt_pw(data: dict, path: str) -> str | None:
+def get_encrypt_pw(data: dict, path: str) -> str | None:
     """
     Returns the encryption password for a page if page encryption is enabled and
     the password file exists.
@@ -70,17 +70,27 @@ def get_page_encrypt_pw(data: dict, path: str) -> str | None:
     - The encryption password if page encryption is enabled and the password file
       exists, or None otherwise.
     """
-    if not data["ApiOnedriveSetting"]["page_encrypt"] or len(
-            path.split('/')) < 1:
+    if len(path.split('/')) < 1:
         return None
-    path += '/' + data["ApiOnedriveSetting"]["passfile"]
-    alia = path.split('/')[0]
-    path = '/'.join(path.split('/')[1:])
-    if file_exist(data, alia, path):
-        url = get_downloadlink(data, alia, path)
-        res = requests.get(url, timeout=config.REQUEST_TIME_OUT)
-        return res.text if res.ok else None
-    return None
+    if data["ApiOnedriveSetting"]["encrypt"] == "page":
+        path += '/' + data["ApiOnedriveSetting"]["passfile"]
+        alia = path.split('/')[0]
+        path = '/'.join(path.split('/')[1:])
+        if file_exist(data, alia, path):
+            url = get_downloadlink(data, alia, path)
+            res = requests.get(url, timeout=config.REQUEST_TIME_OUT)
+            return res.text if res.ok else None
+        return None
+    elif data["ApiOnedriveSetting"]["encrypt"] == "drive":
+        alia = path.split('/')[0]
+        path = f'/{data["ApiOnedriveSetting"]["passfile"]}'
+        if file_exist(data, alia, path):
+            url = get_downloadlink(data, alia, path)
+            res = requests.get(url, timeout=config.REQUEST_TIME_OUT)
+            return res.text if res.ok else None
+        return None
+    else:
+        return None
 
 
 def details(data: dict, alia: str) -> dict:
@@ -123,7 +133,7 @@ def files(data: dict, alia: str, path: str = None) -> dict:
         pass
     elif drive_type == "GoogleDriveAPI":
         pass
-    if data["ApiOnedriveSetting"]["page_encrypt"] is True:
+    if data["ApiOnedriveSetting"]["encrypt"] != "None":
         ret.pop(data["ApiOnedriveSetting"]["passfile"], None)
     return ret
 
