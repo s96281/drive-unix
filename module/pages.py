@@ -298,6 +298,10 @@ def preview(user_request: Request) -> Response:
         return render_template("pdf_render.html",
                                name=name,
                                source=Markup(source))
+    elif mediatype == 'video':
+        return render_template("video_render.html",
+                               source=get_downloadlink(data, alia, path),
+                               name=name)
     elif mediatype == 'text':
         txt = requests.get(source, timeout=config.REQUEST_TIME_OUT).content
         code = chardet.detect(txt)['encoding']
