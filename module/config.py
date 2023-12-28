@@ -37,6 +37,8 @@ REDIS_SYNC_KEY = os.environ.get("REDIS_SYNC_KEY") or 'TEMP_DATA'
 
 UTC = os.environ.get("UTC") or 8
 
+
+# 請勿更改下列設定，除非你知道自己在做甚麼
 CACHE_CONFIG = {
     "DEBUG": False,
     "CACHE_TYPE": "FileSystemCache",
@@ -54,3 +56,5 @@ HEADINGS = ['Name', 'Last edit time', 'Size']
 REQUEST_TIME_OUT = 30
 
 THUMBNAIL_SIZE = "large" # or "medium", "small"
+
+LOG_LEVEL = "WARN" # or "ERROR", "INFO"

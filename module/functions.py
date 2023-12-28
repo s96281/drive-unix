@@ -207,9 +207,16 @@ def log(level: str,
     Raises:
     - None
     """
-    with open(log_location, '+a', encoding="UTF-8") as file_descriptor:
-        file_descriptor.write(
-            f"\n[{level}] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}"
-        )
+    def write_log():
+        with open(log_location, '+a', encoding="UTF-8") as file_descriptor:
+            file_descriptor.write(
+                f"\n[{level}] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}"
+            )
+    if config.LOG_LEVEL == "INFO":
+        write_log()
+    elif config.LOG_LEVEL == "WARN" and (level == "WARN" or level == "ERROR"):
+        write_log()
+    elif config.LOG_LEVEL == "ERROR" and level == "ERROE":
+        write_log()
     if config.DEBUG:
         print(f"\n[{level}] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")

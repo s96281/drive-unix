@@ -74,8 +74,6 @@ def main(url):
 
 
 # 首頁，權限確認後列出帳號
-
-
 @app.route("/", methods=['POST', 'GET'])
 def home():
     """
@@ -181,8 +179,6 @@ def sub_dir(path):
                 return pages.preview(request)
             elif i == "download":
                 return pages.download(path, request)
-            elif i == "decrypt":
-                pass
             elif i == "code":
                 microsoft_token_auth.init_access_token(data, request)
             elif i == "SharePointSiteAPI":
@@ -193,12 +189,9 @@ def sub_dir(path):
         if data["Sites"][path.split('/')[0]]["type"] == "SharePointSiteAPI":
             if data["Sites"][path.split('/')[0]].get("refresh_token") is None:
                 return microsoft_token_auth.init_access_token(data, request)
-            elif time.time() - data["Sites"][path.split('/')
-                                             [0]]["t"] > 60 * 60:
-                microsoft_token_auth.reflash_token(data, path.split('/')[0])
-        if data["ApiOnedriveSetting"][
-                "anonymous_viewlist"] is False and not permission.is_login(
-                    data, request):
+            elif time.time() - data["Sites"][path.split('/')[0]]["t"] > 60 * 60:
+                data = microsoft_token_auth.reflash_token(data, path.split('/')[0])
+        if data["ApiOnedriveSetting"]["anonymous_viewlist"] is False and not permission.is_login(data, request):
             response = redirect(request.base_url + '/?login=1')
         else:
             password = drive.get_encrypt_pw(data, path)
@@ -206,13 +199,13 @@ def sub_dir(path):
                 if request.method == "POST":
                     response = decrypt(password, path)
                 else:
-                    if request.cookies.get(path + "_pw") == hashlib.sha256(
-                            password.encode()).hexdigest() or permission.is_admin(data, request) is True:
+                    if permission.check_viewer_permission(request,data,path,password):
                         main_response = main(url=path)
-                        if isinstance(main_response, dict) and "message" in main_response:
-                            response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
-                        elif isinstance(main_response, dict) and "warning" in main_response:
-                            response = make_response(main_response, 404)
+                        if isinstance(main_response, dict):
+                            if "message" in main_response:
+                                response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                            else:
+                                response = make_response(main_response, 404)
                         else:
                             response = make_response(main_response)
                     else:
@@ -221,10 +214,11 @@ def sub_dir(path):
                                             warning="加密資料夾，請輸入密碼"))
             else:
                 main_response = main(url=path)
-                if isinstance(main_response, dict) and "message" in main_response:
-                    response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
-                elif isinstance(main_response, dict) and "warning" in main_response:
-                    response = make_response(main_response, 404)
+                if isinstance(main_response, dict):
+                    if "message" in main_response:
+                        response = make_response(redirect(drive.get_downloadlink(data, main_response["site"], main_response["path"])))
+                    else:
+                        response = make_response(main_response, 404)
                 else:
                     response = make_response(main_response)
         response.headers["Access-Control-Allow-Origin"] = "*"
@@ -235,4 +229,4 @@ def sub_dir(path):
 if __name__ == '__main__':
     if not os.path.exists(CACHE_LOCATION):
         os.mkdir(CACHE_LOCATION)
-    app.run(debug=True)
+    app.run(debug=DEBUG)

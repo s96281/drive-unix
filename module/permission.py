@@ -87,7 +87,7 @@ def login(user_request: Request) -> Response:
         user = user_request.cookies.get('user')
         password = user_request.cookies.get('password')
         if user in users and users[user]["password"] == password:
-            response = make_response(redirect(user_request.path))
+            response = make_response(redirect(user_request.full_path))
         else:
             response = make_response(render_template('sharepoint_login.html'))
     elif user_request.method == 'POST':
@@ -95,7 +95,7 @@ def login(user_request: Request) -> Response:
         password = user_request.form.get('password')
         pdhash = hashlib.sha256(password.encode()).hexdigest()
         if user in users and users[user]["password"] == pdhash:
-            response = make_response(redirect(user_request.path))
+            response = make_response(redirect(user_request.full_path))
             response.set_cookie('user', user, path='/')
             response.set_cookie('password', pdhash, path='/')
         else:
@@ -125,3 +125,47 @@ def logout(request: Request) -> Response:
     response.set_cookie('user', '', path='/', expires=0)
     response.set_cookie('password', '', path='/', expires=0)
     return response
+
+def check_viewer_permission(request: Request, data: dict, path: str, password: str) -> bool:
+    """
+    Check viewer permission for accessing a resource based on the provided parameters.
+
+    Args:
+        request (Request): The HTTP request object.
+        data (dict): A dictionary containing API settings, specifically 'ApiOnedriveSetting'.
+        path (str): The path to the resource being accessed.
+        password (str): The password provided for encrypted access, if applicable.
+
+    Returns:
+        bool: True if the viewer has permission to access the resource, False otherwise.
+
+    The function evaluates viewer permission based on the encryption settings and the user's administrative status.
+    - If encryption is set to 'None' and the user is an admin, permission is granted.
+    - If encryption is set to 'page' or 'drive' and the user is not an admin, the function checks the provided password
+      against the hashed password stored in the request cookies for the specified path.
+
+    Note:
+    - The function relies on the 'is_admin' function, which is expected to return a boolean indicating whether the
+      user has administrative privileges.
+
+    Example:
+    ```
+    permission = check_viewer_permission(request_object, api_data, "/documents", "secretpassword")
+    if permission:
+        # Allow access to the resource
+    else:
+        # Deny access to the resource
+    ```
+    """
+    if data["ApiOnedriveSetting"]["encrypt"] == "None" or is_admin(data, request) is True:
+        return True
+    if data["ApiOnedriveSetting"]["encrypt"] == "page" and is_admin(data, request) is False:
+        if request.cookies.get(path + "_pw") == hashlib.sha256(password.encode()).hexdigest():
+            return True
+        else:
+            return False
+    elif data["ApiOnedriveSetting"]["encrypt"] == "drive" and is_admin(data, request) is False:
+        if request.cookies.get(path.split('/')[0] + "_pw") == hashlib.sha256(password.encode()).hexdigest():
+            return True
+        else:
+            return False

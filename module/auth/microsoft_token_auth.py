@@ -79,7 +79,7 @@ def init_access_token(data: str, request: Request) -> Response:
     return response
 
 
-def reflash_token(data: dict, alia: str) -> None:
+def reflash_token(data: dict, alia: str) -> dict:
     """
     Refreshes the access token for a given site
     using the refresh token stored in the data dictionary.
@@ -89,7 +89,7 @@ def reflash_token(data: dict, alia: str) -> None:
         site (str): The name of the site for which to refresh the access token.
 
     Returns:
-        None
+        dict: A dictionary containing the configuration data for the application.
 
     Raises:
         KeyError: If the JSON response from the token endpoint does not contain the expected keys.
@@ -119,6 +119,7 @@ def reflash_token(data: dict, alia: str) -> None:
         data["Sites"][alia]["refresh_token"] = refresh_token
         data["Sites"][alia]["t"] = time.time()
         write_data(data)
+        return data
     except KeyError:
         functions.log("ERROR", json.dumps(retur))
 
@@ -138,6 +139,6 @@ def read_token(data: dict, alia: str) -> str:
         str: The access token for the specified site.
     """
     if time.time() - data["Sites"][alia]['t'] > 60*60:
-        reflash_token(data, alia)
+        data = reflash_token(data, alia)
     access_token = data["Sites"][alia]["access_token"]
     return access_token
