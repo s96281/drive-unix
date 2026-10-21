@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -183,6 +185,85 @@ class SharePointLoginRecorder:
         return f"\n📸 登入歷程連環截圖 (每秒 1 張，共 {len(self.frames)} 張) 已保留於:\n   {self.session_dir}"
 
 
+def _detect_microsoft_authenticator_challenge(page: Any) -> tuple[bool, Optional[str]]:
+    """
+    Detects if Microsoft login is waiting for mobile Authenticator approval.
+    Returns (is_mfa_active, number_to_enter_on_phone).
+    """
+    if page is None:
+        return False, None
+
+    # 1. First, check dedicated number matching element
+    number_selectors = [
+        "#richContext_display",
+        "div.display-sign-in-number",
+        "#idRichContext_FTP .table-cell",
+        "#idRichContext_FTP",
+        "div[id*='richContext']",
+        "div[id*='RichContext']",
+    ]
+    for sel in number_selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                text = loc.first.inner_text().strip()
+                match = re.search(r"\b(\d{1,3})\b", text)
+                if match:
+                    return True, match.group(1)
+        except Exception:
+            pass
+
+    # 2. Check for general Authenticator push prompt (without number matching or pending load)
+    title_selectors = [
+        "#idDiv_SAASTO_Title",
+        "#idDiv_SAOTCC_Title",
+        "#idDiv_SAASTO_Description",
+        "#idDiv_SAOTCC_Description",
+    ]
+    for sel in title_selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                text = loc.first.inner_text().strip()
+                match = re.search(r"\b(\d{1,3})\b", text)
+                if match:
+                    return True, match.group(1)
+                return True, None
+        except Exception:
+            pass
+
+    # 3. Check page title or text for keywords
+    try:
+        page_title = page.title()
+        if any(kw in page_title for kw in ["Approve", "核准", "Authenticator"]):
+            return True, None
+    except Exception:
+        pass
+
+    return False, None
+
+
+def _save_active_mfa_status(number: Optional[str], active: bool) -> None:
+    """Save active MFA challenge number to a local file for status APIs or tools."""
+    try:
+        debug_dir = Path.home() / ".config" / "drive-unix" / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        status_file = debug_dir / "mfa_challenge.json"
+        if active:
+            data = {
+                "active": True,
+                "number": number,
+                "updated_at": time.time(),
+                "message": f"請在手機輸入數字：{number}" if number else "請在手機點擊核准",
+            }
+            status_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        else:
+            if status_file.exists():
+                status_file.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def _wait_for_condition_with_recording(
     page: Any,
     condition_fn: Callable[[], bool],
@@ -191,25 +272,64 @@ def _wait_for_condition_with_recording(
     step_name: str,
     recorder: SharePointLoginRecorder,
     poll_interval_ms: int = 1000,
+    detect_mfa: bool = False,
 ) -> bool:
     """
     Polls condition_fn every poll_interval_ms (default 1000ms = 1 sec).
     Captures a screenshot frame every second while waiting.
+    If detect_mfa is True and an Authenticator challenge is detected:
+      - Prominently displays the number to enter on the phone
+      - Dynamically extends the timeout so the user has sufficient time (90s) to approve
     Returns True if condition became True before timeout, False otherwise.
     """
     start = time.perf_counter()
     timeout_s = timeout_ms / 1000.0
+    mfa_notified = False
 
     while True:
-        recorder.capture(page, step_label=step_name)
-
         try:
             if condition_fn():
+                if mfa_notified:
+                    logger.info("🎉【MFA 驗證完成】已成功在手機上核准，繼續完成 SharePoint 驗證！")
+                    _save_active_mfa_status(None, active=False)
                 return True
         except Exception:
             pass
 
+        # Check for MFA Challenge
+        if detect_mfa:
+            is_mfa, number = _detect_microsoft_authenticator_challenge(page)
+            if is_mfa:
+                step_name = "wait_mfa"
+                if not mfa_notified:
+                    mfa_notified = True
+                    # Dynamically extend timeout to at least 90s from this moment
+                    timeout_s = max(timeout_s, (time.perf_counter() - start) + 90.0)
+                    _save_active_mfa_status(number, active=True)
+                    if number:
+                        banner = (
+                            "\n" + "=" * 65 + "\n"
+                            f"🔔【Microsoft 雙重驗證 (MFA) - 請在手機輸入數字】\n"
+                            f"微軟要求數字比對！請開啟手機上的 Microsoft Authenticator 並輸入：\n\n"
+                            f"                  👉 【 {number} 】 👈\n\n"
+                            f"系統正在背景等候您的手機核准 (最長等候 90 秒)..."
+                            "\n" + "=" * 65 + "\n"
+                        )
+                    else:
+                        banner = (
+                            "\n" + "=" * 65 + "\n"
+                            "🔔【Microsoft 雙重驗證 (MFA) - 請於手機確認】\n"
+                            "微軟已發送登入推播！請在手機上的 Microsoft Authenticator 點擊「核准 (Approve)」...\n"
+                            "系統正在背景等候您的手機核准 (最長等候 90 秒)..."
+                            "\n" + "=" * 65 + "\n"
+                        )
+                    logger.warning(banner.strip())
+
+        recorder.capture(page, step_label=step_name)
+
         if (time.perf_counter() - start) >= timeout_s:
+            if mfa_notified:
+                _save_active_mfa_status(None, active=False)
             return False
 
         remaining_ms = int(max(100, min(poll_interval_ms, (timeout_s - (time.perf_counter() - start)) * 1000)))
@@ -394,12 +514,15 @@ def get_cookie(
                 page.click('input[type="submit"]')
                 recorder.capture(page, step_label="passwd_submitted")
 
-                # Step 3: Wait for cookies or "Stay signed in?" prompt (takes screenshot every sec)
+                # Step 3: Wait for cookies or "Stay signed in?" prompt (takes screenshot every sec + MFA detection)
                 def _check_cookies_or_prompt() -> bool:
                     try:
-                        btn = page.locator('input[id="idBtn_Back"]')
-                        if btn.is_visible():
-                            btn.click()
+                        btn_back = page.locator('input[id="idBtn_Back"]')
+                        btn_yes = page.locator('input[id="idSIButton9"]')
+                        if btn_back.is_visible():
+                            btn_back.click()
+                        elif btn_yes.is_visible():
+                            btn_yes.click()
                     except Exception:
                         pass
 
@@ -407,7 +530,7 @@ def get_cookie(
                     return bool(_find_cookie_value(ck, "rtFa") and _find_cookie_value(ck, "FedAuth"))
 
                 wait_cookies_timeout_ms = max(
-                    15_000,
+                    20_000,
                     (stay_signed_in_timeout_ms + (after_login_wait_seconds * 1000))
                 )
                 _wait_for_condition_with_recording(
@@ -416,6 +539,7 @@ def get_cookie(
                     timeout_ms=wait_cookies_timeout_ms,
                     step_name="wait_auth",
                     recorder=recorder,
+                    detect_mfa=True,
                 )
 
                 cookies = context.cookies()

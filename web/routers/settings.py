@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -116,3 +118,17 @@ def get_debug_screenshot(file_path: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="截圖檔案不存在")
 
     return FileResponse(path=full_path, media_type="image/png", filename=full_path.name)
+
+
+@router.get("/debug/mfa-status", response_model=dict[str, Any])
+def get_mfa_status() -> dict[str, Any]:
+    """取得當前是否有進行中的 Microsoft Authenticator 數字比對挑戰。"""
+    status_file = _get_screenshot_dir() / "mfa_challenge.json"
+    if status_file.is_file():
+        try:
+            data = json.loads(status_file.read_text(encoding="utf-8"))
+            if time.time() - data.get("updated_at", 0) < 120:
+                return data
+        except Exception:
+            pass
+    return {"active": False, "number": None}

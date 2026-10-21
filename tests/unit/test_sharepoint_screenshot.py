@@ -10,6 +10,8 @@ from auth.providers.sharepoint_cookie import (
     SharePointLoginRecorder,
     SharePointLoginTimeoutError,
     _capture_failure_artifact,
+    _detect_microsoft_authenticator_challenge,
+    _save_active_mfa_status,
     _wait_for_condition_with_recording,
 )
 from fastapi.testclient import TestClient
@@ -81,7 +83,7 @@ def test_wait_for_condition_with_recording_polls_and_captures(tmp_path: Path):
 
     assert ok is True
     assert calls >= 3
-    assert len(recorder.frames) >= 3
+    assert len(recorder.frames) >= 2
 
 
 def test_web_debug_screenshot_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -123,3 +125,57 @@ def test_web_debug_screenshot_endpoints(tmp_path: Path, monkeypatch: pytest.Monk
     # 4. Path traversal attempt -> 400 or 404 (Starlette URL path normalizer)
     res_traversal = client.get("/api/settings/debug/screenshots/../test.png")
     assert res_traversal.status_code in (400, 404)
+
+
+def test_detect_microsoft_authenticator_challenge_number_matching():
+    # 1. Element with richContext_display contains number 42
+    mock_page = MagicMock()
+    mock_loc = MagicMock()
+    mock_loc.count.return_value = 1
+    mock_loc.first.inner_text.return_value = " 42 "
+    mock_page.locator.return_value = mock_loc
+
+    is_mfa, number = _detect_microsoft_authenticator_challenge(mock_page)
+    assert is_mfa is True
+    assert number == "42"
+
+
+def test_detect_microsoft_authenticator_challenge_push_no_number():
+    # 2. General push title without number
+    mock_page = MagicMock()
+    # loc count 0 for richContext, but 1 for SAASTO title
+    def loc_side_effect(sel):
+        m = MagicMock()
+        if "SAASTO" in sel:
+            m.count.return_value = 1
+            m.first.is_visible.return_value = True
+            m.first.inner_text.return_value = "Approve sign in request"
+        else:
+            m.count.return_value = 0
+        return m
+    mock_page.locator.side_effect = loc_side_effect
+
+    is_mfa, number = _detect_microsoft_authenticator_challenge(mock_page)
+    assert is_mfa is True
+    assert number is None
+
+
+def test_mfa_status_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SHAREPOINT_SCREENSHOT_DIR", str(tmp_path))
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Initially inactive
+    res = client.get("/api/settings/debug/mfa-status")
+    assert res.status_code == 200
+    assert res.json()["active"] is False
+
+    # 2. When challenge is active
+    status_file = tmp_path / "mfa_challenge.json"
+    import time
+    status_file.write_text('{"active": true, "number": "88", "updated_at": ' + str(time.time()) + '}', encoding="utf-8")
+
+    res_active = client.get("/api/settings/debug/mfa-status")
+    assert res_active.status_code == 200
+    assert res_active.json()["active"] is True
+    assert res_active.json()["number"] == "88"

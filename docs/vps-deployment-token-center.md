@@ -173,3 +173,32 @@ docker compose exec token-center drive-unix upstash pull -p 'YourSecretPassphras
      scp user@vps_ip:~/.config/drive-unix/debug/*.png .
      ```
 
+---
+
+## 8. Microsoft Authenticator 數字比對 (Number Matching) 自動探測
+
+當登入觸發微軟雙重驗證（MFA），並在畫面上顯示需要於手機輸入的配對數字時：
+
+1. **自動即時解析數字**：
+   系統探測到 Authenticator 挑戰頁面時，會自動從頁面 DOM（`#richContext_display`）解析出配對數字（例如 `42`）。
+2. **自動延長等候時間**：
+   等候時間自動動態延長至 **90 秒**，給予使用者充裕時間開啟手機輸入。
+3. **終端與日誌提示**：
+   在終端機（或 `journalctl -u drive-unix-renew -f`）顯示醒目標誌：
+   ```text
+   =================================================================
+   🔔【Microsoft 雙重驗證 (MFA) - 請在手機輸入數字】
+   微軟要求數字比對！請開啟手機上的 Microsoft Authenticator 並輸入：
+
+                     👉 【 42 】 👈
+
+   系統正在背景等候您的手機核准 (最長等候 90 秒)...
+   =================================================================
+   ```
+4. **即時 API 狀態查詢**：
+   亦可透過 Web API 即時查詢當前是否有進行中的 MFA 數字挑戰：
+   `GET /api/settings/debug/mfa-status`
+   回應：`{"active": true, "number": "42", "message": "請在手機輸入數字：42"}`
+5. **手機核准後全自動推進**：
+   當在手機上點擊確認後，Headless 瀏覽器會自動偵測頁面跳轉與「保持登入」提示，自動完成憑證換發、加密存入 Upstash，並清除暫存截圖。
+
