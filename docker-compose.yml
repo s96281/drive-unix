@@ -1,0 +1,40 @@
+services:
+  # 1. 憑證換發中心核心服務 (Token Renewal Daemon)
+  # 定時每 30 分鐘 (1800 秒) 巡檢即將在 60 分鐘內過期的 Token/Cookie，自動換發並 E2EE 加密回寫 Upstash
+  token-center:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drive-unix-token-center
+    restart: unless-stopped
+    command: ["drive-unix", "upstash", "renew-tokens", "--interval", "1800", "--leeway", "60"]
+    volumes:
+      - drive-unix-data:/root/.config/drive-unix
+    environment:
+      - PYTHONUNBUFFERED=1
+      # 可在此指定 Upstash 連線資訊，或在容器內透過 drive-unix upstash config 設定
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - UPSTASH_SYNC_PASSPHRASE=${UPSTASH_SYNC_PASSPHRASE:-}
+
+  # 2. Web 管理介面與 REST API 服務 (可選)
+  web-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drive-unix-web
+    restart: unless-stopped
+    command: ["python", "-m", "web", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - drive-unix-data:/root/.config/drive-unix
+    environment:
+      - PYTHONUNBUFFERED=1
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - UPSTASH_SYNC_PASSPHRASE=${UPSTASH_SYNC_PASSPHRASE:-}
+
+volumes:
+  drive-unix-data:
+    name: drive-unix-data

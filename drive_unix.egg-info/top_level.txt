@@ -1,0 +1,10 @@
+application
+auth
+cli
+core
+domain
+infrastructure
+main
+providers
+storage
+web

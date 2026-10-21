@@ -1,0 +1,344 @@
+# drive_unix
+
+多 Provider 檔案管理與同步 CLI。專案採分層架構，將 CLI、Application、Domain、Storage Provider 與 Infrastructure 分離。
+
+
+## 完整使用手冊
+
+更完整的安裝、Provider 設定、命令參考、同步安全模型、排程、自動化與錯誤排查，請參閱：
+
+- [`docs/user-guide.md`](docs/user-guide.md)
+
+## 架構
+
+```text
+CLI
+  -> Application
+      -> Domain
+      -> Storage Interface
+          -> Provider Registry
+              -> Providers
+                  -> Provider Infrastructure
+      -> Infrastructure (HTTP / Rate Limit / Logging)
+```
+
+主要模組：
+
+- `cli/`：輸入解析、Rich presentation 與 CLI composition
+- `application/`：同步、跨 Provider 傳輸、排程服務
+- `domain/`：Snapshot、Sync Plan 與純商業規則
+- `storage/`：Provider contract 與 registry
+- `providers/`：Local / FTP / SFTP / WebDAV / Microsoft / Google Provider
+- `infrastructure/`：HTTP、Retry、Rate Limiter、Logging
+- `auth/`：OAuth / Cookie 驗證與安全 cache
+
+## Python 與安裝
+
+正式支援 **Python 3.12+**。CI 會在 Python 3.12、3.13、3.14 執行測試。
+
+核心 CLI：
+
+```bash
+python -m pip install .
+drive-unix --help
+```
+
+## 快速開始
+
+第一次使用建議從互動式導引開始：
+
+```bash
+drive-unix init
+```
+
+也可以直接以新的 task-oriented CLI 管理 Remote：
+
+```bash
+drive-unix remote add
+drive-unix remote list
+drive-unix remote test work
+drive-unix remote test work --write
+```
+
+舊版 `add-gdrive`、`add-sp`、`list-nodes` 等命令仍保留作為相容 alias，但不再顯示於 root help。
+
+### 同步
+
+單向同步使用 `sync`：
+
+```bash
+drive-unix sync local:/docs cloud:/backup --dry-run
+drive-unix sync local:/docs cloud:/backup --delete
+```
+
+雙向同步建議使用獨立的 `bisync`：
+
+```bash
+drive-unix bisync laptop:/docs cloud:/docs --dry-run
+drive-unix bisync laptop:/docs cloud:/docs --conflict rename
+```
+
+`sync --two-way` 仍可使用以維持既有腳本相容性。雙向同步預設 `--conflict auto`：當修改時間能安全判定新舊時採用較新版本；當兩邊內容不同但無法判定誰較新時，會先重新命名保留衝突版本，不再隱式採用第一個 argument。
+
+可用 conflict policy：
+
+```text
+auto
+newer
+rename
+abort
+prefer-source
+prefer-destination
+```
+
+大量同步預設只顯示摘要與高風險操作，需要逐項檢查時使用：
+
+```bash
+drive-unix sync A:/ B:/ --dry-run --full-plan
+```
+
+### 刪除安全模型
+
+不同 Provider 的刪除語意並不相同。drive-unix 現在由 Provider 明確宣告 deletion capability，CLI 不會把永久刪除誤稱為「移至回收桶」。
+
+- Local / FTP / SFTP / WebDAV：永久刪除。
+- Google Drive / SharePoint / OneDrive Business：支援回收桶；部分 Provider 亦支援明確永久刪除。
+- Microsoft Graph OneDrive：目前 adapter 的刪除只支援移至回收桶，`--permanent` 會被拒絕。
+
+`sync` 的計畫摘要會額外標示永久刪除數量，即使刪除是由 file/directory type conflict 觸發，而不是直接來自 `--delete`。
+
+### Automation / JSON / Plain output
+
+`ls`、`stat`、`diff`、`sync` / `bisync` 提供 JSON output：
+
+```bash
+drive-unix ls work:/ --json
+drive-unix stat work:/docs/a.pdf --json
+drive-unix diff A:/ B:/ --json
+drive-unix sync A:/ B:/ --dry-run --json
+```
+
+實際執行同步時，`--json` 必須搭配 `--yes`，避免 automation 被互動確認阻塞。
+
+需要將人類可讀輸出寫入 CI log、純文字檔或 screen reader 時，可使用全域 `--plain`：
+
+```bash
+drive-unix --plain ls work:/
+drive-unix --plain sync A:/ B:/ --dry-run
+```
+
+`--plain` 會停用 ANSI 色彩、emoji 與動態 progress；非 TTY stdout 也會自動停用 live progress。若只想關閉色彩，可使用通用的 `NO_COLOR` 環境變數：
+
+```bash
+NO_COLOR=1 drive-unix ls work:/
+```
+
+錯誤訊息統一採「問題 → 原因 → 下一步」格式，方便互動使用者與 log 快速定位 recovery action。
+
+Checksum 預設使用 `auto` 模式：先嘗試 Provider-side hash，不支援時自動下載並在本機計算。
+
+```bash
+drive-unix checksum work:/docs/a.pdf
+drive-unix checksum work:/docs/a.pdf --mode remote
+drive-unix checksum work:/docs/a.pdf --mode download
+```
+
+### 排程與環境
+
+```bash
+drive-unix schedule add nightly '0 2 * * *' 'sync local:/data cloud:/backup --yes'
+drive-unix schedule list
+
+# 前景模式：適合除錯 / 手動執行
+drive-unix schedule start
+
+# 背景 service lifecycle
+drive-unix schedule service install
+drive-unix schedule service start
+drive-unix schedule service status
+drive-unix schedule service stop
+drive-unix schedule service uninstall
+
+drive-unix env export backup.zip
+drive-unix env import backup.zip
+
+# Upstash 雲端多端安全同步 (E2EE 端對端加密)
+drive-unix upstash config
+drive-unix upstash test
+drive-unix upstash push -p 'MySecretPassphrase'
+drive-unix upstash status
+drive-unix upstash pull -p 'MySecretPassphrase' --dry-run
+drive-unix upstash pull -p 'MySecretPassphrase'
+```
+
+### Upstash 雲端多端安全同步 (E2EE)
+
+支援透過 Upstash Serverless Redis 實現多電腦/多裝置間的節點拓撲與機密憑證同步：
+
+- **端對端加密 (E2EE)**：採用 PBKDF2-HMAC-SHA256 (600,000 次迭代) 與 AES-256-GCM 認證加密。密碼與認證憑證在離開本機前完成加密，Upstash 雲端不存放任何明文機密。
+- **認證無縫適配**：拉取時自動重新註冊至新環境的本機 SecretStore (OS Keyring 或本機安全存儲)，自動處理跨機器認證參考差異。
+- **合併與衝突控制**：預設採 `merge` 策略；支援 `--dry-run` 預先檢查差異，並提供 `--overwrite` 或 `--strategy replace` 控制衝突。
+- **雲端憑證換發中心 (VPS 7x24 常駐)**：支援佈署至 VPS 作為憑證換發中心，自動在 Token/Cookie 即將過期前提前換發並回寫 Upstash，全網其他客戶端自動受惠。完整佈署教學請參閱 [`docs/vps-deployment-token-center.md`](docs/vps-deployment-token-center.md)。
+- **Web 管理介面**：亦可在 Web UI「系統設定 → 雲端多端同步」以圖形化介面設定與一鍵同步。
+
+`schedule start` 仍是前景模式，按 `Ctrl+C` 停止。`schedule service` 則提供真正的背景生命週期：Linux 使用 user-level systemd、macOS 使用 LaunchAgent、Windows 使用 Task Scheduler。若尚未執行 `service install`，`service start` 仍可啟動 detached process，但不會註冊登入後自動啟動。Scheduler log 預設位於設定目錄下的 `scheduler/scheduler.log`。
+
+Provider-specific dependency 使用 extras，避免只使用 Local/FTP/WebDAV 時仍安裝大型 SDK：
+
+```bash
+# Google Drive
+python -m pip install '.[google]'
+
+# SFTP
+python -m pip install '.[sftp]'
+
+# SharePoint / OneDrive Business browser authentication
+python -m pip install '.[sharepoint]'
+playwright install chromium
+
+# OneDrive OAuth
+python -m pip install '.[onedrive]'
+
+# fuzzy matching native speedup
+python -m pip install '.[speedups]'
+
+# 全部 Provider
+python -m pip install '.[all]'
+```
+
+若缺少對應 extra，Provider factory 會提示應安裝的 `drive-unix[...]` extra。
+
+
+### 使用 `uv` 安裝與管理 Python
+
+如果你使用 [uv](https://docs.astral.sh/uv/) 管理 Python 與專案環境，建議直接以 `pyproject.toml` 作為依賴來源，不需要另外執行 `pip install` 或手動建立 virtualenv。
+
+專案根目錄已提供 `.python-version`，預設使用 Python 3.12。若本機尚未安裝對應版本，可先執行：
+
+```bash
+uv python install 3.12
+```
+
+`uv` 也能在建立環境時自動取得缺少的 Python 版本，因此通常進入專案目錄後直接執行即可：
+
+```bash
+uv sync
+```
+
+`uv sync` 會依 `pyproject.toml` 建立/更新專案的 `.venv`，並以 editable mode 安裝 `drive-unix`。完成後不需要手動 `source .venv/bin/activate`，可直接透過：
+
+```bash
+uv run drive-unix --help
+```
+
+執行 CLI。
+
+#### 安裝 Provider extras
+
+`uv` 可直接同步 `pyproject.toml` 中的 optional dependencies：
+
+```bash
+# Google Drive
+uv sync --extra google
+
+# SFTP
+uv sync --extra sftp
+
+# SharePoint / OneDrive Business browser authentication
+uv sync --extra sharepoint
+uv run playwright install chromium
+
+# OneDrive OAuth
+uv sync --extra onedrive
+
+# fuzzy matching native speedup
+uv sync --extra speedups
+
+# 全部 Provider
+uv sync --extra all
+```
+
+若需要同時啟用多個 extra，可重複指定 `--extra`：
+
+```bash
+uv sync --extra google --extra sftp
+```
+
+#### 開發環境
+
+開發工具目前也定義為 `dev` extra，可使用：
+
+```bash
+# 核心依賴 + 開發工具
+uv sync --extra dev
+
+# 全部 Provider + 開發工具
+uv sync --extra all --extra dev
+```
+
+或一次啟用 `pyproject.toml` 中的全部 extras：
+
+```bash
+uv sync --all-extras
+```
+
+之後可直接透過 `uv run` 執行檢查，不必依賴 shell 是否已啟用 `.venv`：
+
+```bash
+uv run python -m compileall -q application auth cli core domain infrastructure providers storage main.py
+uv run ruff check .
+uv run mypy
+uv run python -m pytest
+```
+
+#### Lockfile 與可重現環境
+
+第一次解析依賴時，`uv` 可建立 `uv.lock`：
+
+```bash
+uv lock
+```
+
+如果團隊將 `uv.lock` 納入版本控制，CI 或部署環境可使用：
+
+```bash
+uv sync --locked
+```
+
+確保 lockfile 與 `pyproject.toml` 一致；若 lockfile 已存在且只想完全依照其中版本同步，也可使用 `uv sync --frozen`。依賴的宣告來源仍以 `pyproject.toml` 為準，不需要手動維護另一份 requirements 版本清單。
+
+## 憑證與 Secret
+
+`config.toml` 不保存密碼或 Client Secret 明文，只保存 secret reference。互動設定會優先使用 OS keyring；沒有可用 keyring backend 時，使用權限限制的本機 secret store。自動化建議使用環境變數：
+
+```bash
+export WORK_SP_PASSWORD='...'
+drive-unix add-sp work https://tenant.sharepoint.com /sites/work user@example.com \
+  --password-env WORK_SP_PASSWORD
+
+export ONEDRIVE_APP_SECRET='...'
+drive-unix add-onedrive work-ms CLIENT_ID --secret-env ONEDRIVE_APP_SECRET
+```
+
+CLI 不接受 `--password <明文>` 或 `--secret <明文>`，避免 secret 出現在 shell history / process command line。`export-env` 預設也不包含 secret store、OAuth client credential files 或登入 cache；需要可攜式備份時必須明確使用 `--include-secrets` / `--include-auth-cache`。
+
+## 開發與驗證
+
+所有 dependency 版本只維護在 `pyproject.toml`：
+
+```bash
+python -m pip install -e '.[all,dev]'
+```
+
+完整本機檢查：
+
+```bash
+python -m compileall -q application auth cli core domain infrastructure providers storage main.py
+ruff check .
+mypy
+python -m pytest
+```
+
+`requirements.txt` 與 `requirements-dev.txt` 僅是舊工作流程的 compatibility shim，不再包含獨立 dependency version list。
+
+GitHub Actions 會對 Python 3.12 / 3.13 / 3.14 執行 compile、Ruff、mypy 與 pytest，並另外建立 wheel/sdist 驗證 packaging metadata。
