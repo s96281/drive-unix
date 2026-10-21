@@ -83,32 +83,36 @@ def _get_screenshot_dir() -> Path:
 
 @router.get("/debug/screenshots", response_model=list[dict[str, Any]])
 def list_debug_screenshots() -> list[dict[str, Any]]:
-    """取得 headless 瀏覽器登入失敗截圖列表 (方便排查 SharePoint/Microsoft 驗證失敗問題)。"""
+    """取得 headless 瀏覽器登入失敗截圖列表 (包含每秒連環歷程與單張截圖)。"""
     sdir = _get_screenshot_dir()
     if not sdir.exists():
         return []
 
     results = []
-    for f in sorted(sdir.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True):
+    for f in sorted(sdir.rglob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True):
         st = f.stat()
+        rel_path = f.relative_to(sdir).as_posix()
         results.append({
             "filename": f.name,
+            "path": rel_path,
             "size_bytes": st.st_size,
             "created_at": st.st_mtime,
-            "url": f"/api/settings/debug/screenshots/{f.name}",
+            "url": f"/api/settings/debug/screenshots/{rel_path}",
         })
     return results
 
 
-@router.get("/debug/screenshots/{filename}")
-def get_debug_screenshot(filename: str):
-    """檢視或下載指定的登入排查截圖。"""
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or not filename.endswith(".png"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無效的檔案名稱")
+@router.get("/debug/screenshots/{file_path:path}")
+def get_debug_screenshot(file_path: str):
+    """檢視或下載指定的登入排查截圖 (支援歷程子目錄)。"""
+    normalized = Path(file_path)
+    if ".." in normalized.parts or not file_path.endswith(".png"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="無效的檔案路徑")
 
-    file_path = _get_screenshot_dir() / safe_name
-    if not file_path.is_file():
+    full_path = (_get_screenshot_dir() / normalized).resolve()
+    base_resolved = _get_screenshot_dir().resolve()
+
+    if not str(full_path).startswith(str(base_resolved)) or not full_path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="截圖檔案不存在")
 
-    return FileResponse(path=file_path, media_type="image/png", filename=safe_name)
+    return FileResponse(path=full_path, media_type="image/png", filename=full_path.name)

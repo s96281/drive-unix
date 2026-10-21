@@ -7,8 +7,10 @@ import pytest
 
 from auth.providers.sharepoint_cookie import (
     SharePointCookieNotFoundError,
+    SharePointLoginRecorder,
     SharePointLoginTimeoutError,
     _capture_failure_artifact,
+    _wait_for_condition_with_recording,
 )
 from fastapi.testclient import TestClient
 from web.app import create_app
@@ -39,35 +41,85 @@ def test_capture_failure_artifact_saves_screenshot_and_error(tmp_path: Path):
     mock_page.screenshot.assert_called_once()
 
 
+def test_sharepoint_login_recorder_cleanup_on_success(tmp_path: Path):
+    recorder = SharePointLoginRecorder(base_dir=tmp_path)
+    assert recorder.session_dir is not None
+    assert recorder.session_dir.exists()
+
+    mock_page = MagicMock()
+    frame1 = recorder.capture(mock_page, step_label="step1")
+    frame2 = recorder.capture(mock_page, step_label="step2")
+
+    assert len(recorder.frames) == 2
+    assert mock_page.screenshot.call_count == 2
+    assert "📸 登入歷程連環截圖" in recorder.get_summary()
+
+    # Success cleanup
+    recorder.cleanup_on_success()
+    assert not recorder.session_dir.exists()
+
+
+def test_wait_for_condition_with_recording_polls_and_captures(tmp_path: Path):
+    recorder = SharePointLoginRecorder(base_dir=tmp_path)
+    mock_page = MagicMock()
+
+    calls = 0
+
+    def check():
+        nonlocal calls
+        calls += 1
+        return calls >= 3
+
+    ok = _wait_for_condition_with_recording(
+        mock_page,
+        check,
+        timeout_ms=5000,
+        step_name="test_step",
+        recorder=recorder,
+        poll_interval_ms=10,
+    )
+
+    assert ok is True
+    assert calls >= 3
+    assert len(recorder.frames) >= 3
+
+
 def test_web_debug_screenshot_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("SHAREPOINT_SCREENSHOT_DIR", str(tmp_path))
 
-    # Create dummy screenshot
+    # Create dummy screenshot in root
     img1 = tmp_path / "sharepoint_timeout_20261022_000100.png"
-    img1.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes")
+    img1.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes1")
+
+    # Create dummy screenshot in subfolder (recorded session)
+    sub_dir = tmp_path / "sharepoint_session_20261022_000200"
+    sub_dir.mkdir()
+    img2 = sub_dir / "frame_001_00s_email.png"
+    img2.write_bytes(b"\x89PNG\r\n\x1a\nfakeimagebytes2")
 
     app = create_app()
     client = TestClient(app)
 
-    # 1. List screenshots
+    # 1. List screenshots (should find both root and session frames)
     res = client.get("/api/settings/debug/screenshots")
     assert res.status_code == 200
     data = res.json()
-    assert len(data) == 1
-    assert data[0]["filename"] == img1.name
-    assert data[0]["size_bytes"] == len(b"\x89PNG\r\n\x1a\nfakeimagebytes")
-    assert data[0]["url"] == f"/api/settings/debug/screenshots/{img1.name}"
+    assert len(data) == 2
+    filenames = {d["filename"] for d in data}
+    assert img1.name in filenames
+    assert img2.name in filenames
 
-    # 2. Get existing screenshot
-    res_img = client.get(f"/api/settings/debug/screenshots/{img1.name}")
-    assert res_img.status_code == 200
-    assert res_img.headers["content-type"] == "image/png"
-    assert res_img.content == b"\x89PNG\r\n\x1a\nfakeimagebytes"
+    # 2. Get existing screenshot in subfolder
+    sub_url = next(d["url"] for d in data if d["filename"] == img2.name)
+    res_img2 = client.get(sub_url)
+    assert res_img2.status_code == 200
+    assert res_img2.headers["content-type"] == "image/png"
+    assert res_img2.content == b"\x89PNG\r\n\x1a\nfakeimagebytes2"
 
     # 3. Non-existent screenshot -> 404
     res_404 = client.get("/api/settings/debug/screenshots/non_existent.png")
     assert res_404.status_code == 404
 
-    # 4. Path traversal attempt -> 400
+    # 4. Path traversal attempt -> 400 or 404 (Starlette URL path normalizer)
     res_traversal = client.get("/api/settings/debug/screenshots/../test.png")
     assert res_traversal.status_code in (400, 404)

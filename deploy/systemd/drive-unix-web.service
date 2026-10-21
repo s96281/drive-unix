@@ -11,7 +11,7 @@ WorkingDirectory=/opt/drive_unix
 EnvironmentFile=-/etc/drive-unix/env
 Environment=PYTHONUNBUFFERED=1
 # 啟動 Web 服務器 (監聽 127.0.0.1:8000，建議搭配 Nginx/Caddy 反向代理加上 HTTPS)
-ExecStart=/opt/drive_unix/.venv/bin/python -m web --host 127.0.0.1 --port 8000
+ExecStart=/opt/drive_unix/.venv/bin/python -m web --host 0.0.0.0 --port 8000
 
 Restart=always
 RestartSec=10

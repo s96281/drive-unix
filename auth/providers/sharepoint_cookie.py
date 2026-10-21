@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from playwright.sync_api import (
     Cookie,
@@ -102,6 +103,120 @@ def _capture_failure_artifact(
         logger.debug("擷取 SharePoint 失敗截圖時發生例外: %s", exc)
 
     return screenshot_path, page_title, page_url, visible_error
+
+
+class SharePointLoginRecorder:
+    """
+    Records per-second screenshot frames during SharePoint login.
+    If login succeeds, all frames and the session folder are cleaned up automatically.
+    If login fails, frames are preserved in debug_dir for step-by-step troubleshooting.
+    """
+
+    def __init__(
+        self,
+        base_dir: Optional[Path | str] = None,
+        *,
+        enabled: bool = True,
+    ) -> None:
+        self.enabled = enabled
+        self.frame_index = 0
+        self.start_time = time.time()
+        self.frames: list[Path] = []
+
+        if not self.enabled:
+            self.session_dir: Optional[Path] = None
+            return
+
+        if base_dir is None:
+            env_dir = os.getenv("SHAREPOINT_SCREENSHOT_DIR") or os.getenv("DRIVE_UNIX_DEBUG_DIR")
+            if env_dir:
+                root_dir = Path(env_dir)
+            else:
+                root_dir = Path.home() / ".config" / "drive-unix" / "debug"
+        else:
+            root_dir = Path(base_dir)
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self.session_dir = root_dir / f"sharepoint_session_{timestamp}"
+        try:
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            self.enabled = False
+            self.session_dir = None
+
+    def capture(self, page: Any, step_label: str = "") -> Optional[Path]:
+        """Capture a single frame if enabled."""
+        if not self.enabled or not self.session_dir or page is None:
+            return None
+
+        self.frame_index += 1
+        elapsed = int(time.time() - self.start_time)
+        clean_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in step_label)[:25]
+        if clean_label:
+            filename = f"frame_{self.frame_index:03d}_{elapsed:02d}s_{clean_label}.png"
+        else:
+            filename = f"frame_{self.frame_index:03d}_{elapsed:02d}s.png"
+
+        frame_path = self.session_dir / filename
+        try:
+            page.screenshot(path=str(frame_path), full_page=True)
+            self.frames.append(frame_path)
+            return frame_path
+        except Exception as exc:
+            logger.debug("擷取畫面失敗: %s", exc)
+            return None
+
+    def cleanup_on_success(self) -> None:
+        """Remove all temporary screenshots on successful login."""
+        if not self.session_dir or not self.session_dir.exists():
+            return
+        try:
+            shutil.rmtree(self.session_dir, ignore_errors=True)
+            logger.info("SharePoint 登入成功，已自動清除暫存歷程截圖 (%d 張)", len(self.frames))
+        except Exception as exc:
+            logger.debug("清除截圖目錄失敗: %s", exc)
+
+    def get_summary(self) -> str:
+        """Return summary of captured frames for error reporting."""
+        if not self.session_dir or not self.frames:
+            return ""
+        return f"\n📸 登入歷程連環截圖 (每秒 1 張，共 {len(self.frames)} 張) 已保留於:\n   {self.session_dir}"
+
+
+def _wait_for_condition_with_recording(
+    page: Any,
+    condition_fn: Callable[[], bool],
+    *,
+    timeout_ms: int,
+    step_name: str,
+    recorder: SharePointLoginRecorder,
+    poll_interval_ms: int = 1000,
+) -> bool:
+    """
+    Polls condition_fn every poll_interval_ms (default 1000ms = 1 sec).
+    Captures a screenshot frame every second while waiting.
+    Returns True if condition became True before timeout, False otherwise.
+    """
+    start = time.perf_counter()
+    timeout_s = timeout_ms / 1000.0
+
+    while True:
+        recorder.capture(page, step_label=step_name)
+
+        try:
+            if condition_fn():
+                return True
+        except Exception:
+            pass
+
+        if (time.perf_counter() - start) >= timeout_s:
+            return False
+
+        remaining_ms = int(max(100, min(poll_interval_ms, (timeout_s - (time.perf_counter() - start)) * 1000)))
+        try:
+            page.wait_for_timeout(remaining_ms)
+        except Exception:
+            time.sleep(remaining_ms / 1000.0)
 
 
 class SharePointCookieAuthError(AuthProviderError):
@@ -236,6 +351,7 @@ def get_cookie(
 
             context = browser.new_context()
             page = context.new_page()
+            recorder = SharePointLoginRecorder(base_dir=screenshot_dir)
 
             try:
                 page.goto(
@@ -243,37 +359,63 @@ def get_cookie(
                     wait_until="domcontentloaded",
                     timeout=login_timeout_ms,
                 )
+                recorder.capture(page, step_label="goto_done")
 
-                # Email step
-                page.wait_for_selector(
-                    'input[name="loginfmt"]',
-                    timeout=login_timeout_ms,
+                # Step 1: Wait for email input (takes screenshot every sec)
+                email_ready = _wait_for_condition_with_recording(
+                    page,
+                    lambda: page.locator('input[name="loginfmt"]').is_visible(),
+                    timeout_ms=login_timeout_ms,
+                    step_name="wait_email",
+                    recorder=recorder,
                 )
+                if not email_ready:
+                    raise PlaywrightTimeoutError("等待微軟帳號輸入框 (loginfmt) 超時")
+
                 page.fill('input[name="loginfmt"]', email)
+                recorder.capture(page, step_label="email_filled")
                 page.click('input[type="submit"]')
+                recorder.capture(page, step_label="email_submitted")
 
-                # Password step
-                page.wait_for_selector(
-                    'input[name="passwd"]',
-                    timeout=login_timeout_ms,
+                # Step 2: Wait for password input (takes screenshot every sec)
+                passwd_ready = _wait_for_condition_with_recording(
+                    page,
+                    lambda: page.locator('input[name="passwd"]').is_visible(),
+                    timeout_ms=login_timeout_ms,
+                    step_name="wait_password",
+                    recorder=recorder,
                 )
+                if not passwd_ready:
+                    raise PlaywrightTimeoutError("等待微軟密碼輸入框 (passwd) 超時")
+
                 page.fill('input[name="passwd"]', password)
+                recorder.capture(page, step_label="passwd_filled")
                 page.click('input[type="submit"]')
+                recorder.capture(page, step_label="passwd_submitted")
 
-                # Optional "Stay signed in?" prompt.
-                # Usually idBtn_Back means "No".
-                try:
-                    page.wait_for_selector(
-                        'input[id="idBtn_Back"]',
-                        timeout=stay_signed_in_timeout_ms,
-                    )
-                    page.click('input[id="idBtn_Back"]')
-                except PlaywrightTimeoutError:
-                    pass
+                # Step 3: Wait for cookies or "Stay signed in?" prompt (takes screenshot every sec)
+                def _check_cookies_or_prompt() -> bool:
+                    try:
+                        btn = page.locator('input[id="idBtn_Back"]')
+                        if btn.is_visible():
+                            btn.click()
+                    except Exception:
+                        pass
 
-                # Give SharePoint enough time to set auth cookies.
-                if after_login_wait_seconds > 0:
-                    time.sleep(after_login_wait_seconds)
+                    ck = context.cookies()
+                    return bool(_find_cookie_value(ck, "rtFa") and _find_cookie_value(ck, "FedAuth"))
+
+                wait_cookies_timeout_ms = max(
+                    15_000,
+                    (stay_signed_in_timeout_ms + (after_login_wait_seconds * 1000))
+                )
+                _wait_for_condition_with_recording(
+                    page,
+                    _check_cookies_or_prompt,
+                    timeout_ms=wait_cookies_timeout_ms,
+                    step_name="wait_auth",
+                    recorder=recorder,
+                )
 
                 cookies = context.cookies()
 
@@ -292,7 +434,8 @@ def get_cookie(
                     msg_parts.append(f"(頁面標題: '{p_title}', URL: {p_url})")
                 if s_path:
                     msg_parts.append(f"📸 失敗畫面截圖已儲存至: {s_path}")
-                raise SharePointLoginTimeoutError("\n".join(msg_parts)) from exc
+                msg_parts.append(recorder.get_summary())
+                raise SharePointLoginTimeoutError("\n".join(filter(None, msg_parts))) from exc
             except Exception as exc:
                 s_path, p_title, p_url, vis_err = _capture_failure_artifact(
                     page, reason="login_exception", screenshot_dir=screenshot_dir
@@ -301,6 +444,7 @@ def get_cookie(
                     msg = f"登入 SharePoint 時發生未預期錯誤: {exc}"
                     if s_path:
                         msg += f"\n📸 失敗畫面截圖已儲存至: {s_path}"
+                    msg += recorder.get_summary()
                     raise SharePointCookieAuthError(msg) from exc
                 raise
 
@@ -330,7 +474,11 @@ def get_cookie(
                     msg_parts.append(f"(頁面標題: '{p_title}', URL: {p_url})")
                 if s_path:
                     msg_parts.append(f"📸 失敗畫面截圖已儲存至: {s_path}")
-                raise SharePointCookieNotFoundError("\n".join(msg_parts))
+                msg_parts.append(recorder.get_summary())
+                raise SharePointCookieNotFoundError("\n".join(filter(None, msg_parts)))
+
+            # 登入成功：清除所有每秒錄製的暫存截圖
+            recorder.cleanup_on_success()
 
             cookie_header = f"rtFa={rtfa};FedAuth={fedauth}"
 

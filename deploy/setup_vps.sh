@@ -142,7 +142,7 @@ Type=simple
 User=${ACTUAL_USER}
 WorkingDirectory=${INSTALL_DIR}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=${INSTALL_DIR}/.venv/bin/python -m web --host 127.0.0.1 --port 8000
+ExecStart=${INSTALL_DIR}/.venv/bin/python -m web --host 0.0.0.0 --port 8000
 
 Restart=always
 RestartSec=10
