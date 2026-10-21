@@ -360,7 +360,7 @@ def get_cookie(
                     timeout=login_timeout_ms,
                 )
                 recorder.capture(page, step_label="goto_done")
-
+                time.sleep(1)
                 # Step 1: Wait for email input (takes screenshot every sec)
                 email_ready = _wait_for_condition_with_recording(
                     page,
