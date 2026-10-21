@@ -202,3 +202,18 @@ docker compose exec token-center drive-unix upstash pull -p 'YourSecretPassphras
 5. **手機核准後全自動推進**：
    當在手機上點擊確認後，Headless 瀏覽器會自動偵測頁面跳轉與「保持登入」提示，自動完成憑證換發、加密存入 Upstash，並清除暫存截圖。
 
+---
+
+## 9. 「Let's keep your account secure」與「Not now」自動略過處理
+
+微軟有時會在輸入密碼後彈出「**Let's keep your account secure**」（保持帳戶安全）的二次驗證設定建議引導畫面：
+
+1. **自動探測略過按鈕**：
+   系統在等待憑證期間，每秒會主動探測是否存在以下略過選項：
+   - `#btnAskLater`
+   - `Not now` / `Not know`
+   - `Skip for now` / `Ask later`
+   - `稍後再說` / `現在不要` / `略過`
+2. **全自動點擊略過**：
+   一旦在畫面中發現安全提示或跳過按鈕，系統會自動模擬點擊「Not now / Skip for now」，繞過該提示頁面，繼續前進至 SharePoint 驗證完成，無須人工手動干預。
+

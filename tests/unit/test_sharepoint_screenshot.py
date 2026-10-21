@@ -11,6 +11,7 @@ from auth.providers.sharepoint_cookie import (
     SharePointLoginTimeoutError,
     _capture_failure_artifact,
     _detect_microsoft_authenticator_challenge,
+    _handle_keep_account_secure_or_skip,
     _save_active_mfa_status,
     _wait_for_condition_with_recording,
 )
@@ -179,3 +180,67 @@ def test_mfa_status_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert res_active.status_code == 200
     assert res_active.json()["active"] is True
     assert res_active.json()["number"] == "88"
+
+
+def test_handle_keep_account_secure_or_skip_with_not_now():
+    mock_page = MagicMock()
+    mock_btn = MagicMock()
+    mock_btn.count.return_value = 1
+    mock_btn.first.is_visible.return_value = True
+    mock_btn.first.inner_text.return_value = "Not now"
+
+    def loc_fn(sel):
+        if "Not now" in sel:
+            return mock_btn
+        m = MagicMock()
+        m.count.return_value = 0
+        return m
+
+    mock_page.locator.side_effect = loc_fn
+    clicked = _handle_keep_account_secure_or_skip(mock_page)
+
+    assert clicked is True
+    mock_btn.first.click.assert_called_once()
+
+
+def test_handle_keep_account_secure_or_skip_with_not_know_typo():
+    mock_page = MagicMock()
+    mock_btn = MagicMock()
+    mock_btn.count.return_value = 1
+    mock_btn.first.is_visible.return_value = True
+    mock_btn.first.inner_text.return_value = "Not know"
+
+    def loc_fn(sel):
+        if "Not know" in sel:
+            return mock_btn
+        m = MagicMock()
+        m.count.return_value = 0
+        return m
+
+    mock_page.locator.side_effect = loc_fn
+    clicked = _handle_keep_account_secure_or_skip(mock_page)
+
+    assert clicked is True
+    mock_btn.first.click.assert_called_once()
+
+
+def test_handle_keep_account_secure_or_skip_with_btn_ask_later():
+    mock_page = MagicMock()
+    mock_link = MagicMock()
+    mock_link.count.return_value = 1
+    mock_link.first.is_visible.return_value = True
+    mock_link.first.inner_text.return_value = "Skip for now (14 days until this is required)"
+
+    def loc_fn(sel):
+        if "btnAskLater" in sel:
+            return mock_link
+        m = MagicMock()
+        m.count.return_value = 0
+        return m
+
+    mock_page.locator.side_effect = loc_fn
+    clicked = _handle_keep_account_secure_or_skip(mock_page)
+
+    assert clicked is True
+    mock_link.first.click.assert_called_once()
+

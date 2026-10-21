@@ -264,6 +264,81 @@ def _save_active_mfa_status(number: Optional[str], active: bool) -> None:
         pass
 
 
+def _handle_keep_account_secure_or_skip(
+    page: Any,
+    recorder: Optional[SharePointLoginRecorder] = None,
+) -> bool:
+    """
+    Detects Microsoft's "Let's keep your account secure" / "Help us protect your account"
+    screen or any "Not now" / "Not know" / "Skip for now" prompts, and automatically clicks to bypass.
+    Returns True if a skip button or link was clicked.
+    """
+    if page is None:
+        return False
+
+    skip_selectors = [
+        # IDs commonly used by Microsoft for skip/ask later actions
+        '#btnAskLater',
+        'a[id="btnAskLater"]',
+        'button[id="btnAskLater"]',
+        'a[id*="AskLater"]',
+        'button[id*="AskLater"]',
+        'a[id*="Skip"]',
+        'button[id*="Skip"]',
+        # Text based buttons/links (case-insensitive where possible)
+        'button:has-text("Not now")',
+        'a:has-text("Not now")',
+        'button:has-text("Not know")',
+        'a:has-text("Not know")',
+        'button:has-text("Skip for now")',
+        'a:has-text("Skip for now")',
+        'button:has-text("Ask later")',
+        'a:has-text("Ask later")',
+        'button:has-text("現在不要")',
+        'a:has-text("現在不要")',
+        'button:has-text("稍後再說")',
+        'a:has-text("稍後再說")',
+        'button:has-text("稍後")',
+        'a:has-text("稍後")',
+        'button:has-text("略過")',
+        'a:has-text("略過")',
+    ]
+
+    for sel in skip_selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                txt = loc.first.inner_text().strip()
+                logger.info("偵測到帳戶安全提示，自動點擊跳過選項: '%s'", txt or sel)
+                loc.first.click()
+                if recorder:
+                    recorder.capture(page, step_label="skip_secure_prompt")
+                return True
+        except Exception:
+            pass
+
+    # Check if page heading or text mentions keeping account secure
+    try:
+        content = page.content().lower()
+        if any(kw in content for kw in ["keep your account secure", "protect your account", "保護您的帳戶", "保持帳戶安全"]):
+            for tag in ["a", "button", "input[type='button']", "div[role='button']"]:
+                locs = page.locator(tag)
+                for i in range(min(locs.count(), 10)):
+                    item = locs.nth(i)
+                    if item.is_visible():
+                        item_text = item.inner_text().lower().strip()
+                        if any(w in item_text for w in ["not now", "not know", "skip", "later", "稍後", "略過", "不要"]):
+                            logger.info("偵測到安全提示頁面跳過按鈕: '%s'，自動點擊...", item_text)
+                            item.click()
+                            if recorder:
+                                recorder.capture(page, step_label="skip_secure_prompt")
+                            return True
+    except Exception:
+        pass
+
+    return False
+
+
 def _wait_for_condition_with_recording(
     page: Any,
     condition_fn: Callable[[], bool],
@@ -517,6 +592,10 @@ def get_cookie(
                 # Step 3: Wait for cookies or "Stay signed in?" prompt (takes screenshot every sec + MFA detection)
                 def _check_cookies_or_prompt() -> bool:
                     try:
+                        # 1. Automatically handle "Let's keep your account secure" or "Not now" / "Not know" prompts
+                        _handle_keep_account_secure_or_skip(page, recorder=recorder)
+
+                        # 2. Check "Stay signed in?" prompt (No: idBtn_Back, Yes: idSIButton9)
                         btn_back = page.locator('input[id="idBtn_Back"]')
                         btn_yes = page.locator('input[id="idSIButton9"]')
                         if btn_back.is_visible():
