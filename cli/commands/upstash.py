@@ -387,33 +387,115 @@ def upstash_renew_tokens(
     leeway: int = typer.Option(30, "--leeway", "-l", help="過期緩衝分鐘數 (例如: 30 表示 30 分鐘內即將過期的 Token 均提前換發)"),
     remote: str | None = typer.Option(None, "--remote", "-r", help="僅針對特定遠端節點執行巡檢換發 (預設巡檢所有已設定節點)"),
     interval: int | None = typer.Option(None, "--interval", "-i", help="常駐背景巡檢間隔秒數 (若未指定則僅執行單次巡檢)"),
+    passphrase: str | None = typer.Option(None, "--passphrase", "-p", help="E2EE 主密碼 (若未預先設定至 SecretStore，可由此指定)"),
+    passphrase_env: str | None = typer.Option(None, "--passphrase-env", help="從指定環境變數讀取主密碼"),
     json_output: bool = typer.Option(False, "--json", help="以 JSON 格式輸出換發結果"),
 ) -> None:
     """[憑證換發中心] 定時或單次巡檢本機節點憑證，即將過期自動換發並回寫 Upstash。"""
     ctx = CLIContext.create()
     from application.upstash_token_service import UpstashTokenService
 
+    resolved_pass: str | None = None
+    if passphrase_env:
+        resolved_pass = os.getenv(passphrase_env)
+        if not resolved_pass:
+            raise typer.BadParameter(f"環境變數 {passphrase_env} 未設定或內容為空。")
+    elif passphrase:
+        resolved_pass = passphrase
+
+    orig_env_pass = os.environ.get("UPSTASH_SYNC_PASSPHRASE")
+    if resolved_pass:
+        os.environ["UPSTASH_SYNC_PASSPHRASE"] = resolved_pass
+
     service = UpstashTokenService(ctx.config)
 
-    def _run_once() -> dict[str, Any]:
-        return service.renew_all_tokens(leeway_minutes=leeway, remote_filter=remote)
+    def _cli_progress(data: dict[str, Any]) -> None:
+        evt = data.get("event")
+        if evt == "start":
+            total = data["total_remotes"]
+            uc = data["unique_count"]
+            cloud_on = data["cloud_enabled"]
+            reason = data["cloud_disabled_reason"]
+            echo(f"🔍 啟動憑證換發中心巡檢 (緩衝時間: {leeway} 分鐘)...")
+            if cloud_on:
+                secho("   ☁️  Upstash 雲端同步: 已啟用 (換發後將自動 E2EE 加密回寫)", fg=typer.colors.GREEN)
+            else:
+                secho(f"   ⚠️  Upstash 雲端同步: 未啟用 ({reason})", fg=typer.colors.YELLOW)
+                echo("      提示: 憑證僅於本地刷新，不會同步至 Upstash 雲端。")
+            echo(f"   共發現 {total} 個遠端節點，聚合為 {uc} 組獨立驗證帳號。")
+            echo("-" * 55)
+
+        elif evt == "checking":
+            idx = data["index"]
+            tot = data["total"]
+            ident = data["identity"]
+            remotes = ", ".join(data["remotes"])
+            echo(f"\n[{idx}/{tot}] 正在巡檢帳號: {ident}")
+            echo(f"      關聯節點: {remotes}")
+
+        elif evt == "skipped":
+            rem_sec = data.get("remaining_seconds")
+            if rem_sec is not None:
+                rem_min = rem_sec / 60.0
+                echo(f"      狀態: 💤 憑證仍有效 (剩餘約 {rem_min:.1f} 分鐘 > 緩衝 {leeway} 分鐘)，略過換發。")
+            else:
+                echo("      狀態: 💤 憑證有效 (無特定過期限制)，略過換發。")
+
+        elif evt == "refreshing":
+            rem_sec = data.get("remaining_seconds")
+            if rem_sec is not None and rem_sec > 0:
+                rem_min = rem_sec / 60.0
+                secho(f"      狀態: 🔄 憑證即將過期 (剩餘約 {rem_min:.1f} 分鐘 <= 緩衝 {leeway} 分鐘)，開始換發...", fg=typer.colors.CYAN)
+            elif rem_sec is not None and rem_sec <= 0:
+                secho("      狀態: 🔄 憑證已過期，開始換發...", fg=typer.colors.CYAN)
+            else:
+                secho("      狀態: 🔄 開始換發憑證...", fg=typer.colors.CYAN)
+            echo("      ⏳ 正在連線驗證伺服器換發 Token (如需網頁驗證可能耗時數十秒，請稍候)...")
+
+        elif evt == "renewed":
+            sync_action = data.get("sync_action", "")
+            tok_key = data.get("token_key")
+            secho("      ✅ 本機憑證換發/更新成功！", fg=typer.colors.GREEN)
+            if sync_action == "pushed":
+                secho(f"      ☁️  已透過 E2EE 加密回寫 Upstash (Key: {tok_key})", fg=typer.colors.GREEN)
+            elif sync_action == "picked":
+                secho(f"      ☁️  已自 Upstash 雲端拾取其他設備換發之最新憑證 (Key: {tok_key})", fg=typer.colors.GREEN)
+            elif sync_action == "failed":
+                secho(f"      ⚠️  未能成功回寫 Upstash (Key: {tok_key})", fg=typer.colors.YELLOW)
+            else:
+                secho("      ⚠️  未回寫雲端 (Upstash 同步未啟用)", fg=typer.colors.YELLOW)
+
+        elif evt == "error":
+            err = data.get("error")
+            secho(f"      ❌ 換發失敗: {err}", fg=typer.colors.RED)
+
+    def _run_once(use_progress: bool = True) -> dict[str, Any]:
+        cb = _cli_progress if (use_progress and not json_output) else None
+        return service.renew_all_tokens(leeway_minutes=leeway, remote_filter=remote, progress_cb=cb)
 
     if interval:
         if interval < 5:
             raise typer.BadParameter("常駐巡檢間隔不可小於 5 秒。")
         secho(f"🔄 啟動 [憑證換發中心] 常駐守護行程，每 {interval} 秒巡檢一次 (緩衝: {leeway} 分鐘)...", fg=typer.colors.CYAN)
+        cloud_on, reason = service.get_sync_status()
+        if not cloud_on:
+            secho(f"⚠️  警告: Upstash 雲端同步未啟用 ({reason})，背景換發將僅更新本地快取！", fg=typer.colors.YELLOW)
         try:
             while True:
-                res = _run_once()
+                res = _run_once(use_progress=False)
                 if json_output:
                     echo(json.dumps(res, ensure_ascii=False))
                 else:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     renewed = res.get("renewed_remotes", [])
                     skipped = res.get("skipped_remotes", [])
+                    cloud_synced = res.get("cloud_synced_remotes", [])
                     errs = res.get("errors", {})
                     if renewed:
-                        secho(f"[{ts}] ✅ 已換發 {len(renewed)} 個節點: {', '.join(renewed)}", fg=typer.colors.GREEN)
+                        if cloud_on and cloud_synced:
+                            secho(f"[{ts}] ✅ 已換發 {len(renewed)} 個節點並回寫雲端: {', '.join(renewed)}", fg=typer.colors.GREEN)
+                        else:
+                            secho(f"[{ts}] ⚠️ 已換發 {len(renewed)} 個節點 (僅限本地，未同步雲端): {', '.join(renewed)}", fg=typer.colors.YELLOW)
                     elif errs:
                         secho(f"[{ts}] ⚠️ 換發發生錯誤: {errs}", fg=typer.colors.YELLOW)
                     else:
@@ -424,32 +506,61 @@ def upstash_renew_tokens(
             return
 
     try:
-        res = _run_once()
+        res = _run_once(use_progress=True)
         if json_output:
             echo(json.dumps(res, ensure_ascii=False))
             return
 
-        echo("🛡️  憑證換發中心巡檢結果:")
-        echo(f"   獨立帳號識別數: {res.get('unique_identities_count', 0)}")
+        echo("\n" + "=" * 55)
+        echo("🛡️  憑證換發中心巡檢結果摘要:")
+        echo(f"   獨立帳號識別數:   {res.get('unique_identities_count', 0)}")
         renewed = res.get("renewed_remotes", [])
         skipped = res.get("skipped_remotes", [])
+        cloud_synced = res.get("cloud_synced_remotes", [])
+        cloud_enabled = res.get("cloud_enabled", False)
+        reason = res.get("cloud_disabled_reason")
         errs = res.get("errors", {})
+
         if renewed:
-            secho(f"   已換發並回寫雲端: {len(renewed)} 個節點 ({', '.join(renewed)})", fg=typer.colors.GREEN)
+            secho(f"   本機已換發節點數: {len(renewed)} 個 ({', '.join(renewed)})", fg=typer.colors.GREEN)
         else:
-            echo("   已換發節點數:     0 (憑證均尚未臨近過期)")
+            echo("   本機已換發節點數: 0 (憑證均尚未臨近過期)")
+
         if skipped:
-            echo(f"   略過節點數:       {len(skipped)} 個節點 ({', '.join(skipped)})")
+            echo(f"   本機略過節點數:   {len(skipped)} 個 ({', '.join(skipped)})")
+
         if errs:
             secho(f"   換發失敗節點數:   {len(errs)}", fg=typer.colors.RED)
             for rk, ev in errs.items():
                 echo(f"     - {rk}: {ev}")
+
+        echo("-" * 55)
+        if cloud_enabled:
+            if cloud_synced:
+                secho(f"   ☁️  雲端同步狀態: 成功同步 {len(cloud_synced)} 個節點之憑證至 Upstash (或自雲端拾取最新憑證)", fg=typer.colors.GREEN)
+            elif renewed:
+                secho("   ☁️  雲端同步狀態: ⚠️  換發完成，但未能成功回寫至 Upstash (請檢查連線或權限)", fg=typer.colors.YELLOW)
+            else:
+                echo("   ☁️  雲端同步狀態: 💤 本次無新換發憑證需要上傳")
+        else:
+            secho("   ☁️  雲端同步狀態: ⚠️  未啟用雲端同步！", fg=typer.colors.YELLOW)
+            if reason:
+                echo(f"      原因: {reason}")
+            echo("      提示: 請執行 `drive-unix upstash config --passphrase <密碼>`")
+            echo("            或指定 `--passphrase <密碼>` / 設定 UPSTASH_SYNC_PASSPHRASE，以啟用多設備憑證共享。")
+        echo("=" * 55)
     except Exception as exc:
         if json_output:
             echo(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
         else:
             render_error("憑證換發巡檢失敗。", cause=exc, next_steps=("確認各節點設定與 Upstash 連線正常。",))
         raise typer.Exit(code=1) from exc
+    finally:
+        if resolved_pass:
+            if orig_env_pass is None:
+                os.environ.pop("UPSTASH_SYNC_PASSPHRASE", None)
+            else:
+                os.environ["UPSTASH_SYNC_PASSPHRASE"] = orig_env_pass
 
 
 def register_upstash(app: typer.Typer) -> None:

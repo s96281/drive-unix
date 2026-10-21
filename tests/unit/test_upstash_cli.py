@@ -155,3 +155,33 @@ def test_upstash_cli_delete(isolated_app):
         res = runner.invoke(app, ["upstash", "delete", "--yes"])
         assert res.exit_code == 0
         assert "已成功自 Upstash 刪除" in res.output
+
+
+def test_upstash_cli_renew_tokens(isolated_app):
+    app, config_path, _, repo = isolated_app
+
+    # 1. Configure without passphrase
+    runner.invoke(
+        app,
+        ["upstash", "config", "--url", "https://test.upstash.io", "--token", "secret-token"],
+    )
+
+    with patch("application.upstash_token_service.UpstashTokenService.renew_all_tokens") as mock_renew:
+        mock_renew.return_value = {
+            "status": "ok",
+            "cloud_enabled": False,
+            "cloud_disabled_reason": "尚未設定 E2EE 主密碼 (Passphrase)",
+            "unique_identities_count": 1,
+            "renewed_remotes": ["site_test"],
+            "skipped_remotes": [],
+            "cloud_synced_remotes": [],
+            "errors": {},
+        }
+        res = runner.invoke(app, ["upstash", "renew-tokens"])
+        assert res.exit_code == 0
+        assert "未啟用雲端同步" in res.output
+        assert "本機已換發節點數: 1 個 (site_test)" in res.output
+
+        # 2. Test with --passphrase
+        res_pass = runner.invoke(app, ["upstash", "renew-tokens", "--passphrase", "my-pass"])
+        assert res_pass.exit_code == 0

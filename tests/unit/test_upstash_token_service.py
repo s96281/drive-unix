@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 import pytest
 
 from application.upstash_token_service import UpstashTokenService
@@ -100,3 +100,56 @@ def test_with_distributed_refresh_lock(tmp_path: Path):
     assert refreshed_called is True
     assert result.headers["Authorization"] == "Bearer new_tok"
     assert "drive-unix:token:ident-1" in client.store
+
+
+def test_renew_all_tokens_reporting_and_progress(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("UPSTASH_SYNC_PASSPHRASE", raising=False)
+    from core.config import OneDriveRemote
+    mgr = _create_manager_with_upstash(tmp_path)
+    # Add a mock OneDrive remote
+    mgr.config.remotes["od_test"] = OneDriveRemote(
+        type="onedrive",
+        client_id="client-123",
+        tenant="common",
+    )
+
+    client = MockMemoryUpstashClient()
+    client.acquire_lock = lambda k, o, ttl=15: True
+    client.release_lock = lambda k, o: True
+    service = UpstashTokenService(mgr, client=client)
+
+    events: list[str] = []
+
+    def mock_progress(data: dict):
+        events.append(data.get("event", ""))
+
+    mock_auth_prov = MagicMock()
+    mock_auth_prov.get_auth_context.return_value = AuthContext(
+        headers={"Authorization": "Bearer old"},
+        expires_at=time.time() - 100,  # Expired
+    )
+    mock_auth_prov.refresh.return_value = AuthContext(
+        headers={"Authorization": "Bearer new"},
+        expires_at=time.time() + 3600,
+    )
+
+    mock_storage = MagicMock()
+    mock_storage.auth_provider = mock_auth_prov
+
+    with patch("storage.registry.DEFAULT_PROVIDER_REGISTRY.create", return_value=mock_storage):
+        # 1. When cloud sync is enabled (has passphrase)
+        res = service.renew_all_tokens(leeway_minutes=30, progress_cb=mock_progress)
+        assert res["status"] == "ok"
+        assert res["cloud_enabled"] is True
+        assert "od_test" in res["renewed_remotes"]
+        assert "start" in events
+        assert "checking" in events
+        assert "refreshing" in events
+        assert "renewed" in events
+
+        # 2. When cloud sync is disabled (remove passphrase)
+        mgr.config.upstash.passphrase_ref = None
+        service2 = UpstashTokenService(mgr, client=client)
+        res_disabled = service2.renew_all_tokens(leeway_minutes=30)
+        assert res_disabled["cloud_enabled"] is False
+        assert "Passphrase" in (res_disabled["cloud_disabled_reason"] or "")

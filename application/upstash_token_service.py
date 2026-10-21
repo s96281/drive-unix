@@ -34,17 +34,26 @@ class UpstashTokenService:
         self.config_manager = config_manager
         self._client = client
         self.device_id = device_id or f"{socket.gethostname()}-{uuid.uuid4().hex[:6]}"
+        self._synced_identities: set[str] = set()
+        self._picked_from_cloud_identities: set[str] = set()
+
+    def get_sync_status(self) -> tuple[bool, str]:
+        """Check if Upstash token sync is configured and enabled, with a descriptive reason."""
+        cfg = self.config_manager.config.upstash
+        if cfg is not None and not cfg.auto_sync_tokens:
+            return False, "設定檔已關閉自動同步憑證 (auto_sync_tokens=false)"
+        url, token, _ = self.config_manager.get_upstash_config()
+        if not url or not token:
+            return False, "尚未設定 Upstash REST URL 或 Token"
+        passphrase = self.config_manager.get_upstash_passphrase()
+        if not passphrase:
+            return False, "尚未設定 E2EE 主密碼 (Passphrase)"
+        return True, "已啟用 E2EE 憑證同步"
 
     def is_enabled(self) -> bool:
         """Check if Upstash token sync is configured and enabled."""
-        cfg = self.config_manager.config.upstash
-        if cfg is not None and not cfg.auto_sync_tokens:
-            return False
-        url, token, _ = self.config_manager.get_upstash_config()
-        if not url or not token:
-            return False
-        passphrase = self.config_manager.get_upstash_passphrase()
-        return bool(passphrase)
+        enabled, _ = self.get_sync_status()
+        return enabled
 
     def get_client(self) -> UpstashClient | None:
         """Obtain or build UpstashClient if configuration exists."""
@@ -163,6 +172,7 @@ class UpstashTokenService:
             # Store in Upstash with 7-day TTL
             payload_str = json.dumps(encrypted, ensure_ascii=False)
             client.set(self._token_key(identity_key), payload_str, ex_seconds=60 * 60 * 24 * 7)
+            self._synced_identities.add(identity_key)
             logger.info("已將最新憑證加密回寫至 Upstash (Identity: %s)", identity_key[:8])
             return True
 
@@ -196,10 +206,13 @@ class UpstashTokenService:
                 # Double-check if another machine updated it right before we locked
                 cached = self.try_get_token(identity_key, raw_cache_path)
                 if cached and (cached.expires_at is None or cached.expires_at > time.time() + 60):
+                    self._synced_identities.add(identity_key)
+                    self._picked_from_cloud_identities.add(identity_key)
                     return cached
 
                 auth_context = refresh_fn()
-                self.try_put_token(identity_key, auth_context, raw_cache_path)
+                if self.try_put_token(identity_key, auth_context, raw_cache_path):
+                    self._synced_identities.add(identity_key)
                 return auth_context
             finally:
                 try:
@@ -212,26 +225,37 @@ class UpstashTokenService:
             time.sleep(1.5)
             cached = self.try_get_token(identity_key, raw_cache_path)
             if cached and (cached.expires_at is None or cached.expires_at > time.time() + 60):
+                self._synced_identities.add(identity_key)
+                self._picked_from_cloud_identities.add(identity_key)
                 return cached
 
             # Fallback if other device timed out or failed
             auth_context = refresh_fn()
-            self.try_put_token(identity_key, auth_context, raw_cache_path)
+            if self.try_put_token(identity_key, auth_context, raw_cache_path):
+                self._synced_identities.add(identity_key)
             return auth_context
 
     def renew_all_tokens(
         self,
         leeway_minutes: int = 30,
         remote_filter: str | None = None,
+        progress_cb: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         """Proactively inspect and renew expiring tokens across deduplicated accounts."""
         from storage.registry import DEFAULT_PROVIDER_REGISTRY
 
+        # Ensure the provider registry uses this token service instance
+        self.config_manager._upstash_token_service = self
+
         leeway_seconds = leeway_minutes * 60
         now = time.time()
 
+        cloud_enabled, cloud_reason = self.get_sync_status()
+        cloud_disabled_reason = None if cloud_enabled else cloud_reason
+
         renewed: list[str] = []
         skipped: list[str] = []
+        cloud_synced: list[str] = []
         errors: dict[str, str] = {}
 
         # 1. Group remotes by canonical auth identity
@@ -244,38 +268,123 @@ class UpstashTokenService:
             ident = get_canonical_auth_identity(r_name, remote, self.config_manager)
             identity_to_remotes.setdefault(ident, []).append(r_name)
 
+        total_remotes = sum(len(remotes) for remotes in identity_to_remotes.values())
+        if progress_cb:
+            progress_cb({
+                "event": "start",
+                "total_remotes": total_remotes,
+                "unique_count": len(identity_to_remotes),
+                "cloud_enabled": cloud_enabled,
+                "cloud_disabled_reason": cloud_disabled_reason,
+            })
+
         # 2. Renew each unique identity once
-        for ident, remotes_group in identity_to_remotes.items():
+        for idx, (ident, remotes_group) in enumerate(identity_to_remotes.items(), start=1):
             primary_remote_name = remotes_group[0]
+            ident_key = build_identity_cache_key(ident)
+
+            if progress_cb:
+                progress_cb({
+                    "event": "checking",
+                    "index": idx,
+                    "total": len(identity_to_remotes),
+                    "identity": ident,
+                    "identity_key": ident_key,
+                    "remotes": remotes_group,
+                })
+
             try:
                 storage = DEFAULT_PROVIDER_REGISTRY.create(primary_remote_name, self.config_manager)
                 auth_prov = getattr(storage, "auth_provider", None)
                 if not auth_prov:
                     skipped.append(primary_remote_name)
+                    if progress_cb:
+                        progress_cb({
+                            "event": "skipped",
+                            "identity": ident,
+                            "remotes": remotes_group,
+                            "expires_at": None,
+                            "remaining_seconds": None,
+                        })
                     continue
 
                 ctx = auth_prov.get_auth_context()
                 exp = ctx.expires_at
+                remaining_sec = (exp - now) if exp is not None else None
 
                 # Check if expiring soon
-                if exp is not None and (exp - now) > leeway_seconds:
+                if remaining_sec is not None and remaining_sec > leeway_seconds:
                     skipped.extend(remotes_group)
+                    if progress_cb:
+                        progress_cb({
+                            "event": "skipped",
+                            "identity": ident,
+                            "remotes": remotes_group,
+                            "expires_at": exp,
+                            "remaining_seconds": remaining_sec,
+                        })
                     continue
 
                 # Trigger refresh under lock
+                if progress_cb:
+                    progress_cb({
+                        "event": "refreshing",
+                        "identity": ident,
+                        "remotes": remotes_group,
+                        "expires_at": exp,
+                        "remaining_seconds": remaining_sec,
+                    })
+
                 new_ctx = auth_prov.refresh()
                 renewed.extend(remotes_group)
+
+                is_picked = ident_key in self._picked_from_cloud_identities
+                is_pushed = ident_key in self._synced_identities and not is_picked
+                is_synced = is_picked or is_pushed
+
+                if is_synced:
+                    cloud_synced.extend(remotes_group)
+
+                if is_pushed:
+                    sync_action = "pushed"
+                elif is_picked:
+                    sync_action = "picked"
+                elif not cloud_enabled:
+                    sync_action = "disabled"
+                else:
+                    sync_action = "failed"
+
+                if progress_cb:
+                    progress_cb({
+                        "event": "renewed",
+                        "identity": ident,
+                        "remotes": remotes_group,
+                        "cloud_synced": is_synced,
+                        "sync_action": sync_action,
+                        "token_key": self._token_key(ident_key) if (is_synced or cloud_enabled) else None,
+                    })
+
                 logger.info("換發中心成功換發帳號憑證: %s (關聯節點: %s)", ident, remotes_group)
 
             except Exception as exc:
                 errors[primary_remote_name] = str(exc)
+                if progress_cb:
+                    progress_cb({
+                        "event": "error",
+                        "identity": ident,
+                        "remotes": remotes_group,
+                        "error": str(exc),
+                    })
                 logger.error("換發中心換發節點 %s 失敗: %s", primary_remote_name, exc)
 
         return {
             "status": "ok",
+            "cloud_enabled": cloud_enabled,
+            "cloud_disabled_reason": cloud_disabled_reason,
             "unique_identities_count": len(identity_to_remotes),
             "renewed_remotes": sorted(set(renewed)),
             "skipped_remotes": sorted(set(skipped)),
+            "cloud_synced_remotes": sorted(set(cloud_synced)),
             "errors": errors,
         }
 
