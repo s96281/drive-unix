@@ -380,7 +380,7 @@ def get_cookie(
                 # Step 2: Wait for password input (takes screenshot every sec)
                 passwd_ready = _wait_for_condition_with_recording(
                     page,
-                    lambda: page.locator('type="password"').is_visible(),
+                    lambda: page.locator('input[type="password"]').is_visible(),
                     timeout_ms=login_timeout_ms,
                     step_name="wait_password",
                     recorder=recorder,
@@ -388,7 +388,7 @@ def get_cookie(
                 if not passwd_ready:
                     raise PlaywrightTimeoutError("等待微軟密碼輸入框 (passwd) 超時")
 
-                page.fill('type="password"', password)
+                page.fill('input[type="password"]', password)
                 recorder.capture(page, step_label="passwd_filled")
                 page.click('input[type="submit"]')
                 recorder.capture(page, step_label="passwd_submitted")
