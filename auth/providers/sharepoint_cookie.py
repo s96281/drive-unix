@@ -378,6 +378,7 @@ def get_cookie(
                 recorder.capture(page, step_label="email_submitted")
 
                 # Step 2: Wait for password input (takes screenshot every sec)
+                time.sleep(1)
                 passwd_ready = _wait_for_condition_with_recording(
                     page,
                     lambda: page.locator('input[type="password"]').is_visible(),
