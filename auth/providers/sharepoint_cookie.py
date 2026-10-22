@@ -584,7 +584,7 @@ def get_cookie(
                 )
                 if not passwd_ready:
                     raise PlaywrightTimeoutError("等待微軟密碼輸入框 (passwd) 超時")
-
+                time.sleep(1)
                 page.fill('input[type="password"]', password)
                 recorder.capture(page, step_label="passwd_filled")
                 page.click('input[type="submit"]')
