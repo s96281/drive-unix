@@ -44,7 +44,7 @@ class UpstashSyncService:
         self.config_manager = config_manager
         self._client = client
         self.cache_dir = Path(cache_dir or DEFAULT_CACHE_DIR)
-        self._remote_adapter = TypeAdapter(RemoteConfig)
+        self._remote_adapter: TypeAdapter[RemoteConfig] = TypeAdapter(RemoteConfig)
 
     def get_client(self) -> UpstashClient:
         """Resolve and return an UpstashClient instance."""

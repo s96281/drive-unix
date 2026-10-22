@@ -435,7 +435,7 @@ class CachedAuthProvider(AuthProvider):
                     raw_cache_path=self.raw_cache_path,
                     leeway_seconds=self.leeway_seconds,
                 )
-                if remote_cached:
+                if isinstance(remote_cached, AuthContext):
                     if "cached_at" not in remote_cached.metadata:
                         remote_cached = self._with_cached_at(remote_cached)
                     if self.cache.is_valid(
@@ -464,7 +464,7 @@ class CachedAuthProvider(AuthProvider):
                         raw_cache_path=self.raw_cache_path,
                         leeway_seconds=self.leeway_seconds,
                     )
-                    if remote_cached:
+                    if isinstance(remote_cached, AuthContext):
                         if "cached_at" not in remote_cached.metadata:
                             remote_cached = self._with_cached_at(remote_cached)
                         if self.cache.is_valid(
@@ -494,10 +494,11 @@ class CachedAuthProvider(AuthProvider):
                 _do_provider_refresh,
                 raw_cache_path=self.raw_cache_path,
             )
-            if "cached_at" not in res.metadata:
-                res = self._with_cached_at(res)
-            self._safe_cache_set(res)
-            return res
+            if isinstance(res, AuthContext):
+                if "cached_at" not in res.metadata:
+                    res = self._with_cached_at(res)
+                self._safe_cache_set(res)
+                return res
 
         return _do_provider_refresh()
 

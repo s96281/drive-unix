@@ -115,6 +115,11 @@ class UpstashTokenService:
                 self._write_raw_file(raw_cache_path, raw_content)
 
             auth_context = AuthContext.from_dict(auth_ctx_data)
+            if "updated_at" in bundle and "cloud_updated_at" not in auth_context.metadata:
+                auth_context.metadata["cloud_updated_at"] = bundle["updated_at"]
+            if "device_id" in bundle and "cloud_device_id" not in auth_context.metadata:
+                auth_context.metadata["cloud_device_id"] = bundle["device_id"]
+
             logger.info("成功從 Upstash 自動獲取最新加密憑證 (Identity: %s)", identity_key[:8])
             return auth_context
 
@@ -201,11 +206,28 @@ class UpstashTokenService:
         except Exception:
             acquired = True  # Fallback to local refresh if lock fails
 
+        def _is_valid_peer_refresh(cached_ctx: AuthContext | None) -> bool:
+            if not cached_ctx:
+                return False
+            # 1. If expires_at is explicitly in the future (> now + 60s), peer already renewed it
+            if cached_ctx.expires_at is not None and cached_ctx.expires_at > time.time() + 60:
+                return True
+            # 2. If expires_at is None, only treat as valid peer refresh if it was updated within
+            # the last 60s by another device (indicating another device just finished refreshing)
+            cloud_updated = cached_ctx.metadata.get("cloud_updated_at")
+            cloud_device = cached_ctx.metadata.get("cloud_device_id")
+            if cloud_updated is not None and cloud_device != self.device_id:
+                try:
+                    return (time.time() - float(cloud_updated)) < 60
+                except (TypeError, ValueError):
+                    pass
+            return False
+
         if acquired:
             try:
                 # Double-check if another machine updated it right before we locked
                 cached = self.try_get_token(identity_key, raw_cache_path)
-                if cached and (cached.expires_at is None or cached.expires_at > time.time() + 60):
+                if cached is not None and _is_valid_peer_refresh(cached):
                     self._synced_identities.add(identity_key)
                     self._picked_from_cloud_identities.add(identity_key)
                     return cached
@@ -224,7 +246,7 @@ class UpstashTokenService:
             logger.info("偵測到其他裝置正在換發憑證 (Identity: %s)，等候並拾取結果...", identity_key[:8])
             time.sleep(1.5)
             cached = self.try_get_token(identity_key, raw_cache_path)
-            if cached and (cached.expires_at is None or cached.expires_at > time.time() + 60):
+            if cached is not None and _is_valid_peer_refresh(cached):
                 self._synced_identities.add(identity_key)
                 self._picked_from_cloud_identities.add(identity_key)
                 return cached
@@ -377,12 +399,23 @@ class UpstashTokenService:
                     })
                 logger.error("換發中心換發節點 %s 失敗: %s", primary_remote_name, exc)
 
+        pushed_remotes: list[str] = []
+        picked_remotes: list[str] = []
+        for ident, remotes_group in identity_to_remotes.items():
+            ident_key = build_identity_cache_key(ident)
+            if ident_key in self._picked_from_cloud_identities:
+                picked_remotes.extend([r for r in remotes_group if r in renewed])
+            elif ident_key in self._synced_identities:
+                pushed_remotes.extend([r for r in remotes_group if r in renewed])
+
         return {
             "status": "ok",
             "cloud_enabled": cloud_enabled,
             "cloud_disabled_reason": cloud_disabled_reason,
             "unique_identities_count": len(identity_to_remotes),
             "renewed_remotes": sorted(set(renewed)),
+            "pushed_remotes": sorted(set(pushed_remotes)),
+            "picked_remotes": sorted(set(picked_remotes)),
             "skipped_remotes": sorted(set(skipped)),
             "cloud_synced_remotes": sorted(set(cloud_synced)),
             "errors": errors,

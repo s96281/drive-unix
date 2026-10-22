@@ -602,7 +602,7 @@ class SharePointStorage(StorageProvider):
                         and isinstance(thumb[size_key], dict)
                         and "url" in thumb[size_key]
                     ):
-                        return thumb[size_key]["url"]
+                        return str(thumb[size_key]["url"])
         except HttpStatusError as e:
             if e.http_response.status_code in (400, 404):
                 raise ValueError(f"此檔案無可用縮圖: {remote_path}") from e

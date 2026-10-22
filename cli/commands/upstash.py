@@ -488,18 +488,22 @@ def upstash_renew_tokens(
                 else:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     renewed = res.get("renewed_remotes", [])
+                    pushed = res.get("pushed_remotes", [])
+                    picked = res.get("picked_remotes", [])
                     skipped = res.get("skipped_remotes", [])
                     cloud_synced = res.get("cloud_synced_remotes", [])
                     errs = res.get("errors", {})
-                    if renewed:
-                        if cloud_on and cloud_synced:
-                            secho(f"[{ts}] ✅ 已換發 {len(renewed)} 個節點並回寫雲端: {', '.join(renewed)}", fg=typer.colors.GREEN)
-                        else:
-                            secho(f"[{ts}] ⚠️ 已換發 {len(renewed)} 個節點 (僅限本地，未同步雲端): {', '.join(renewed)}", fg=typer.colors.YELLOW)
+                    if pushed:
+                        secho(f"[{ts}] ✅ 已換發 {len(pushed)} 個節點並回寫雲端: {', '.join(pushed)}", fg=typer.colors.GREEN)
+                    if picked:
+                        secho(f"[{ts}] ☁️  已自雲端拾取 {len(picked)} 個節點最新憑證: {', '.join(picked)}", fg=typer.colors.GREEN)
+                    local_only = [r for r in renewed if r not in pushed and r not in picked]
+                    if local_only:
+                        secho(f"[{ts}] ⚠️ 已換發 {len(local_only)} 個節點 (僅限本地，未同步雲端): {', '.join(local_only)}", fg=typer.colors.YELLOW)
+                    if not renewed and not errs:
+                        echo(f"[{ts}] 💤 所有節點憑證皆有效，略過 ({len(skipped)} 個節點)")
                     elif errs:
                         secho(f"[{ts}] ⚠️ 換發發生錯誤: {errs}", fg=typer.colors.YELLOW)
-                    else:
-                        echo(f"[{ts}] 💤 所有節點憑證皆有效，略過 ({len(skipped)} 個節點)")
                 time.sleep(interval)
         except KeyboardInterrupt:
             secho("\n🛑 已停止憑證換發中心守護行程。", fg=typer.colors.YELLOW)
@@ -523,6 +527,12 @@ def upstash_renew_tokens(
 
         if renewed:
             secho(f"   本機已換發節點數: {len(renewed)} 個 ({', '.join(renewed)})", fg=typer.colors.GREEN)
+            pushed = res.get("pushed_remotes", [])
+            picked = res.get("picked_remotes", [])
+            if pushed:
+                echo(f"     └─ 成功回寫雲端: {len(pushed)} 個 ({', '.join(pushed)})")
+            if picked:
+                echo(f"     └─ 自雲端拾取:   {len(picked)} 個 ({', '.join(picked)})")
         else:
             echo("   本機已換發節點數: 0 (憑證均尚未臨近過期)")
 

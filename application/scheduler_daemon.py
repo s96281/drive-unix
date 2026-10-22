@@ -33,6 +33,10 @@ RunCommand = Callable[..., subprocess.CompletedProcess]
 PopenCommand = Callable[..., subprocess.Popen]
 
 
+def _get_uid() -> int:
+    return int(getattr(os, "getuid", lambda: 0)())
+
+
 class SchedulerDaemonManager:
     """Install, start, stop and inspect the scheduler as an OS-level service.
 
@@ -197,7 +201,7 @@ class SchedulerDaemonManager:
             path = self.launchd_plist_path
             if path.exists():
                 self._run(
-                    ["launchctl", "bootout", f"gui/{os.getuid()}", str(path)],
+                    ["launchctl", "bootout", f"gui/{_get_uid()}", str(path)],
                     capture_output=True,
                     check=False,
                     text=True,
@@ -249,7 +253,7 @@ class SchedulerDaemonManager:
         if current.installed and self.platform == "darwin":
             result = self._run(
                 [
-                    "launchctl", "bootstrap", f"gui/{os.getuid()}",
+                    "launchctl", "bootstrap", f"gui/{_get_uid()}",
                     str(self.launchd_plist_path),
                 ],
                 capture_output=True,
@@ -260,7 +264,7 @@ class SchedulerDaemonManager:
             # authoritative start operation in either case.
             del result
             result = self._run(
-                ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"],
+                ["launchctl", "kickstart", "-k", f"gui/{_get_uid()}/{LAUNCHD_LABEL}"],
                 capture_output=True,
                 check=False,
                 text=True,
@@ -321,7 +325,7 @@ class SchedulerDaemonManager:
         elif current.installed and self.platform == "darwin":
             result = self._run(
                 [
-                    "launchctl", "bootout", f"gui/{os.getuid()}",
+                    "launchctl", "bootout", f"gui/{_get_uid()}",
                     str(self.launchd_plist_path),
                 ],
                 capture_output=True,
@@ -390,7 +394,7 @@ class SchedulerDaemonManager:
             return False
         if self.platform == "darwin":
             result = self._run(
-                ["launchctl", "print", f"gui/{os.getuid()}/{LAUNCHD_LABEL}"],
+                ["launchctl", "print", f"gui/{_get_uid()}/{LAUNCHD_LABEL}"],
                 capture_output=True,
                 check=False,
                 text=True,

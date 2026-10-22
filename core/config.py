@@ -1,7 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
-from typing import Literal, Union
+from typing import Any, Literal, Union
 
 import tomlkit
 from pydantic import BaseModel, Field, ValidationError
@@ -156,6 +156,8 @@ DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
 # ==========================================
 
 class ConfigManager:
+    _upstash_token_service: Any = None
+
     def __init__(
         self,
         config_path: Path = DEFAULT_CONFIG_PATH,

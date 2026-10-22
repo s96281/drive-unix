@@ -153,3 +153,42 @@ def test_renew_all_tokens_reporting_and_progress(tmp_path: Path, monkeypatch):
         res_disabled = service2.renew_all_tokens(leeway_minutes=30)
         assert res_disabled["cloud_enabled"] is False
         assert "Passphrase" in (res_disabled["cloud_disabled_reason"] or "")
+
+
+def test_refresh_token_safely_does_not_skip_on_null_expiry_historical_token(tmp_path: Path):
+    """Ensure refresh_token_safely does not treat historical expires_at: None as valid peer refresh."""
+    mgr = _create_manager_with_upstash(tmp_path)
+    client = MockMemoryUpstashClient()
+    client.acquire_lock = lambda k, o, ttl=15: True
+    client.release_lock = lambda k, o: True
+    service = UpstashTokenService(mgr, client=client, device_id="dev-local")
+
+    ident_key = "test-ident-legacy"
+    # Seed Upstash with historical token that has expires_at: None and updated long ago
+    historical_ctx = AuthContext(
+        headers={"Cookie": "FedAuth=legacy_cookie"},
+        expires_at=None,
+    )
+    assert service.try_put_token(ident_key, historical_ctx) is True
+
+    # Artificially alter the bundle timestamp in client to simulate it was updated hours ago
+    raw_json = client.get(service._token_key(ident_key))
+    assert raw_json is not None
+
+    refresh_called = 0
+
+    def mock_refresh():
+        nonlocal refresh_called
+        refresh_called += 1
+        return AuthContext(
+            headers={"Cookie": "FedAuth=fresh_cookie"},
+            expires_at=time.time() + 345_600,
+        )
+
+    # Calling with_distributed_refresh_lock must NOT pick the historical None token,
+    # but must invoke mock_refresh and upload the new token!
+    result = service.with_distributed_refresh_lock(ident_key, mock_refresh)
+    assert refresh_called == 1
+    assert result.headers["Cookie"] == "FedAuth=fresh_cookie"
+    assert result.expires_at is not None
+    assert result.expires_at > time.time() + 300_000

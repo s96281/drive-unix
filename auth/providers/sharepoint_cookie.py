@@ -33,6 +33,7 @@ logger = logging.getLogger("drive_unix.auth.sharepoint")
 DEFAULT_LOGIN_TIMEOUT_MS = 30_000
 DEFAULT_STAY_SIGNED_IN_TIMEOUT_MS = 5_000
 DEFAULT_AFTER_LOGIN_WAIT_SECONDS = 5
+DEFAULT_SHAREPOINT_EXPIRY_SECONDS = 4 * 24 * 3600  # 4 天 (345,600 秒)
 
 
 def _capture_failure_artifact(
@@ -723,7 +724,7 @@ class SharePointCookieProvider(AuthProvider):
         stay_signed_in_timeout_ms: int = DEFAULT_STAY_SIGNED_IN_TIMEOUT_MS,
         after_login_wait_seconds: int = DEFAULT_AFTER_LOGIN_WAIT_SECONDS,
         auto_install_browser: bool = True,
-        expires_in_seconds: Optional[int] = None,
+        expires_in_seconds: Optional[int] = DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
         screenshot_dir: Optional[Path | str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ):
@@ -775,7 +776,9 @@ class SharePointCookieProvider(AuthProvider):
         self.stay_signed_in_timeout_ms = stay_signed_in_timeout_ms
         self.after_login_wait_seconds = after_login_wait_seconds
         self.auto_install_browser = auto_install_browser
-        self.expires_in_seconds = expires_in_seconds
+        self.expires_in_seconds = (
+            expires_in_seconds if expires_in_seconds is not None else DEFAULT_SHAREPOINT_EXPIRY_SECONDS
+        )
         self.screenshot_dir = screenshot_dir
         self.metadata = dict(metadata or {})
 

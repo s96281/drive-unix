@@ -118,7 +118,7 @@ def _get_token_service(config_manager: ConfigManager) -> Any:
 
         svc = UpstashTokenService(config_manager)
         try:
-            config_manager._upstash_token_service = svc  # type: ignore[attr-defined]
+            config_manager._upstash_token_service = svc
         except Exception:
             pass
         return svc if svc.is_enabled() else None
@@ -134,9 +134,11 @@ def _cached_auth(
     remote_token_service: Any = None,
     identity_key: str | None = None,
     raw_cache_path: Path | None = None,
+    ttl_seconds: Any = "DEFAULT",
 ) -> Any:
-    from auth.cache import AuthCache, CachedAuthProvider
+    from auth.cache import AuthCache, CachedAuthProvider, DEFAULT_TTL_SECONDS
 
+    effective_ttl = DEFAULT_TTL_SECONDS if ttl_seconds == "DEFAULT" else ttl_seconds
     return CachedAuthProvider(
         provider=provider,
         cache=AuthCache(namespace=namespace),
@@ -144,6 +146,7 @@ def _cached_auth(
         remote_token_service=remote_token_service,
         identity_key=identity_key,
         raw_cache_path=raw_cache_path,
+        ttl_seconds=effective_ttl,
     )
 
 
@@ -186,6 +189,7 @@ def _build_sharepoint(
         cache_key=ident_key,
         remote_token_service=token_svc,
         identity_key=ident_key,
+        ttl_seconds=4 * 24 * 3600,
     )
     return SharePointStorage(
         auth_provider=cached,
@@ -233,6 +237,7 @@ def _build_onedrive_business(
         cache_key=ident_key,
         remote_token_service=token_svc,
         identity_key=ident_key,
+        ttl_seconds=4 * 24 * 3600,
     )
     return OneDriveBusinessStorage(
         auth_provider=cached,

@@ -96,7 +96,7 @@ class UpstashClient:
 
     def set(self, key: str, value: str, ex_seconds: int | None = None) -> None:
         """Store string value in Upstash Redis."""
-        cmd = ["SET", key, value]
+        cmd: list[Any] = ["SET", key, value]
         if ex_seconds is not None:
             cmd.extend(["EX", ex_seconds])
         res = self._execute(cmd)
@@ -121,9 +121,9 @@ class UpstashClient:
 
         Returns True if the lock was acquired; False if already held by another device.
         """
-        cmd = ["SET", lock_key, owner_id, "NX", "EX", ttl_seconds]
+        cmd: list[Any] = ["SET", lock_key, owner_id, "NX", "EX", ttl_seconds]
         res = self._execute(cmd)
-        return res == "OK"
+        return bool(res == "OK")
 
     def release_lock(self, lock_key: str, owner_id: str) -> bool:
         """Release the distributed lock only if owned by owner_id."""
