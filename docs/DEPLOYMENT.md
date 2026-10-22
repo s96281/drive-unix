@@ -383,6 +383,18 @@ docker compose ps
 
 適用於無法運行 Docker 容器、或希望將應用程式直接註冊為 Linux 核心服務的 VPS / 獨立伺服器。
 
+> [!TIP] **快速一鍵安裝捷徑 (推薦全新 Ubuntu / Debian VPS)**
+> 專案內已整合全自動化主機端安裝指令，統一由維運核心腳本提供支援：
+> ```bash
+> # 統一維運入口（推薦）
+> chmod +x scripts/deploy.sh
+> ./scripts/deploy.sh setup-vps
+> 
+> # 或直接執行相容捷徑
+> ./deploy/setup_vps.sh
+> ```
+> 該指令會全自動在 VPS 上配置 `uv` 工具鏈、建立 Python 3.12 虛擬環境、下載 Chromium 驗證依賴、檢驗 Web 前端資源、註冊 `drive-unix-web` 與 `drive-unix-renew` Systemd 服務，並部署 Nginx 反向代理設定。若您偏好手動逐步配置，請參考下方章節。
+
 #### 2.3.1 獨立服務帳號與目錄規劃
 
 為符合最小特權原則（Principle of Least Privilege），強烈建議以專屬非 root 帳號 `driveunix` 運行：
@@ -1054,6 +1066,13 @@ DEPLOY_MODE=systemd ./scripts/deploy.sh restart
 # 指定非預設監聽連接埠執行健康狀態檢查
 DRIVE_UNIX_PORT=8080 ./scripts/deploy.sh healthcheck
 ```
+
+#### 腳本定位與選用建議 (`deploy/setup_vps.sh` vs `scripts/deploy.sh`)
+
+| 維運場景 | 推薦工具 | 職責與涵蓋範疇 |
+| :--- | :--- | :--- |
+| **首次 VPS 主機初始化** | `deploy/setup_vps.sh` | 專為全新 Ubuntu / Debian 伺服器設計，自動安裝系統底層套件 (`apt`)、`uv` Python 3.12 工具鏈、Playwright 依賴、初始化 `.env`、註冊 Systemd 服務與複製 Nginx 反向代理配置。 |
+| **日常服務啟停與維運** | `scripts/deploy.sh` | 跨環境（Docker / Systemd / 本機 venv）的通用管理指令，支援一鍵映像檔重構 (`build`)、啟停重啟 (`start`/`stop`/`restart`) 與 API 健康檢查 (`healthcheck`)。 |
 
 ---
 

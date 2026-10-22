@@ -457,6 +457,243 @@ do_healthcheck() {
   return 1
 }
 
+# [Subcommand: logs]
+do_logs() {
+  case "${MODE}" in
+    docker)
+      log_info "Streaming Docker Compose logs (Ctrl+C to exit)..."
+      local compose_cmd
+      compose_cmd="$(get_docker_compose_cmd)"
+      ${compose_cmd} logs -f "$@"
+      ;;
+    systemd)
+      log_info "Streaming Systemd logs for drive-unix services (Ctrl+C to exit)..."
+      journalctl -u drive-unix-web.service -u drive-unix-renew.service -f "$@"
+      ;;
+    venv)
+      local log_target=""
+      if [ -f "${LOG_DIR}/web.log" ]; then
+        log_target="${LOG_DIR}/web.log"
+      elif [ -f "${PROJECT_LOG_DIR}/web.log" ]; then
+        log_target="${PROJECT_LOG_DIR}/web.log"
+      fi
+      if [ -n "${log_target}" ]; then
+        log_info "Tailing log file: ${log_target} (Ctrl+C to exit)..."
+        tail -f "${log_target}" "$@"
+      else
+        log_warn "No log files found in ${LOG_DIR} or ${PROJECT_LOG_DIR}."
+      fi
+      ;;
+    *)
+      log_error "Unsupported mode for logs: ${MODE}"
+      exit 1
+      ;;
+  esac
+}
+
+# [Subcommand: setup-vps]
+do_setup_vps() {
+  local actual_user="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || whoami 2>/dev/null || echo "driveunix")}}"
+  local actual_home
+  if [ "${actual_user}" = "root" ]; then
+    actual_home="/root"
+  elif command -v getent >/dev/null 2>&1; then
+    actual_home="$(getent passwd "${actual_user}" 2>/dev/null | cut -d: -f6 || echo "${HOME:-/home/${actual_user}}")"
+  else
+    actual_home="${HOME:-/home/${actual_user}}"
+  fi
+  local current_euid="${EUID:-$(id -u 2>/dev/null || echo 1000)}"
+
+  run_as_root() {
+    if [ "${current_euid}" -ne 0 ]; then
+      if command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+      else
+        log_error "需要管理員權限，但系統未找到 sudo 指令！"
+        exit 1
+      fi
+    else
+      "$@"
+    fi
+  }
+
+  run_as_user() {
+    if [ "${current_euid}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+      sudo -u "${SUDO_USER}" "$@"
+    else
+      "$@"
+    fi
+  }
+
+  echo -e "${CYAN}======================================================================${NC}"
+  echo -e "${CYAN}${BOLD}     drive-unix 生產級 VPS 伺服器一鍵安裝與服務設定導引               ${NC}"
+  echo -e "${CYAN}======================================================================${NC}"
+  echo -e "目標執行使用者: ${GREEN}${actual_user}${NC}"
+  echo -e "使用者家目錄:   ${GREEN}${actual_home}${NC}"
+  echo -e "專案工作目錄:   ${GREEN}${SCRIPT_DIR}${NC}"
+
+  # 1. 安裝系統基礎套件
+  log_info "[1/7] 安裝系統基礎套件 (curl, git, build-essential, ca-certificates, jq)..."
+  run_as_root apt-get update -y
+  run_as_root apt-get install -y --no-install-recommends \
+    curl git build-essential ca-certificates jq
+  run_as_root chown -R "${actual_user}:${actual_user}" "${SCRIPT_DIR}"
+
+  # 2. 安裝/確認 uv 工具鏈
+  log_info "[2/7] 檢查並配置 uv 高速 Python 工具鏈..."
+  run_as_user bash -c "
+    if ! command -v uv >/dev/null 2>&1 && [ ! -f '${actual_home}/.local/bin/uv' ]; then
+      echo '正在為 ${actual_user} 安裝 uv...'
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+    else
+      echo 'uv 工具鏈已就緒。'
+    fi
+  "
+
+  # 3. 透過 uv 配置 Python 3.12 與安裝相依套件
+  log_info "[3/7] 透過 uv 配置 Python 3.12 與安裝完整相依套件 (all, web)..."
+  run_as_user bash -c "
+    export PATH='${actual_home}/.local/bin:\$PATH'
+    cd '${SCRIPT_DIR}'
+    uv python install 3.12
+    uv venv .venv --python 3.12
+    source .venv/bin/activate
+    uv pip install -e '.[all,web]'
+  "
+
+  # 4. 檢查前端靜態資源
+  log_info "[4/7] 檢查前端 Web UI 控制台靜態資源 (web/static/)..."
+  if [ -f "${SCRIPT_DIR}/web/static/index.html" ] && [ -d "${SCRIPT_DIR}/web/static/assets" ]; then
+    log_success "前端靜態資源已就緒 (web/static/)。"
+  else
+    log_warn "未偵測到編譯後的前端靜態資源，嘗試進行建置..."
+    if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+      run_as_user bash -c "
+        cd '${SCRIPT_DIR}/frontend'
+        npm install
+        npm run build
+      "
+      log_success "前端編譯成功！"
+    else
+      log_warn "系統尚未安裝 Node.js / npm。若需即刻使用前端，可安裝 Node 20 LTS："
+      echo -e "   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+      echo -e "   sudo apt-get install -y nodejs"
+      echo -e "   cd ${SCRIPT_DIR}/frontend && npm install && npm run build"
+    fi
+  fi
+
+  # 5. 安裝 Playwright Chromium
+  log_info "[5/7] 安裝 Headless Chromium 與系統圖形依賴 (用於 SharePoint 驗證)..."
+  run_as_user bash -c "
+    cd '${SCRIPT_DIR}'
+    source .venv/bin/activate
+    playwright install chromium
+  "
+  run_as_root "${SCRIPT_DIR}/.venv/bin/playwright" install-deps chromium || true
+
+  # 6. 生產環境設定檔初始化 (.env)
+  log_info "[6/7] 初始化生產環境組態檔案 (.env)..."
+  if [ ! -f "${SCRIPT_DIR}/.env" ]; then
+    if [ -f "${SCRIPT_DIR}/.env.production.example" ]; then
+      run_as_user cp "${SCRIPT_DIR}/.env.production.example" "${SCRIPT_DIR}/.env"
+      run_as_user chmod 600 "${SCRIPT_DIR}/.env"
+      log_success "已從 .env.production.example 建立預設 .env 檔案 (權限設為 600)。"
+    else
+      run_as_user touch "${SCRIPT_DIR}/.env"
+      run_as_user chmod 600 "${SCRIPT_DIR}/.env"
+    fi
+  else
+    log_info "既有 .env 檔案已存在，保留設定。"
+  fi
+
+  # 7. 配置 Systemd 服務
+  log_info "[7/7] 設定 Systemd 背景服務與聯合 Target..."
+
+  cat <<EOF | run_as_root tee /etc/systemd/system/drive-unix-web.service > /dev/null
+[Unit]
+Description=drive-unix Web Management UI & REST API Server
+Documentation=https://github.com/your-org/drive_unix
+After=network-online.target
+Wants=network-online.target
+PartOf=drive-unix.target
+
+[Service]
+Type=simple
+User=${actual_user}
+Group=${actual_user}
+WorkingDirectory=${SCRIPT_DIR}
+EnvironmentFile=-${SCRIPT_DIR}/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${SCRIPT_DIR}/.venv/bin/python -m web --host 0.0.0.0 --port 8000
+
+Restart=always
+RestartSec=10
+LimitNOFILE=65535
+
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target drive-unix.target
+EOF
+
+  cat <<EOF | run_as_root tee /etc/systemd/system/drive-unix-renew.service > /dev/null
+[Unit]
+Description=drive-unix Upstash Token Renewal Center Daemon
+Documentation=https://github.com/your-org/drive_unix
+After=network-online.target
+Wants=network-online.target
+PartOf=drive-unix.target
+
+[Service]
+Type=simple
+User=${actual_user}
+Group=${actual_user}
+WorkingDirectory=${SCRIPT_DIR}
+EnvironmentFile=-${SCRIPT_DIR}/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${SCRIPT_DIR}/.venv/bin/drive-unix upstash renew-tokens --interval 1800 --leeway 60
+
+Restart=always
+RestartSec=15
+LimitNOFILE=65535
+
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target drive-unix.target
+EOF
+
+  cat <<EOF | run_as_root tee /etc/systemd/system/drive-unix.target > /dev/null
+[Unit]
+Description=drive-unix Multi-Cloud Storage Suite (Web Console & Token Daemon)
+Wants=drive-unix-web.service drive-unix-renew.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  run_as_root systemctl daemon-reload
+
+  # Nginx 範本複製
+  if [ -d "/etc/nginx/sites-available" ] && [ -f "${SCRIPT_DIR}/deploy/nginx/drive-unix.conf" ]; then
+    log_info "正在複製 Nginx 最佳化反向代理範本至 /etc/nginx/sites-available/drive-unix.conf ..."
+    run_as_root cp "${SCRIPT_DIR}/deploy/nginx/drive-unix.conf" /etc/nginx/sites-available/drive-unix.conf
+  fi
+
+  echo -e "\n${GREEN}======================================================================${NC}"
+  echo -e "${GREEN}${BOLD}  🎉 drive-unix 生產級 VPS 伺服器環境已成功安裝並配置完畢！          ${NC}"
+  echo -e "${GREEN}======================================================================${NC}"
+  echo -e "接下來可使用統一指令管理服務：\n"
+  echo -e "   - 啟動全套服務:     ${CYAN}./scripts/deploy.sh start${NC}  (或 sudo systemctl enable --now drive-unix.target)"
+  echo -e "   - 檢查系統健康度:   ${CYAN}./scripts/deploy.sh healthcheck${NC}"
+  echo -e "   - 查詢服務運行狀態: ${CYAN}./scripts/deploy.sh status${NC}"
+  echo -e "   - 查看即時日誌:     ${CYAN}./scripts/deploy.sh logs${NC}"
+  echo -e "   - 控制台直接訪問:   ${GREEN}http://<伺服器_IP>:8000${NC}\n"
+}
+
 # [Help Guide]
 show_help() {
   echo -e "${CYAN}======================================================================${NC}"
@@ -471,12 +708,14 @@ show_help() {
   echo -e "  $0 <command>"
   echo -e ""
   echo -e "${BOLD}Subcommands:${NC}"
+  echo -e "  ${YELLOW}setup-vps${NC}    Bootstrap full Ubuntu/Debian VPS environment (apt, uv, venv, systemd, nginx)"
   echo -e "  ${YELLOW}build${NC}        Build Docker image or set up Python venv with dependencies"
   echo -e "  ${YELLOW}start${NC}        Start services in background (docker-compose, systemd, or nohup venv)"
   echo -e "  ${YELLOW}stop${NC}         Gracefully stop running services"
   echo -e "  ${YELLOW}restart${NC}      Gracefully restart services"
   echo -e "  ${YELLOW}status${NC}       Display service status (containers, systemd unit, or venv PID)"
   echo -e "  ${YELLOW}healthcheck${NC}  Probe http://${HOST}:${PORT}/api/health with retry loop"
+  echo -e "  ${YELLOW}logs${NC}         Stream live application logs (docker, systemd, or local file)"
   echo -e "  ${YELLOW}help${NC}         Display this help message"
   echo -e ""
   echo -e "${BOLD}Environment Variables:${NC}"
@@ -495,25 +734,32 @@ show_help() {
 # 5. CLI Dispatcher
 # ------------------------------------------------------------------------------
 ACTION="${1:-}"
+shift || true
 
 case "${ACTION}" in
+  setup-vps|setup|init-vps)
+    do_setup_vps "$@"
+    ;;
   build)
-    do_build
+    do_build "$@"
     ;;
   start)
-    do_start
+    do_start "$@"
     ;;
   stop)
-    do_stop
+    do_stop "$@"
     ;;
   restart)
-    do_restart
+    do_restart "$@"
     ;;
   status)
-    do_status
+    do_status "$@"
     ;;
   healthcheck)
-    do_healthcheck
+    do_healthcheck "$@"
+    ;;
+  logs|log)
+    do_logs "$@"
     ;;
   help|--help|-h|"")
     show_help
