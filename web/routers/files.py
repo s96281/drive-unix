@@ -6,7 +6,9 @@ import mimetypes
 import os
 import posixpath
 import tempfile
-from typing import Any
+import threading
+import uuid
+from typing import Any, Literal
 
 from fastapi import (
     APIRouter,
@@ -28,6 +30,8 @@ from infrastructure.http import HttpStatusError
 from storage.base import managed_storage
 from web.cache import directory_cache
 from web.dependencies import get_config_manager, resolve_storage
+from web.events import broadcaster, task_event_manager
+from web.transfer_jobs import run_transfer_job
 
 router = APIRouter(prefix="/api/fs", tags=["Filesystem"])
 
@@ -69,6 +73,23 @@ class MkdirRequest(BaseModel):
 class DeleteRequest(BaseModel):
     path: str = Field(..., min_length=1, description="欲刪除之路徑")
     permanent: bool = Field(False, description="是否永久刪除（若為 False 則移至回收桶）")
+
+
+class RenameRequest(BaseModel):
+    path: str = Field(..., min_length=1, description="欲重新命名之路徑")
+    new_name: str = Field(..., min_length=1, pattern=r"^[^/\\]+$", description="新名稱（不可包含路徑分隔符號）")
+
+
+class MoveCopyRequest(BaseModel):
+    source: str = Field(..., min_length=1, description="來源路徑")
+    destination: str = Field(..., min_length=1, description="目的路徑")
+    overwrite: bool = Field(False, description="是否覆蓋已存在之目的項目")
+
+
+class TransferRequest(BaseModel):
+    sources: list[str] = Field(..., min_length=1, description="來源 URI 清單 (如 remote:/path)")
+    dest_dir: str = Field(..., min_length=1, description="目的目錄 URI (如 remote:/target_dir)")
+    mode: Literal["copy", "move"] = Field("copy", description="傳輸模式: copy 或 move")
 
 
 def _cleanup_temp_file(file_path: str) -> None:
@@ -476,3 +497,104 @@ def upload_file(
     finally:
         _cleanup_temp_file(temp_file_path)
         file.file.close()
+
+
+@router.post("/transfer", status_code=status.HTTP_202_ACCEPTED)
+def transfer_files(
+    req: TransferRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """跨儲存節點批次傳輸 (複製或移動)。回傳 task_id 以供 SSE 即時監控。"""
+    task_id = str(uuid.uuid4())
+    task_event_manager.register_task(
+        task_id,
+        kind="transfer",
+        title=f"傳輸 ({req.mode}): {len(req.sources)} 個項目 -> {req.dest_dir}",
+        source_uri=req.sources[0] if len(req.sources) == 1 else f"{len(req.sources)} 個來源",
+        dest_uri=req.dest_dir,
+        request_payload=req.model_dump(),
+    )
+    t = threading.Thread(
+        target=run_transfer_job,
+        args=(task_id, req.sources, req.dest_dir, req.mode, config_manager),
+        daemon=True,
+    )
+    t.start()
+    return {"status": "started", "task_id": task_id}
+
+
+@router.post("/{remote}/rename", status_code=status.HTTP_200_OK)
+def rename_item(
+    remote: str,
+    req: RenameRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """於同節點內重新命名檔案或資料夾。"""
+    if remote not in config_manager.config.remotes:
+        raise HTTPException(status_code=404, detail=f"找不到名為 '{remote}' 的遠端節點。")
+
+    parent_dir = posixpath.dirname(req.path.rstrip("/"))
+    dest_path = posixpath.join(parent_dir, req.new_name).replace("//", "/")
+
+    storage = resolve_storage(remote, config_manager)
+    with managed_storage(storage) as provider:
+        try:
+            ok = provider.move(req.path, dest_path, overwrite=False)
+            if not ok:
+                raise RuntimeError("Provider 重新命名回傳 False。")
+            directory_cache.invalidate(remote, req.path)
+            directory_cache.invalidate(remote, dest_path)
+            directory_cache.invalidate(remote, parent_dir or "/")
+            broadcaster.publish("system", {"topic": "files", "action": "rename", "remote": remote})
+            return {"status": "renamed", "remote": remote, "old_path": req.path, "new_path": dest_path}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"重新命名失敗: {exc}") from exc
+
+
+@router.post("/{remote}/move", status_code=status.HTTP_200_OK)
+def move_item(
+    remote: str,
+    req: MoveCopyRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """於同節點內移動檔案或資料夾。"""
+    if remote not in config_manager.config.remotes:
+        raise HTTPException(status_code=404, detail=f"找不到名為 '{remote}' 的遠端節點。")
+
+    storage = resolve_storage(remote, config_manager)
+    with managed_storage(storage) as provider:
+        try:
+            ok = provider.move(req.source, req.destination, overwrite=req.overwrite)
+            if not ok:
+                raise RuntimeError("Provider 移動項目回傳 False。")
+            directory_cache.invalidate(remote, req.source)
+            directory_cache.invalidate(remote, req.destination)
+            broadcaster.publish("system", {"topic": "files", "action": "move", "remote": remote})
+            return {"status": "moved", "remote": remote, "source": req.source, "destination": req.destination}
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"移動項目失敗: {exc}") from exc
+
+
+@router.post("/{remote}/copy", status_code=status.HTTP_200_OK)
+def copy_item(
+    remote: str,
+    req: MoveCopyRequest,
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """於同節點內複製檔案或資料夾。"""
+    if remote not in config_manager.config.remotes:
+        raise HTTPException(status_code=404, detail=f"找不到名為 '{remote}' 的遠端節點。")
+
+    storage = resolve_storage(remote, config_manager)
+    with managed_storage(storage) as provider:
+        try:
+            ok = provider.copy(req.source, req.destination, overwrite=req.overwrite)
+            if not ok:
+                raise RuntimeError("Provider 複製項目回傳 False。")
+            directory_cache.invalidate(remote, req.destination)
+            broadcaster.publish("system", {"topic": "files", "action": "copy", "remote": remote})
+            return {"status": "copied", "remote": remote, "source": req.source, "destination": req.destination}
+        except NotImplementedError as exc:
+            raise HTTPException(status_code=501, detail=f"此儲存節點不支援直接複製: {exc}") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"複製項目失敗: {exc}") from exc

@@ -87,11 +87,15 @@ storage/registry.py
 web/__init__.py
 web/__main__.py
 web/app.py
+web/bandwidth.py
 web/cache.py
 web/dependencies.py
 web/events.py
+web/log_bridge.py
 web/settings.py
+web/transfer_jobs.py
 web/routers/__init__.py
+web/routers/events.py
 web/routers/files.py
 web/routers/remotes.py
 web/routers/schedule.py

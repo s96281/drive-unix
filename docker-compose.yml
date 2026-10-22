@@ -1,23 +1,17 @@
-services:
-  # 1. 憑證換發中心核心服務 (Token Renewal Daemon)
-  # 定時每 30 分鐘 (1800 秒) 巡檢即將在 60 分鐘內過期的 Token/Cookie，自動換發並 E2EE 加密回寫 Upstash
-  token-center:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: drive-unix-token-center
-    restart: unless-stopped
-    command: ["drive-unix", "upstash", "renew-tokens", "--interval", "1800", "--leeway", "60"]
-    volumes:
-      - drive-unix-data:/root/.config/drive-unix
-    environment:
-      - PYTHONUNBUFFERED=1
-      # 可在此指定 Upstash 連線資訊，或在容器內透過 drive-unix upstash config 設定
-      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
-      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
-      - UPSTASH_SYNC_PASSPHRASE=${UPSTASH_SYNC_PASSPHRASE:-}
+# ==============================================================================
+# drive-unix Production Multi-Service Docker Compose Orchestration
+# Services:
+#   1. web-ui: Modern Web Management Console & REST API Server (Port 8000)
+#   2. token-center: Headless Upstash E2EE Token Renewal Daemon
+# Storage:
+#   - Persistent Config: drive-unix-data -> /root/.config/drive-unix
+#   - External Data Mount: ./data (or host path) -> /data
+# ==============================================================================
 
-  # 2. Web 管理介面與 REST API 服務 (可選)
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Web 管理介面與 REST API 伺服器 (Web UI & API Server)
+  # ----------------------------------------------------------------------------
   web-ui:
     build:
       context: .
@@ -29,11 +23,60 @@ services:
       - "8000:8000"
     volumes:
       - drive-unix-data:/root/.config/drive-unix
+      - ${STORAGE_DATA_DIR:-./data}:/data
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
       - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - UPSTASH_SYNC_KEY=${UPSTASH_SYNC_KEY:-drive-unix:sync:default}
       - UPSTASH_SYNC_PASSPHRASE=${UPSTASH_SYNC_PASSPHRASE:-}
+      - DRIVE_UNIX_LOG_LEVEL=${DRIVE_UNIX_LOG_LEVEL:-INFO}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # 2. 憑證換發中心守護行程 (Headless Upstash Token Renewal Daemon)
+  #    定時巡檢即將到期的 Token 與 Cookie，自動透過 Playwright/OAuth 換發並加密回寫
+  # ----------------------------------------------------------------------------
+  token-center:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drive-unix-token-center
+    restart: unless-stopped
+    command: ["drive-unix", "upstash", "renew-tokens", "--interval", "1800", "--leeway", "60"]
+    volumes:
+      - drive-unix-data:/root/.config/drive-unix
+      - ${STORAGE_DATA_DIR:-./data}:/data
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL:-}
+      - UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN:-}
+      - UPSTASH_SYNC_KEY=${UPSTASH_SYNC_KEY:-drive-unix:sync:default}
+      - UPSTASH_SYNC_PASSPHRASE=${UPSTASH_SYNC_PASSPHRASE:-}
+      - DRIVE_UNIX_LOG_LEVEL=${DRIVE_UNIX_LOG_LEVEL:-INFO}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   drive-unix-data:

@@ -215,6 +215,97 @@ def delete_upstash_bundle(
         ) from exc
 
 
+@router.get("/tokens")
+def list_upstash_tokens(
+    config_mgr: ConfigManager = Depends(get_config_manager),
+) -> list[dict[str, Any]]:
+    """檢視所有 OAuth 節點在 Upstash 雲端中繼資料 (到期時間、裝置來源、鎖定狀態)。"""
+    import json
+    from auth.identity import build_identity_cache_key, get_canonical_auth_identity
+    from application.upstash_token_service import UpstashTokenService
+
+    service = UpstashTokenService(config_mgr)
+    client = service.get_client()
+
+    identity_to_remotes: dict[str, list[str]] = {}
+    for r_name, remote in config_mgr.config.remotes.items():
+        if remote.type in {"sharepoint", "onedrive_business", "onedrive", "google_drive", "googlephotos"}:
+            ident = get_canonical_auth_identity(r_name, remote, config_mgr)
+            identity_to_remotes.setdefault(ident, []).append(r_name)
+
+    results: list[dict[str, Any]] = []
+    for ident, remotes in identity_to_remotes.items():
+        ident_key = build_identity_cache_key(ident)
+        token_key = f"drive-unix:token:{ident_key}"
+        lock_key = f"drive-unix:lock:{ident_key}"
+
+        cloud_meta: dict[str, Any] = {}
+        locked_by: str | None = None
+
+        if client:
+            try:
+                raw_str = client.get(token_key)
+                if raw_str:
+                    payload = json.loads(raw_str)
+                    cloud_meta = payload.get("metadata", {})
+            except Exception:
+                pass
+
+            try:
+                locked_by = client.get(lock_key)
+            except Exception:
+                pass
+
+        results.append({
+            "identity": ident,
+            "identity_key": ident_key,
+            "remotes": remotes,
+            "expires_at": cloud_meta.get("expires_at"),
+            "updated_at": cloud_meta.get("updated_at"),
+            "device_id": cloud_meta.get("device_id"),
+            "is_locked": bool(locked_by),
+            "locked_by": locked_by,
+        })
+
+    return results
+
+
+@router.delete("/tokens/{identity_key}")
+def delete_upstash_token(
+    identity_key: str,
+    config_mgr: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """手動清除指定身分於 Upstash 之快取金鑰。"""
+    from application.upstash_token_service import UpstashTokenService
+
+    service = UpstashTokenService(config_mgr)
+    client = service.get_client()
+    if not client:
+        raise HTTPException(status_code=400, detail="未設定 Upstash 連線。")
+
+    token_key = f"drive-unix:token:{identity_key}"
+    client.delete(token_key)
+    return {"status": "ok", "deleted": token_key}
+
+
+@router.delete("/locks/{identity_key}")
+def release_upstash_lock(
+    identity_key: str,
+    config_mgr: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """強制解除指定身分於 Upstash 之分散式鎖定。"""
+    from application.upstash_token_service import UpstashTokenService
+
+    service = UpstashTokenService(config_mgr)
+    client = service.get_client()
+    if not client:
+        raise HTTPException(status_code=400, detail="未設定 Upstash 連線。")
+
+    lock_key = f"drive-unix:lock:{identity_key}"
+    client.delete(lock_key)
+    return {"status": "ok", "released": lock_key}
+
+
 @router.post("/renew-tokens")
 def renew_upstash_tokens(
     req: UpstashRenewTokensRequest = UpstashRenewTokensRequest(),

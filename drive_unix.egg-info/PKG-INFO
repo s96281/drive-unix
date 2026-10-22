@@ -25,13 +25,18 @@ Requires-Dist: paramiko>=3.4; extra == "sftp"
 Provides-Extra: speedups
 Requires-Dist: python-Levenshtein>=0.25; extra == "speedups"
 Provides-Extra: all
+Requires-Dist: fastapi>=0.110.0; extra == "all"
 Requires-Dist: google-api-python-client>=2.100; extra == "all"
 Requires-Dist: google-auth>=2.23; extra == "all"
 Requires-Dist: google-auth-oauthlib>=1.1; extra == "all"
+Requires-Dist: httpx>=0.27.0; extra == "all"
 Requires-Dist: paramiko>=3.4; extra == "all"
 Requires-Dist: playwright>=1.40; extra == "all"
 Requires-Dist: python-Levenshtein>=0.25; extra == "all"
+Requires-Dist: python-multipart>=0.0.9; extra == "all"
 Requires-Dist: requests-oauthlib>=2.0; extra == "all"
+Requires-Dist: sse-starlette>=2.0.0; extra == "all"
+Requires-Dist: uvicorn>=0.28.0; extra == "all"
 Provides-Extra: dev
 Requires-Dist: build>=1.2; extra == "dev"
 Requires-Dist: mypy>=1.8; extra == "dev"
@@ -39,7 +44,7 @@ Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: ruff>=0.8; extra == "dev"
 Provides-Extra: web
 Requires-Dist: fastapi>=0.110.0; extra == "web"
-Requires-Dist: uvicorn[standard]>=0.28.0; extra == "web"
+Requires-Dist: uvicorn>=0.28.0; extra == "web"
 Requires-Dist: python-multipart>=0.0.9; extra == "web"
 Requires-Dist: sse-starlette>=2.0.0; extra == "web"
 Requires-Dist: httpx>=0.27.0; extra == "web"
@@ -224,6 +229,7 @@ drive-unix upstash pull -p 'MySecretPassphrase'
 - **端對端加密 (E2EE)**：採用 PBKDF2-HMAC-SHA256 (600,000 次迭代) 與 AES-256-GCM 認證加密。密碼與認證憑證在離開本機前完成加密，Upstash 雲端不存放任何明文機密。
 - **認證無縫適配**：拉取時自動重新註冊至新環境的本機 SecretStore (OS Keyring 或本機安全存儲)，自動處理跨機器認證參考差異。
 - **合併與衝突控制**：預設採 `merge` 策略；支援 `--dry-run` 預先檢查差異，並提供 `--overwrite` 或 `--strategy replace` 控制衝突。
+- **雲端憑證換發中心 (VPS 7x24 常駐)**：支援佈署至 VPS 作為憑證換發中心，自動在 Token/Cookie 即將過期前提前換發並回寫 Upstash，全網其他客戶端自動受惠。完整佈署教學請參閱 [`docs/vps-deployment-token-center.md`](docs/vps-deployment-token-center.md)。
 - **Web 管理介面**：亦可在 Web UI「系統設定 → 雲端多端同步」以圖形化介面設定與一鍵同步。
 
 `schedule start` 仍是前景模式，按 `Ctrl+C` 停止。`schedule service` 則提供真正的背景生命週期：Linux 使用 user-level systemd、macOS 使用 LaunchAgent、Windows 使用 Task Scheduler。若尚未執行 `service install`，`service start` 仍可啟動 detached process，但不會註冊登入後自動啟動。Scheduler log 預設位於設定目錄下的 `scheduler/scheduler.log`。

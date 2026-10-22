@@ -85,3 +85,52 @@ def has_missed_run(
         return False
     except (ValueError, OverflowError):
         return False
+
+
+def next_cron_occurrence(
+    cron_expr: str,
+    after: datetime,
+    *,
+    horizon_days: int = 366,
+) -> datetime | None:
+    """Calculate the next matching occurrence after ``after`` within ``horizon_days``."""
+    validate_cron_expression(cron_expr)
+    minute, hour, day, month, day_of_week = cron_expr.split()
+
+    cursor = (after + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    end_limit = after + timedelta(days=horizon_days)
+
+    while cursor <= end_limit:
+        # 1. Month check
+        if not _cron_field_matches(cursor.month, month):
+            if cursor.month == 12:
+                cursor = datetime(cursor.year + 1, 1, 1, 0, 0)
+            else:
+                cursor = datetime(cursor.year, cursor.month + 1, 1, 0, 0)
+            continue
+
+        # 2. Day & Day-of-week check
+        cron_dow = cursor.isoweekday() % 7
+        dow_match = (
+            _cron_field_matches(cron_dow, day_of_week)
+            or _cron_field_matches(cursor.isoweekday(), day_of_week)
+        )
+        day_match = _cron_field_matches(cursor.day, day)
+        if not (day_match and dow_match):
+            next_day = cursor + timedelta(days=1)
+            cursor = next_day.replace(hour=0, minute=0)
+            continue
+
+        # 3. Hour check
+        if not _cron_field_matches(cursor.hour, hour):
+            next_hour = cursor + timedelta(hours=1)
+            cursor = next_hour.replace(minute=0)
+            continue
+
+        # 4. Minute check
+        if _cron_field_matches(cursor.minute, minute):
+            return cursor
+
+        cursor += timedelta(minutes=1)
+
+    return None

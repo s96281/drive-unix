@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from core.config import (
@@ -27,8 +27,12 @@ from core.config import (
 from storage.base import DeleteCapability, managed_storage
 from storage.registry import DEFAULT_PROVIDER_REGISTRY
 from web.dependencies import get_config_manager, resolve_storage
+from web.events import broadcaster
 
 router = APIRouter(prefix="/api/remotes", tags=["Remotes"])
+
+_remotes_health: dict[str, dict[str, Any]] = {}
+_quota_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class RemoteSummary(BaseModel):
@@ -36,6 +40,16 @@ class RemoteSummary(BaseModel):
     type: str
     is_default: bool
     details: dict[str, Any]
+    health: dict[str, Any] | None = None
+
+
+class QuotaResponse(BaseModel):
+    supported: bool
+    name: str
+    total: int = 0
+    used: int = 0
+    free: int = 0
+    filecount: int = -1
 
 
 class RemoteListResponse(BaseModel):
@@ -130,6 +144,7 @@ def list_remotes(
                 type=remote_cfg.type,
                 is_default=(app_config.default_remote == name),
                 details=details,
+                health=_remotes_health.get(name),
             )
         )
 
@@ -189,6 +204,8 @@ def create_remote(
     if req.is_default or not config_manager.config.default_remote:
         config_manager.config.default_remote = name
         config_manager.save()
+
+    broadcaster.publish("system", {"topic": "remotes", "action": "created", "name": name})
 
     return RemoteSummary(
         name=name,
@@ -260,6 +277,7 @@ def update_remote(
         config_manager.save()
 
     updated = config_manager.get_remote(target_name)
+    broadcaster.publish("system", {"topic": "remotes", "action": "updated", "name": target_name})
     return RemoteSummary(
         name=target_name,
         type=updated.type,
@@ -282,6 +300,10 @@ def delete_remote(
         config_manager.config.default_remote = None
         config_manager.save()
 
+    _remotes_health.pop(name, None)
+    _quota_cache.pop(name, None)
+    broadcaster.publish("system", {"topic": "remotes", "action": "deleted", "name": name})
+
     return {"status": "deleted", "name": name}
 
 
@@ -300,7 +322,7 @@ def test_remote(
         storage = resolve_storage(name, config_manager)
     except Exception as exc:
         elapsed = (time.perf_counter() - start_time) * 1000
-        return TestRemoteResponse(
+        res = TestRemoteResponse(
             status="failed",
             name=name,
             read_ok=False,
@@ -309,6 +331,15 @@ def test_remote(
             latency_ms=round(elapsed, 2),
             error=f"無法初始化儲存驅動: {exc}",
         )
+        _remotes_health[name] = {
+            "status": res.status,
+            "latency_ms": res.latency_ms,
+            "read_ok": res.read_ok,
+            "write_ok": res.write_ok,
+            "checked_at": time.time(),
+            "error": res.error,
+        }
+        return res
 
     with managed_storage(storage) as provider:
         try:
@@ -317,7 +348,7 @@ def test_remote(
             read_ok = True
         except Exception as exc:
             elapsed = (time.perf_counter() - start_time) * 1000
-            return TestRemoteResponse(
+            res = TestRemoteResponse(
                 status="failed",
                 name=name,
                 read_ok=False,
@@ -326,6 +357,15 @@ def test_remote(
                 latency_ms=round(elapsed, 2),
                 error=f"讀取根目錄失敗: {exc}",
             )
+            _remotes_health[name] = {
+                "status": res.status,
+                "latency_ms": res.latency_ms,
+                "read_ok": res.read_ok,
+                "write_ok": res.write_ok,
+                "checked_at": time.time(),
+                "error": res.error,
+            }
+            return res
 
         # 2. 寫入測試 (選用)
         write_ok = False
@@ -345,7 +385,7 @@ def test_remote(
                 write_ok = True
             except Exception as exc:
                 elapsed = (time.perf_counter() - start_time) * 1000
-                return TestRemoteResponse(
+                res = TestRemoteResponse(
                     status="failed",
                     name=name,
                     read_ok=True,
@@ -355,9 +395,18 @@ def test_remote(
                     latency_ms=round(elapsed, 2),
                     error=f"寫入或清理測試失敗: {exc}",
                 )
+                _remotes_health[name] = {
+                    "status": res.status,
+                    "latency_ms": res.latency_ms,
+                    "read_ok": res.read_ok,
+                    "write_ok": res.write_ok,
+                    "checked_at": time.time(),
+                    "error": res.error,
+                }
+                return res
 
         elapsed = (time.perf_counter() - start_time) * 1000
-        return TestRemoteResponse(
+        res = TestRemoteResponse(
             status="success",
             name=name,
             read_ok=read_ok,
@@ -367,3 +416,63 @@ def test_remote(
             latency_ms=round(elapsed, 2),
             error=None,
         )
+        _remotes_health[name] = {
+            "status": res.status,
+            "latency_ms": res.latency_ms,
+            "read_ok": res.read_ok,
+            "write_ok": res.write_ok,
+            "checked_at": time.time(),
+            "error": res.error,
+        }
+        return res
+
+
+@router.get("/{name}/quota", response_model=QuotaResponse)
+def get_remote_quota(
+    name: str,
+    refresh: bool = Query(False, description="是否強制重新整理快取"),
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> QuotaResponse:
+    """查詢雲端節點之儲存空間配額與使用量 (快取 5 分鐘)。"""
+    if name not in config_manager.config.remotes:
+        raise HTTPException(status_code=404, detail=f"找不到名為 '{name}' 的遠端節點。")
+
+    now = time.time()
+    if not refresh and name in _quota_cache:
+        ts, cached = _quota_cache[name]
+        if now - ts < 300:
+            return QuotaResponse(**cached)
+
+    try:
+        storage = resolve_storage(name, config_manager)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"初始化儲存驅動失敗: {exc}") from exc
+
+    with managed_storage(storage) as provider:
+        try:
+            stat_info = provider.stat("/")
+            total = int(stat_info.get("total", 0))
+            used = int(stat_info.get("used", 0))
+            filecount = int(stat_info.get("filecount", -1))
+            supported = total > 0 or used > 0
+            free = max(0, total - used) if total > 0 else 0
+            res = {
+                "supported": supported,
+                "name": name,
+                "total": total,
+                "used": used,
+                "free": free,
+                "filecount": filecount,
+            }
+            _quota_cache[name] = (now, res)
+            return QuotaResponse(**res)
+        except Exception:
+            res = {
+                "supported": False,
+                "name": name,
+                "total": 0,
+                "used": 0,
+                "free": 0,
+                "filecount": -1,
+            }
+            return QuotaResponse(**res)

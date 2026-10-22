@@ -37,8 +37,25 @@ def test_static_index_html_delivery(test_client: TestClient) -> None:
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "drive-unix" in resp.text
+    assert 'id="root"' in resp.text
+    assert "assets/index-" in resp.text
+
+
+def test_spa_deep_links(test_client: TestClient) -> None:
+    for route in ["/remotes", "/files", "/sync", "/schedule", "/settings"]:
+        resp = test_client.get(route)
+        assert resp.status_code == 200
+        assert 'id="root"' in resp.text
+
+
+def test_legacy_html_delivery(test_client: TestClient) -> None:
+    resp = test_client.get("/legacy.html")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "drive-unix" in resp.text
     assert "Pane A" in resp.text
     assert "Pane B" in resp.text
     assert "fluent-acrylic" in resp.text
     assert "目錄快取" in resp.text
     assert "網頁設定" in resp.text
+

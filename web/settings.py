@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from core.config import DEFAULT_CONFIG_DIR
+from web.bandwidth import bandwidth_limiter
 from web.cache import directory_cache
+from web.log_bridge import setup_log_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +37,17 @@ class SecuritySettings(BaseModel):
     allow_guest_download: bool = True
 
 
+class TransferSettings(BaseModel):
+    max_workers: int = Field(default=4, ge=1, le=16, description="預設並行傳輸工作緒數量")
+    bandwidth_limit_kbps: int = Field(default=0, ge=0, description="全域限速 (Kbps, 0 表示不限速)")
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO", description="Web UI 即時日誌等級")
+
+
 class WebSettings(BaseModel):
     cache: CacheSettings = Field(default_factory=CacheSettings)
     ui: UISettings = Field(default_factory=UISettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    transfer: TransferSettings = Field(default_factory=TransferSettings)
     # Extensibility container for future features (e.g. plugins, custom CSS, WebDAV mounts)
     extra_options: dict[str, Any] = Field(default_factory=dict)
 
@@ -51,6 +60,7 @@ class WebSettingsManager:
         self.settings_file = self.config_dir / "web_settings.json"
         self.settings: WebSettings = self.load()
         self._apply_cache_settings()
+        self._apply_transfer_settings()
 
     def load(self) -> WebSettings:
         if not self.settings_file.exists():
@@ -69,6 +79,7 @@ class WebSettingsManager:
             data = self.settings.model_dump()
             self.settings_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             self._apply_cache_settings()
+            self._apply_transfer_settings()
         except Exception as exc:
             logger.error("無法寫入網頁設定檔 %s: %s", self.settings_file, exc)
             raise RuntimeError(f"無法儲存網頁設定: {exc}") from exc
@@ -92,6 +103,12 @@ class WebSettingsManager:
         directory_cache.max_entries = self.settings.cache.max_entries
         target_dir = Path(self.settings.cache.cache_dir) if self.settings.cache.cache_dir else self.config_dir
         directory_cache.set_db_path(target_dir / "cache.db", persist_to_disk=self.settings.cache.persist_to_disk)
+
+    def _apply_transfer_settings(self) -> None:
+        """Apply transfer rate limit and logging level dynamically."""
+        bandwidth_limiter.set_limit_kbps(self.settings.transfer.bandwidth_limit_kbps)
+        numeric_level = getattr(logging, self.settings.transfer.log_level.upper(), logging.INFO)
+        setup_log_bridge(min_level=numeric_level)
 
 
 # Global web settings manager instance

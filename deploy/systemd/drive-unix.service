@@ -1,0 +1,36 @@
+[Unit]
+Description=drive-unix Multi-Cloud Storage Management & Web Service
+Documentation=https://github.com/your-org/drive_unix
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 建議生產環境以專用非 root 帳號執行 (若為 root 請調整為 User=root)
+User=driveunix
+Group=driveunix
+WorkingDirectory=/opt/drive_unix
+
+# 載入生產環境變數檔 (包含 UPSTASH 憑證、金鑰與加密 Passphrase)
+EnvironmentFile=-/etc/drive-unix/env
+Environment=PYTHONUNBUFFERED=1
+
+# 啟動 Web 管理介面與 REST API 伺服器
+# 注意：若置於本機 Nginx 反向代理後方，可將 0.0.0.0 調整為 127.0.0.1 提升安全性
+ExecStart=/opt/drive_unix/.venv/bin/python -m web --host 0.0.0.0 --port 8000
+
+# 守護程序自動重啟原則
+Restart=always
+RestartSec=10
+
+# 高並發傳輸資源限制 (防止大量小檔案傳輸時 file descriptors 耗盡)
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# 系統安全沙盒與權限隔離
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

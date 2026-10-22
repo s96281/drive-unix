@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from web.cache import directory_cache
+from web.events import broadcaster
 from web.settings import WebSettings, web_settings_manager
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
@@ -27,6 +28,7 @@ class UpdateSettingsRequest(BaseModel):
     cache: dict[str, Any] | None = None
     ui: dict[str, Any] | None = None
     security: dict[str, Any] | None = None
+    transfer: dict[str, Any] | None = None
     extra_options: dict[str, Any] | None = None
 
 
@@ -44,6 +46,7 @@ def update_settings(req: UpdateSettingsRequest) -> SettingsResponse:
     """更新網頁組態與快取參數（即時生效並持久化儲存）。"""
     update_data = req.model_dump(exclude_none=True)
     updated_settings = web_settings_manager.update(update_data)
+    broadcaster.publish("system", {"topic": "settings", "action": "updated"})
     return SettingsResponse(
         settings=updated_settings,
         cache_stats=directory_cache.get_stats(),

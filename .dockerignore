@@ -1,11 +1,29 @@
+# ==============================================================================
+# .dockerignore for drive-unix Production Container Build
+# Excludes development artifacts, test files, dependencies, and agent workspaces
+# ==============================================================================
+
+# Version Control & Workspace Metadata
+.git
+.gitignore
+.github
+.agents
+
+# Python Bytecode & Runtime Artifacts
 __pycache__
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 *.pyd
 .Python
+
+# Virtual Environments
 .venv
-pip-log.txt
-pip-delete-this-directory.txt
+venv/
+env/
+ENV/
+
+# Testing & Coverage
+tests/
 .tox
 .coverage
 .coverage.*
@@ -13,13 +31,34 @@ pip-delete-this-directory.txt
 nosetests.xml
 coverage.xml
 *.cover
-*.log
-.git
-.github
-.mypy_cache
-.pytest_cache
-.ruff_cache
-dist
-build
-*.egg-info
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build & Packaging Artifacts
+dist/
+build/
+*.egg-info/
 application.zip
+
+# Frontend Source Artifacts (Keep web/static/ which has the pre-built SPA)
+frontend/node_modules/
+frontend/.cache/
+frontend/dist/
+
+# Local Runtime Secrets & Database Caches
+.env
+.env.local
+.env.*.local
+*.log
+cache.db
+secrets.json
+secret-files/
+
+# Documentation & Scratch Files
+docs/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

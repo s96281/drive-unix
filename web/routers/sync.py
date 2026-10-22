@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -16,9 +17,11 @@ from domain.sync.models import ConflictStrategy, SyncAction, SyncActionType, Syn
 from domain.sync.planner import SyncPlanner
 from domain.sync.scanner import scan_storage_tree
 from storage.base import managed_storage
+from web.bandwidth import bandwidth_limiter
 from web.cache import directory_cache
 from web.dependencies import get_config_manager, parse_uri, resolve_storage
-from web.events import TaskEvent, task_event_manager
+from web.events import TaskEvent, broadcaster, task_event_manager
+from web.settings import web_settings_manager
 
 router = APIRouter(prefix="/api/sync", tags=["Sync"])
 
@@ -53,20 +56,39 @@ class SyncPlanResponse(BaseModel):
 
 
 class SyncExecuteRequest(PlanRequest):
-    workers: int = Field(4, ge=1, le=16, description="並行傳輸工作緒數量")
+    workers: int | None = Field(None, ge=1, le=16, description="並行傳輸工作緒數量 (留空使用系統預設)")
 
 
 class WebSyncHooks(SyncHooks):
-    """Bridge sync execution hooks to the TaskEventManager SSE stream."""
+    """Bridge sync execution hooks to the TaskEventManager SSE stream with pause and rate limiting."""
 
-    def __init__(self, task_id: str, total_actions: int) -> None:
+    def __init__(self, task_id: str, total_actions: int, total_bytes: int = 0) -> None:
         self.task_id = task_id
         self.total_actions = total_actions
+        self.total_bytes = total_bytes
         self.finished_actions = 0
+        self.bytes_done = 0
+        self._token_transferred: dict[int, int] = {}
+        self._lock = threading.Lock()
+        self._last_speed_time = time.time()
+        self._last_speed_bytes = 0
+        self._speed_bps = 0.0
 
     def action_started(self, action: SyncAction) -> SyncActionToken | None:
+        # Check pause gate before starting next action
+        task_event_manager.wait_if_paused(self.task_id)
+
         if task_event_manager.is_cancelled(self.task_id):
             raise RuntimeError("使用者已手動取消同步作業。")
+
+        broadcaster.publish("task.log", {
+            "task_id": self.task_id,
+            "level": "INFO",
+            "action": action.action_type.value,
+            "target": action.target_path,
+            "message": f"執行 {action.action_type.value}: {action.target_path}",
+            "ts": time.time(),
+        })
 
         task_event_manager.emit(
             self.task_id,
@@ -86,14 +108,48 @@ class WebSyncHooks(SyncHooks):
         transferred: int,
         total: int,
     ) -> None:
+        task_event_manager.wait_if_paused(self.task_id)
+
         if task_event_manager.is_cancelled(self.task_id):
             raise RuntimeError("使用者已手動取消同步作業。")
 
+        token_id = token.action_id if token else 0
+        delta = 0
+        with self._lock:
+            prev = self._token_transferred.get(token_id, 0)
+            if transferred > prev:
+                delta = transferred - prev
+                self._token_transferred[token_id] = transferred
+                self.bytes_done += delta
+
+            now = time.time()
+            elapsed = now - self._last_speed_time
+            if elapsed >= 0.5:
+                window_bytes = self.bytes_done - self._last_speed_bytes
+                current_speed = window_bytes / elapsed if elapsed > 0 else 0.0
+                self._speed_bps = (
+                    0.7 * self._speed_bps + 0.3 * current_speed
+                    if self._speed_bps > 0
+                    else current_speed
+                )
+                self._last_speed_time = now
+                self._last_speed_bytes = self.bytes_done
+
+        if delta > 0:
+            bandwidth_limiter.consume(delta)
+
+        remaining_bytes = max(0, self.total_bytes - self.bytes_done)
+        eta = (remaining_bytes / self._speed_bps) if self._speed_bps > 0 else None
+
         task_event_manager.emit_progress(
             self.task_id,
-            transferred=transferred,
-            total=total,
-            message=f"{stage} 傳輸中: {transferred}/{total} 位元組",
+            transferred=self.bytes_done if self.total_bytes > 0 else transferred,
+            total=self.total_bytes if self.total_bytes > 0 else total,
+            message=f"{stage} 傳輸中: {self.bytes_done}/{self.total_bytes} 位元組",
+            speed_bps=round(self._speed_bps, 1),
+            eta_seconds=round(eta, 1) if eta is not None else None,
+            files_done=self.finished_actions,
+            files_total=self.total_actions,
         )
 
     def action_finished(
@@ -109,6 +165,14 @@ class WebSyncHooks(SyncHooks):
             else 100.0
         )
         if error:
+            broadcaster.publish("task.log", {
+                "task_id": self.task_id,
+                "level": "ERROR",
+                "target": action.target_path,
+                "error": str(error),
+                "message": f"{action.target_path} 執行失敗: {error}",
+                "ts": time.time(),
+            })
             task_event_manager.emit(
                 self.task_id,
                 TaskEvent(
@@ -120,6 +184,13 @@ class WebSyncHooks(SyncHooks):
                 ),
             )
         else:
+            broadcaster.publish("task.log", {
+                "task_id": self.task_id,
+                "level": "INFO",
+                "target": action.target_path,
+                "message": f"完成: {action.target_path}",
+                "ts": time.time(),
+            })
             task_event_manager.emit(
                 self.task_id,
                 TaskEvent(
@@ -267,8 +338,11 @@ def _run_sync_worker(
             task_event_manager.complete(task_id, message="兩端內容完全一致，無需同步變更。")
             return
 
-        hooks = WebSyncHooks(task_id=task_id, total_actions=plan.count)
+        total_bytes = sum(a.item.size for a in plan.actions if a.item and not a.item.is_dir)
+        hooks = WebSyncHooks(task_id=task_id, total_actions=plan.count, total_bytes=total_bytes)
         executor = SyncExecutor()
+
+        effective_workers = req.workers or web_settings_manager.settings.transfer.max_workers
 
         with managed_storage(src_storage), managed_storage(dst_storage):
             result = executor.execute(
@@ -277,7 +351,7 @@ def _run_sync_worker(
                 source_storage=src_storage,
                 destination_remote=dst_remote,
                 destination_storage=dst_storage,
-                workers=req.workers,
+                workers=effective_workers,
                 hooks=hooks,
             )
 
@@ -299,6 +373,15 @@ def _run_sync_worker(
         task_event_manager.fail(task_id, f"同步作業中斷失敗: {exc}")
 
 
+@router.get("/tasks")
+def list_sync_tasks(
+    limit: int = Query(50, ge=1, le=200, description="最大回傳任務數量"),
+) -> list[dict[str, Any]]:
+    """取得所有進行中與歷史任務清單。"""
+    records = task_event_manager.list_records(limit=limit)
+    return [r.to_dict() for r in records]
+
+
 @router.post("/execute", status_code=status.HTTP_202_ACCEPTED)
 def execute_sync(
     req: SyncExecuteRequest,
@@ -306,7 +389,14 @@ def execute_sync(
 ) -> dict[str, Any]:
     """啟動非同步同步工作，回傳 task_id 可供 SSE 訂閱。"""
     task_id = str(uuid.uuid4())
-    task_event_manager.register_task(task_id)
+    task_event_manager.register_task(
+        task_id,
+        kind="sync",
+        title=f"同步: {req.source_uri} -> {req.dest_uri}",
+        source_uri=req.source_uri,
+        dest_uri=req.dest_uri,
+        request_payload=req.model_dump(),
+    )
 
     # 啟動背景執行緒
     worker_thread = threading.Thread(
@@ -317,6 +407,42 @@ def execute_sync(
     worker_thread.start()
 
     return {"status": "started", "task_id": task_id}
+
+
+@router.post("/tasks/{task_id}/pause")
+def pause_sync_task(task_id: str) -> dict[str, Any]:
+    """暫停指定之同步工作（於當前動作結束後生效）。"""
+    ok = task_event_manager.pause(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="無法暫停該工作（工作不存在或已結束）。")
+    return {"status": "paused", "task_id": task_id}
+
+
+@router.post("/tasks/{task_id}/resume")
+def resume_sync_task(task_id: str) -> dict[str, Any]:
+    """恢復已暫停之同步工作。"""
+    ok = task_event_manager.resume(task_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="無法恢復該工作（工作不存在或非處於暫停狀態）。")
+    return {"status": "resumed", "task_id": task_id}
+
+
+@router.post("/tasks/{task_id}/retry", status_code=status.HTTP_202_ACCEPTED)
+def retry_sync_task(
+    task_id: str,
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> dict[str, Any]:
+    """重新發起先前已結束或失敗的同步任務。"""
+    old_record = task_event_manager.get_record(task_id)
+    if not old_record or not old_record.request_payload:
+        raise HTTPException(status_code=404, detail="找不到指定之任務或缺少原始請求參數。")
+
+    try:
+        new_req = SyncExecuteRequest(**old_record.request_payload)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"解析原始任務參數失敗: {exc}") from exc
+
+    return execute_sync(new_req, config_manager=config_manager)
 
 
 @router.post("/tasks/{task_id}/cancel")
