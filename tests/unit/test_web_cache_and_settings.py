@@ -8,6 +8,7 @@ from typing import Generator
 import time
 
 import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from core.config import ConfigManager, LocalRemote

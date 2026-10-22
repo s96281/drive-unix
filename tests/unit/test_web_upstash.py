@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from core.config import ConfigManager, LocalRemote

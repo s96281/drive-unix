@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from core.config import ConfigManager, LocalRemote

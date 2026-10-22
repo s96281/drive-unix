@@ -15,6 +15,7 @@ from auth.providers.sharepoint_cookie import (
     _save_active_mfa_status,
     _wait_for_condition_with_recording,
 )
+pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 from web.app import create_app
 
