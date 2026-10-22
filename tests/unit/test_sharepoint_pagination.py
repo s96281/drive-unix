@@ -214,3 +214,26 @@ def test_sharepoint_list_dir_root_drives_pagination():
     assert len(items) == 2
     assert items[0].name == "DriveTwo"
     assert items[1].name == "DriveThree"
+    assert items.total_count == 4
+
+
+def test_sharepoint_list_dir_total_count_from_childcount():
+    storage = _create_mock_sharepoint_storage()
+    storage._get_v2_metadata = MagicMock(
+        return_value=(
+            {"folder": {"childCount": 4500}},
+            "https://contoso.sharepoint.com/_api/v2.0/drives/d1/items/item1",
+        )
+    )
+
+    mock_items = [{"name": f"file_{i}.txt"} for i in range(50)]
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"value": mock_items}
+    storage.session.get.return_value = mock_resp
+
+    items = storage.list_dir("Documents/large_folder", offset=0, limit=50)
+    assert len(items) == 50
+    assert hasattr(items, "total_count")
+    assert items.total_count == 4500
+    assert storage.session.get.call_count == 1
+

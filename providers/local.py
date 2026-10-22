@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from core.constants import DEFAULT_BUFFER_SIZE
 from core.hashing import QuickXorHash
-from storage.base import FileItem, ProgressCallback, StorageProvider, StorageStat
+from storage.base import FileItem, FileList, ProgressCallback, StorageProvider, StorageStat
 from core.paths import resolve_local_path
 
 
@@ -25,7 +25,7 @@ class LocalStorage(StorageProvider):
         if offset < 0:
             offset = 0
         if limit is not None and limit <= 0:
-            return []
+            return FileList([], total_count=0)
 
         target = self._get_abs_path(remote_path)
         if not os.path.exists(target):
@@ -35,11 +35,10 @@ class LocalStorage(StorageProvider):
         target_end = (offset + limit) if limit is not None else None
         if os.path.isdir(target):
             clean_remote = remote_path.rstrip('/')
-            for idx, entry in enumerate(os.scandir(target)):
-                if idx < offset:
-                    continue
-                if target_end is not None and idx >= target_end:
-                    break
+            entries = sorted(os.scandir(target), key=lambda e: (not e.is_dir(), e.name.lower()))
+            total_count = len(entries)
+            target_slice = entries[offset:target_end]
+            for entry in target_slice:
                 stat = entry.stat()
                 items.append(FileItem(
                     name=entry.name,
@@ -48,6 +47,7 @@ class LocalStorage(StorageProvider):
                     size=stat.st_size if not entry.is_dir() else 0,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                 ))
+            return FileList(items, total_count=total_count)
         else:
             if offset == 0:
                 stat = os.stat(target)
@@ -58,7 +58,7 @@ class LocalStorage(StorageProvider):
                     size=stat.st_size,
                     modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                 ))
-        return items
+            return FileList(items, total_count=1)
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         target = self._get_abs_path(remote_path)

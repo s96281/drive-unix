@@ -112,28 +112,14 @@ def list_directory(
     refresh: bool = Query(False, description="是否略過快取並強制重新讀取"),
     config_manager: ConfigManager = Depends(get_config_manager),
 ) -> ListDirResponse:
-    """列出指定節點與路徑下的檔案與資料夾清單（支援目錄快取）。"""
+    """列出指定節點與路徑下的檔案與資料夾清單（支援目錄快取與高效分頁載入）。"""
     if remote not in config_manager.config.remotes:
         raise HTTPException(status_code=404, detail=f"找不到名為 '{remote}' 的遠端節點。")
 
     norm_path = path.strip() or "/"
-    raw_items: list[FileItem] | None = None
+    cached_items: list[FileItem] | None = None
     if not refresh:
-        raw_items = directory_cache.get(remote, norm_path)
-
-    if raw_items is None:
-        try:
-            storage = resolve_storage(remote, config_manager)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"初始化儲存驅動失敗: {exc}") from exc
-
-        with managed_storage(storage) as provider:
-            try:
-                raw_items = provider.list_dir(norm_path)
-            except Exception as exc:
-                raise HTTPException(status_code=400, detail=f"讀取目錄失敗 ({norm_path}): {exc}") from exc
-
-        directory_cache.put(remote, norm_path, raw_items)
+        cached_items = directory_cache.get(remote, norm_path)
 
     # 排序處理：資料夾優先，其次依 sort_by
     def sort_key(item: FileItem) -> tuple[bool, Any]:
@@ -145,29 +131,92 @@ def list_directory(
         else:
             return (not item.is_dir, item.name.lower())
 
-    sorted_items = sorted(raw_items, key=sort_key, reverse=reverse)
-
-    items_resp = [
-        FileItemResponse(
-            name=it.name,
-            path=it.path,
-            is_dir=it.is_dir,
-            size=it.size,
-            modified_at=it.modified_at.isoformat() if it.modified_at else None,
-            thumbnail_url=it.thumbnail_url,
+    if cached_items is not None:
+        sorted_items = sorted(cached_items, key=sort_key, reverse=reverse)
+        total_count = len(sorted_items)
+        target_end = (offset + limit) if limit is not None else None
+        paged_items = sorted_items[offset:target_end]
+        return ListDirResponse(
+            remote=remote,
+            path=norm_path,
+            total_count=total_count,
+            items=[
+                FileItemResponse(
+                    name=it.name,
+                    path=it.path,
+                    is_dir=it.is_dir,
+                    size=it.size,
+                    modified_at=it.modified_at.isoformat() if it.modified_at else None,
+                    thumbnail_url=it.thumbnail_url,
+                )
+                for it in paged_items
+            ],
         )
-        for it in sorted_items
-    ]
 
-    total_count = len(items_resp)
-    target_end = (offset + limit) if limit is not None else None
-    paged_items = items_resp[offset:target_end]
+    try:
+        storage = resolve_storage(remote, config_manager)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"初始化儲存驅動失敗: {exc}") from exc
+
+    if limit is not None:
+        # 具有分頁限制且快取未命中：以最小請求次數僅向 Provider 請求指定範圍項目，避免全量載入
+        with managed_storage(storage) as provider:
+            try:
+                page_items = provider.list_dir(norm_path, offset=offset, limit=limit)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"讀取目錄失敗 ({norm_path}): {exc}") from exc
+
+        total_count = getattr(page_items, "total_count", None)
+        if total_count is None:
+            if len(page_items) < limit:
+                total_count = offset + len(page_items)
+            else:
+                total_count = offset + len(page_items) + 1
+
+        return ListDirResponse(
+            remote=remote,
+            path=norm_path,
+            total_count=total_count,
+            items=[
+                FileItemResponse(
+                    name=it.name,
+                    path=it.path,
+                    is_dir=it.is_dir,
+                    size=it.size,
+                    modified_at=it.modified_at.isoformat() if it.modified_at else None,
+                    thumbnail_url=it.thumbnail_url,
+                )
+                for it in page_items
+            ],
+        )
+
+    # limit is None: 全量讀取並存入目錄快取
+    with managed_storage(storage) as provider:
+        try:
+            raw_items = provider.list_dir(norm_path)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"讀取目錄失敗 ({norm_path}): {exc}") from exc
+
+    directory_cache.put(remote, norm_path, raw_items)
+    sorted_items = sorted(raw_items, key=sort_key, reverse=reverse)
+    total_count = len(sorted_items)
+    paged_items = sorted_items[offset:]
 
     return ListDirResponse(
         remote=remote,
         path=norm_path,
         total_count=total_count,
-        items=paged_items,
+        items=[
+            FileItemResponse(
+                name=it.name,
+                path=it.path,
+                is_dir=it.is_dir,
+                size=it.size,
+                modified_at=it.modified_at.isoformat() if it.modified_at else None,
+                thumbnail_url=it.thumbnail_url,
+            )
+            for it in paged_items
+        ],
     )
 
 

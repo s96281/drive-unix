@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 from datetime import datetime, timezone
 
-from storage.base import DeleteCapability, FileItem, ProgressCallback, StorageProvider, StorageStat
+from storage.base import DeleteCapability, FileItem, FileList, ProgressCallback, StorageProvider, StorageStat
 from auth.base import AuthProvider
 from providers.microsoft365.client import Microsoft365Client
 from core.logging import get_logger
@@ -84,7 +84,7 @@ class SharePointStorage(StorageProvider):
         if offset < 0:
             offset = 0
         if limit is not None and limit <= 0:
-            return []
+            return FileList([], total_count=0)
 
         # ==========================================
         # 💡 新增：攔截根目錄請求，自動列出所有文件庫 (Drives)
@@ -119,7 +119,7 @@ class SharePointStorage(StorageProvider):
                         modified_at=modified_dt
                     ))
                 target_end = (offset + limit) if limit is not None else None
-                return items[offset:target_end]
+                return FileList(items[offset:target_end], total_count=len(items))
             except Exception as e:
                 raise ValueError(f"無法自動獲取文件庫清單: {e}")
 
@@ -148,7 +148,7 @@ class SharePointStorage(StorageProvider):
                 modified_at=modified_dt
             )]
             target_end = (offset + limit) if limit is not None else None
-            return single_item[offset:target_end]
+            return FileList(single_item[offset:target_end], total_count=1)
 
         # 2. 準備 v2 專屬 Headers
         headers = self._get_headers()
@@ -172,6 +172,7 @@ class SharePointStorage(StorageProvider):
 
         result_items: list[FileItem] = []
         fetched_total = 0
+        next_link = None
 
         # HttpClient 已統一處理 429/5xx 與 transient network retry。
         while children_url:
@@ -237,8 +238,12 @@ class SharePointStorage(StorageProvider):
             else:
                 children_url = next_link
 
-        logger.debug("SharePoint 清單載入完成，回傳 %d 筆項目", len(result_items))
-        return result_items
+        child_count = metadata.get("folder", {}).get("childCount")
+        if child_count is None:
+            child_count = fetched_total if not next_link else max(fetched_total, len(result_items))
+
+        logger.debug("SharePoint 清單載入完成，回傳 %d 筆項目 (總數: %s)", len(result_items), child_count)
+        return FileList(result_items, total_count=child_count)
 
     def list_dir_old(self, remote_path: str) -> list[FileItem]:
         """

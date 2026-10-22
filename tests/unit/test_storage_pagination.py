@@ -132,3 +132,38 @@ def test_cli_ls_pagination(tmp_path: Path, monkeypatch):
     assert len(parsed["items"]) == 3
     assert parsed["items"][0]["name"] == "doc_02.txt"
     assert parsed["items"][2]["name"] == "doc_04.txt"
+
+
+def test_api_passes_offset_and_limit_to_provider(tmp_path: Path):
+    from unittest.mock import MagicMock, patch
+    from storage.base import FileList
+    from domain.models import FileItem
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    manager = ConfigManager(
+        config_dir / "config.toml",
+        secret_store=SecretRepository(config_dir / "secrets.json"),
+    )
+    manager.add_remote("mock_sp", LocalRemote(type="local", root_path=str(tmp_path)))
+
+    mock_provider = MagicMock()
+    # Simulate folder with 5000 items returning 50 items for page 1
+    mock_provider.list_dir.return_value = FileList(
+        [FileItem(name=f"file_{i:02d}.txt", path=f"/large/file_{i:02d}.txt", is_dir=False, size=100) for i in range(50)],
+        total_count=5000,
+    )
+
+    app = create_web_app()
+    app.dependency_overrides[get_config_manager] = lambda: manager
+
+    with patch("web.routers.files.resolve_storage", return_value=mock_provider):
+        with TestClient(app) as client:
+            resp = client.get("/api/fs/mock_sp/ls?path=/large&offset=0&limit=50&refresh=true")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total_count"] == 5000
+            assert len(data["items"]) == 50
+            # Ensure provider.list_dir was called with offset and limit!
+            mock_provider.list_dir.assert_called_once_with("/large", offset=0, limit=50)
+

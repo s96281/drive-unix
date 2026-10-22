@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from infrastructure.http import HttpClient, HttpStatusError
-from storage.base import DeleteCapability, FileItem, ProgressCallback, StorageProvider, StorageStat
+from storage.base import DeleteCapability, FileItem, FileList, ProgressCallback, StorageProvider, StorageStat
 from auth.base import AuthProvider
 
 
@@ -82,7 +82,7 @@ class OneDriveStorage(StorageProvider):
         if offset < 0:
             offset = 0
         if limit is not None and limit <= 0:
-            return []
+            return FileList([], total_count=0)
 
         default_max_page_size = 999
         target_end = (offset + limit) if limit is not None else None
@@ -92,6 +92,7 @@ class OneDriveStorage(StorageProvider):
         headers = self._get_headers()
         result_items: list[FileItem] = []
         fetched_total = 0
+        next_link = None
 
         try:
             while url:
@@ -156,7 +157,10 @@ class OneDriveStorage(StorageProvider):
                 else:
                     url = next_link
 
-            return result_items
+            child_count = data.get("@odata.count")
+            if child_count is None and not next_link:
+                child_count = fetched_total
+            return FileList(result_items, total_count=child_count)
         except HttpStatusError as e:
             if e.http_response.status_code == 404:
                 # 可能是單一檔案，降級查詢
@@ -168,7 +172,7 @@ class OneDriveStorage(StorageProvider):
                         size=stat_info["size"],
                         modified_at=modified if isinstance(modified, datetime) else None,
                     )]
-                    return single[offset:target_end]
+                    return FileList(single[offset:target_end], total_count=1)
             error_text = e.http_response.text
             if "Tenant does not have a SPO license" in error_text:
                 error_text += (

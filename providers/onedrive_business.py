@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 from datetime import datetime
 
-from storage.base import DeleteCapability, FileItem, ProgressCallback, StorageProvider, StorageStat
+from storage.base import DeleteCapability, FileItem, FileList, ProgressCallback, StorageProvider, StorageStat
 from auth.base import AuthProvider
 from providers.microsoft365.client import Microsoft365Client
 from core.logging import get_logger
@@ -112,7 +112,7 @@ class OneDriveBusinessStorage(StorageProvider):
         if offset < 0:
             offset = 0
         if limit is not None and limit <= 0:
-            return []
+            return FileList([], total_count=0)
 
         clean_path = remote_path.strip("/")
         if not clean_path:
@@ -143,7 +143,7 @@ class OneDriveBusinessStorage(StorageProvider):
                         modified_at=modified_dt
                     ))
                 target_end = (offset + limit) if limit is not None else None
-                return items[offset:target_end]
+                return FileList(items[offset:target_end], total_count=len(items))
             except Exception as e:
                 raise ValueError(f"無法自動獲取文件庫清單: {e}")
 
@@ -163,7 +163,7 @@ class OneDriveBusinessStorage(StorageProvider):
                 modified_at=modified_dt
             )]
             target_end = (offset + limit) if limit is not None else None
-            return single_item[offset:target_end]
+            return FileList(single_item[offset:target_end], total_count=1)
 
         headers = self._get_headers()
         headers.update({
@@ -185,6 +185,7 @@ class OneDriveBusinessStorage(StorageProvider):
 
         result_items: list[FileItem] = []
         fetched_total = 0
+        next_link = None
 
         while children_url:
             response = self.session.get(children_url, headers=headers)
@@ -234,8 +235,12 @@ class OneDriveBusinessStorage(StorageProvider):
             else:
                 children_url = next_link
 
-        logger.debug("OneDrive Business 清單載入完成，共 %d 筆", len(result_items))
-        return result_items
+        child_count = metadata.get("folder", {}).get("childCount")
+        if child_count is None:
+            child_count = fetched_total if not next_link else max(fetched_total, len(result_items))
+
+        logger.debug("OneDrive Business 清單載入完成，共 %d 筆 (總數: %s)", len(result_items), child_count)
+        return FileList(result_items, total_count=child_count)
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         cleaned_path = remote_path.strip("/")

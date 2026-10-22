@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Iterable
 from contextlib import contextmanager
 from enum import Enum
 from types import TracebackType
@@ -16,6 +16,14 @@ from domain.models import FileItem
 ProgressCallback = Callable[[int, int], None]
 
 logger = logging.getLogger(__name__)
+
+
+class FileList(list[FileItem]):
+    """A list of FileItem that optionally carries the known total_count of items in the directory."""
+
+    def __init__(self, items: Iterable[FileItem] = (), total_count: int | None = None) -> None:
+        super().__init__(items)
+        self.total_count = total_count
 
 
 class DeleteCapability(str, Enum):

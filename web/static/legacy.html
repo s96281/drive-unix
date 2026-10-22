@@ -912,6 +912,41 @@
               </div>
             </div>
           </div>
+
+          <!-- Pagination Toolbar -->
+          <div v-if="unifiedTotalCount > 0" class="px-4 py-2 border-t border-[#e2e8f0] bg-[#f8fafc] flex items-center justify-between text-xs text-[#6b7a90] shrink-0 select-none">
+            <div class="flex items-center gap-2">
+              <span>
+                顯示第 <strong class="text-slate-800">{{ (unifiedPage - 1) * unifiedPageSize + 1 }}</strong> - 
+                <strong class="text-slate-800">{{ Math.min(unifiedPage * unifiedPageSize, unifiedTotalCount) }}</strong> 筆
+                （共 <strong class="text-slate-800">{{ unifiedTotalCount }}</strong> 項）
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs">每頁</span>
+              <select v-model.number="unifiedPageSize" @change="loadUnifiedDir(unifiedRemote, unifiedPath, false, 1)" class="bg-[#ffffff] border border-[#e2e8f0] rounded px-1.5 py-0.5 text-xs text-slate-800">
+                <option :value="20">20 筆</option>
+                <option :value="50">50 筆</option>
+                <option :value="100">100 筆</option>
+                <option :value="200">200 筆</option>
+              </select>
+              <div v-if="Math.ceil(unifiedTotalCount / unifiedPageSize) > 1" class="flex items-center gap-1 ml-2">
+                <button @click="loadUnifiedDir(unifiedRemote, unifiedPath, false, 1)" :disabled="unifiedPage <= 1" class="px-2 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed">
+                  首頁
+                </button>
+                <button @click="loadUnifiedDir(unifiedRemote, unifiedPath, false, unifiedPage - 1)" :disabled="unifiedPage <= 1" class="px-2 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed">
+                  上一頁
+                </button>
+                <span class="px-1 text-slate-800 font-medium">{{ unifiedPage }} / {{ Math.ceil(unifiedTotalCount / unifiedPageSize) }}</span>
+                <button @click="loadUnifiedDir(unifiedRemote, unifiedPath, false, unifiedPage + 1)" :disabled="unifiedPage >= Math.ceil(unifiedTotalCount / unifiedPageSize)" class="px-2 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed">
+                  下一頁
+                </button>
+                <button @click="loadUnifiedDir(unifiedRemote, unifiedPath, false, Math.ceil(unifiedTotalCount / unifiedPageSize))" :disabled="unifiedPage >= Math.ceil(unifiedTotalCount / unifiedPageSize)" class="px-2 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40 disabled:cursor-not-allowed">
+                  末頁
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -998,9 +1033,16 @@
               </tbody>
             </table>
           </div>
-        </div>
 
-        <!-- Center Sync Switcher Hub -->
+          <!-- Pane A Pagination -->
+          <div v-if="paneA.totalCount > 0" class="px-3 py-1.5 border-t border-[#e2e8f0] bg-[#f8fafc] flex items-center justify-between text-[11px] text-[#6b7a90] shrink-0 select-none">
+            <span>{{ (paneA.page - 1) * paneA.pageSize + 1 }} - {{ Math.min(paneA.page * paneA.pageSize, paneA.totalCount) }} / {{ paneA.totalCount }}</span>
+            <div v-if="Math.ceil(paneA.totalCount / paneA.pageSize) > 1" class="flex items-center gap-1">
+              <button @click="loadPaneDir('A', paneA.path, false, paneA.page - 1)" :disabled="paneA.page <= 1" class="px-1.5 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40">上頁</button>
+              <span>{{ paneA.page }}/{{ Math.ceil(paneA.totalCount / paneA.pageSize) }}</span>
+              <button @click="loadPaneDir('A', paneA.path, false, paneA.page + 1)" :disabled="paneA.page >= Math.ceil(paneA.totalCount / paneA.pageSize)" class="px-1.5 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40">下頁</button>
+            </div>
+          </div>
         <div class="w-14 flex flex-col items-center justify-center gap-3 shrink-0">
           <button @click="openPreflightModal('A_TO_B')" title="Pane A 同步至 Pane B"
                   class="w-11 h-11 rounded-xl bg-[#ffffff] hover:bg-blue-600 border border-[#e2e8f0] hover:border-blue-500 text-slate-900 flex flex-col items-center justify-center shadow-lg transition group">
@@ -1097,6 +1139,16 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Pane B Pagination -->
+          <div v-if="paneB.totalCount > 0" class="px-3 py-1.5 border-t border-[#e2e8f0] bg-[#f8fafc] flex items-center justify-between text-[11px] text-[#6b7a90] shrink-0 select-none">
+            <span>{{ (paneB.page - 1) * paneB.pageSize + 1 }} - {{ Math.min(paneB.page * paneB.pageSize, paneB.totalCount) }} / {{ paneB.totalCount }}</span>
+            <div v-if="Math.ceil(paneB.totalCount / paneB.pageSize) > 1" class="flex items-center gap-1">
+              <button @click="loadPaneDir('B', paneB.path, false, paneB.page - 1)" :disabled="paneB.page <= 1" class="px-1.5 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40">上頁</button>
+              <span>{{ paneB.page }}/{{ Math.ceil(paneB.totalCount / paneB.pageSize) }}</span>
+              <button @click="loadPaneDir('B', paneB.path, false, paneB.page + 1)" :disabled="paneB.page >= Math.ceil(paneB.totalCount / paneB.pageSize)" class="px-1.5 py-0.5 rounded border border-[#e2e8f0] hover:bg-[#e2e8f0] disabled:opacity-40">下頁</button>
+            </div>
           </div>
         </div>
 
@@ -2211,10 +2263,13 @@
         const unifiedItems = ref([]);
         const unifiedLoading = ref(false);
         const selectedItems = ref([]);
+        const unifiedPage = ref(1);
+        const unifiedPageSize = ref(50);
+        const unifiedTotalCount = ref(0);
 
         // Dual-pane state
-        const paneA = reactive({ remote: '', path: '/', items: [], loading: false });
-        const paneB = reactive({ remote: '', path: '/', items: [], loading: false });
+        const paneA = reactive({ remote: '', path: '/', items: [], loading: false, page: 1, pageSize: 50, totalCount: 0 });
+        const paneB = reactive({ remote: '', path: '/', items: [], loading: false, page: 1, pageSize: 50, totalCount: 0 });
 
         const activeTask = ref(null);
 
@@ -2413,16 +2468,20 @@
           if (unifiedRemote.value) loadUnifiedDir(unifiedRemote.value, '/');
         };
 
-        const loadUnifiedDir = async (remote, path, forceRefresh = false) => {
+        const loadUnifiedDir = async (remote, path, forceRefresh = false, page = 1) => {
           unifiedLoading.value = true;
           unifiedPath.value = path;
+          unifiedPage.value = page;
           selectedItems.value = [];
           try {
-            const url = `/api/fs/${encodeURIComponent(remote)}/ls?path=${encodeURIComponent(path)}${forceRefresh ? '&refresh=true' : ''}`;
+            const offset = unifiedPageSize.value > 0 ? (page - 1) * unifiedPageSize.value : 0;
+            const limitParam = unifiedPageSize.value > 0 ? `&limit=${unifiedPageSize.value}` : '';
+            const url = `/api/fs/${encodeURIComponent(remote)}/ls?path=${encodeURIComponent(path)}&offset=${offset}${limitParam}${forceRefresh ? '&refresh=true' : ''}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             unifiedItems.value = data.items || [];
+            unifiedTotalCount.value = data.total_count ?? unifiedItems.value.length;
             if (displayLayout.value === 'grid') {
               requestThumbnailsForItems();
             }
@@ -2750,17 +2809,21 @@
         });
 
         // Dual Pane methods
-        const loadPaneDir = async (pane, path, forceRefresh = false) => {
+        const loadPaneDir = async (pane, path, forceRefresh = false, page = 1) => {
           const targetPane = pane === 'A' ? paneA : paneB;
           if (!targetPane.remote) return;
           targetPane.loading = true;
           targetPane.path = path;
+          targetPane.page = page;
           try {
-            const url = `/api/fs/${encodeURIComponent(targetPane.remote)}/ls?path=${encodeURIComponent(path)}${forceRefresh ? '&refresh=true' : ''}`;
+            const offset = targetPane.pageSize > 0 ? (page - 1) * targetPane.pageSize : 0;
+            const limitParam = targetPane.pageSize > 0 ? `&limit=${targetPane.pageSize}` : '';
+            const url = `/api/fs/${encodeURIComponent(targetPane.remote)}/ls?path=${encodeURIComponent(path)}&offset=${offset}${limitParam}${forceRefresh ? '&refresh=true' : ''}`;
             const res = await fetch(url);
             if (!res.ok) throw new Error(await res.text());
             const data = await res.json();
             targetPane.items = data.items || [];
+            targetPane.totalCount = data.total_count ?? targetPane.items.length;
             refreshCacheStats();
           } catch (e) {
             alert(`讀取目錄失敗: ${e.message}`);
@@ -3557,6 +3620,9 @@
           unifiedPath,
           unifiedItems,
           unifiedLoading,
+          unifiedPage,
+          unifiedPageSize,
+          unifiedTotalCount,
           selectedItems,
           filteredUnifiedItems,
           isAllUnifiedSelected,
