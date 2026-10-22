@@ -12,7 +12,10 @@ import {
   ArrowRightLeft,
   Columns,
   Square,
+  ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Download,
   Eye,
   Edit,
@@ -105,6 +108,10 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Pagination state
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
   // Modals state
   const [previewItem, setPreviewItem] = useState<FsItem | null>(null);
   const [opsType, setOpsType] = useState<FileOpType | null>(null);
@@ -116,19 +123,35 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
     }
   }, [defaultRemote, currentRemote]);
 
+  const offset = pageSize > 0 ? (page - 1) * pageSize : 0;
+  const limit = pageSize > 0 ? pageSize : undefined;
+
   const { data: listData, isLoading, refetch } = useQuery<FsListResponse>({
-    queryKey: ['fs-list', currentRemote, currentPath],
+    queryKey: ['fs-list', currentRemote, currentPath, page, pageSize],
     queryFn: () =>
       api.request('GET', `/fs/${currentRemote}/ls`, {
-        query: { path: currentPath },
+        query: {
+          path: currentPath,
+          offset,
+          ...(limit !== undefined ? { limit } : {}),
+        },
       }),
     enabled: !!currentRemote,
   });
 
   const items = listData?.items || [];
+  const totalCount = listData?.total_count ?? items.length;
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
+
+  React.useEffect(() => {
+    if (page > totalPages && totalPages > 0) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
+    setPage(1);
     setSelectedPaths(new Set());
   };
 
@@ -204,6 +227,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
             onValueChange={(val) => {
               setCurrentRemote(val);
               setCurrentPath('/');
+              setPage(1);
               setSelectedPaths(new Set());
             }}
           >
@@ -434,10 +458,119 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
         )}
       </div>
 
-      {/* Pane Footer Stats */}
-      <div className="p-2.5 px-3 border-t border-border/80 bg-muted/20 text-xs text-muted-foreground flex items-center justify-between shrink-0">
-        <span>共 {items.length} 個項目</span>
-        {selectedPaths.size > 0 && <span>已選取 {selectedPaths.size} 個項目</span>}
+      {/* Pane Footer Stats & Pagination */}
+      <div className="p-2 px-3 border-t border-border/80 bg-muted/20 text-xs text-muted-foreground flex flex-wrap items-center justify-between gap-2 shrink-0 select-none">
+        {/* Left: Summary & Selection */}
+        <div className="flex items-center gap-2.5">
+          <span>
+            {pageSize > 0 && totalCount > 0 ? (
+              <>
+                顯示第 <span className="font-medium text-foreground">{offset + 1}</span> -{' '}
+                <span className="font-medium text-foreground">{Math.min(offset + items.length, totalCount)}</span> 筆
+                （共 <span className="font-medium text-foreground">{totalCount}</span> 個項目）
+              </>
+            ) : (
+              <>共 <span className="font-medium text-foreground">{totalCount}</span> 個項目</>
+            )}
+          </span>
+          {selectedPaths.size > 0 && (
+            <Badge variant="secondary" className="text-[11px] h-5 px-1.5 font-normal">
+              已選取 {selectedPaths.size} 個
+            </Badge>
+          )}
+        </div>
+
+        {/* Right: Page Size & Pagination Controls */}
+        <div className="flex items-center gap-2">
+          {/* Page size select */}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <span className="hidden sm:inline text-muted-foreground">每頁</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(val) => {
+                setPageSize(Number(val));
+                setPage(1);
+                setSelectedPaths(new Set());
+              }}
+            >
+              <SelectTrigger className="w-[85px] h-7 text-xs font-medium">
+                <SelectValue placeholder="每頁筆數" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="20">20 筆</SelectItem>
+                <SelectItem value="50">50 筆</SelectItem>
+                <SelectItem value="100">100 筆</SelectItem>
+                <SelectItem value="200">200 筆</SelectItem>
+                <SelectItem value="0">全部</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Navigation Controls (only when multiple pages exist) */}
+          {pageSize > 0 && totalPages > 1 && (
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setPage(1);
+                  setSelectedPaths(new Set());
+                }}
+                disabled={page <= 1}
+                title="第一頁"
+              >
+                <ChevronsLeft className="h-3.5 w-3.5" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setPage((p) => Math.max(1, p - 1));
+                  setSelectedPaths(new Set());
+                }}
+                disabled={page <= 1}
+                title="上一頁"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+
+              <span className="px-1.5 text-xs font-medium text-muted-foreground">
+                <span className="text-foreground">{page}</span> / {totalPages}
+              </span>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setPage((p) => Math.min(totalPages, p + 1));
+                  setSelectedPaths(new Set());
+                }}
+                disabled={page >= totalPages}
+                title="下一頁"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setPage(totalPages);
+                  setSelectedPaths(new Set());
+                }}
+                disabled={page >= totalPages}
+                title="最後一頁"
+              >
+                <ChevronsRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modals */}

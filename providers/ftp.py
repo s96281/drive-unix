@@ -81,9 +81,20 @@ class FTPStorage(StorageProvider):
     def _get_abs_path(self, remote_path: str) -> str:
         return resolve_posix_path(self.root_path, remote_path)
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         target_path = self._get_abs_path(remote_path)
         items = []
+        target_end = (offset + limit) if limit is not None else None
         
         with self._get_connection() as ftp:
             # 檢查是否為資料夾，若否則退回單一檔案模式
@@ -93,13 +104,14 @@ class FTPStorage(StorageProvider):
                 try:
                     stat_info = self.stat(remote_path)
                     modified = stat_info.get("modified")
-                    return [FileItem(
+                    single = [FileItem(
                         name=stat_info["name"],
                         path=remote_path,
                         is_dir=False,
                         size=stat_info["size"],
                         modified_at=modified if isinstance(modified, datetime) else None,
                     )]
+                    return single[offset:target_end]
                 except Exception:
                     raise ValueError(f"路徑不存在或無權限: {remote_path}")
 
@@ -135,7 +147,7 @@ class FTPStorage(StorageProvider):
             except error_perm as e:
                 raise ValueError(f"取得目錄清單失敗 (請確認 FTP 伺服器是否支援 MLSD 擴充指令): {e}")
                 
-        return items
+        return items[offset:target_end]
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         clean_path = remote_path.strip("/")

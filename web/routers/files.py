@@ -105,6 +105,8 @@ def _cleanup_temp_file(file_path: str) -> None:
 def list_directory(
     remote: str,
     path: str = Query("/", description="遠端目錄路徑"),
+    offset: int = Query(0, ge=0, description="起始索引偏移量"),
+    limit: int | None = Query(None, ge=1, description="回傳項目數量上限"),
     sort_by: str = Query("name", description="排序欄位: name, size, modified"),
     reverse: bool = Query(False, description="是否反向排序"),
     refresh: bool = Query(False, description="是否略過快取並強制重新讀取"),
@@ -157,11 +159,15 @@ def list_directory(
         for it in sorted_items
     ]
 
+    total_count = len(items_resp)
+    target_end = (offset + limit) if limit is not None else None
+    paged_items = items_resp[offset:target_end]
+
     return ListDirResponse(
         remote=remote,
         path=norm_path,
-        total_count=len(items_resp),
-        items=items_resp,
+        total_count=total_count,
+        items=paged_items,
     )
 
 

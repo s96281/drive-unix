@@ -13,12 +13,24 @@ describe('MockRouter', () => {
     expect(res.default_remote).toBe('gdrive');
   });
 
-  it('lists filesystem directory items', async () => {
-    const res: any = await mockRouter.handle('GET', '/fs/gdrive/ls', {
+  it('lists filesystem directory items with pagination', async () => {
+    const allRes: any = await mockRouter.handle('GET', '/fs/gdrive/ls', {
       query: { path: '/' },
     });
-    expect(res.items).toBeDefined();
-    expect(res.total_count).toBeGreaterThan(0);
+    expect(allRes.items.length).toBeGreaterThanOrEqual(2);
+
+    const pagedRes: any = await mockRouter.handle('GET', '/fs/gdrive/ls', {
+      query: { path: '/', offset: 0, limit: 1 },
+    });
+    expect(pagedRes.items.length).toBe(1);
+    expect(pagedRes.total_count).toBe(allRes.total_count);
+    expect(pagedRes.items[0].path).toBe(allRes.items[0].path);
+
+    const pagedRes2: any = await mockRouter.handle('GET', '/fs/gdrive/ls', {
+      query: { path: '/', offset: 1, limit: 1 },
+    });
+    expect(pagedRes2.items.length).toBe(1);
+    expect(pagedRes2.items[0].path).toBe(allRes.items[1].path);
   });
 
   it('generates dry-run sync plan', async () => {

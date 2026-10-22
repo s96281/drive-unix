@@ -4,7 +4,7 @@ import posixpath
 import uuid
 from collections.abc import Mapping
 from typing import Any, Literal
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 from datetime import datetime, timezone
 
 from storage.base import DeleteCapability, FileItem, ProgressCallback, StorageProvider, StorageStat
@@ -15,6 +15,19 @@ from infrastructure.http import HttpStatusError
 
 
 logger = get_logger("providers.sharepoint")
+
+
+def _set_url_query_param(url: str, key: str, value: Any) -> str:
+    """Safely add or replace a query parameter in a URL, preserving OData $ prefixes."""
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    decoded_key = key
+    keys_to_remove = [k for k in qs if k == decoded_key or k.lower() == decoded_key.lower()]
+    for k in keys_to_remove:
+        del qs[k]
+    qs[decoded_key] = [str(value)]
+    new_query = urlencode(qs, doseq=True, safe="$")
+    return urlunparse(parsed._replace(query=new_query))
 
 class SharePointStorage(StorageProvider):
     delete_capability = DeleteCapability.TRASH_AND_PERMANENT
@@ -53,15 +66,26 @@ class SharePointStorage(StorageProvider):
     def _get_request_digest(self) -> str:
         return self.client.get_request_digest()
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
         """
         列出指定目錄下的所有檔案與資料夾。
         使用 v2 API 解決超過 5000 個項目的 List View Threshold (LVT) 問題，
         並支援大資料夾的自動分頁載入與 5xx 伺服器錯誤指數退避重試機制。
+        支援 offset 與 limit 範圍查詢，透過動態滑動大小的 $top 視窗以最少的請求次數取得目標項目。
         """
         from datetime import datetime
         import time  # 確保引入 time 以支援重試延遲
-        
+
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         # ==========================================
         # 💡 新增：攔截根目錄請求，自動列出所有文件庫 (Drives)
         # ==========================================
@@ -80,13 +104,12 @@ class SharePointStorage(StorageProvider):
                 response = self.session.get(api_url, headers=headers)
                 self.session.raise_for_status(response)
                 
-                items = []
+                items: list[FileItem] = []
                 for drive in response.json().get('value', []):
                     time_str = drive.get("lastModifiedDateTime")
                     modified_dt = None
                     if time_str:
                         modified_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                    from urllib.parse import unquote
                     raw_name = drive.get('webUrl', '').split('/')[-1]
                     items.append(FileItem(
                         name=unquote(raw_name),
@@ -95,7 +118,8 @@ class SharePointStorage(StorageProvider):
                         size=0,
                         modified_at=modified_dt
                     ))
-                return items
+                target_end = (offset + limit) if limit is not None else None
+                return items[offset:target_end]
             except Exception as e:
                 raise ValueError(f"無法自動獲取文件庫清單: {e}")
 
@@ -116,13 +140,15 @@ class SharePointStorage(StorageProvider):
             if time_str:
                 modified_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
                 
-            return [FileItem(
+            single_item = [FileItem(
                 name=metadata.get("name", "Unknown"),
                 path=remote_path,
                 is_dir=False,
                 size=metadata.get("size", 0),
                 modified_at=modified_dt
             )]
+            target_end = (offset + limit) if limit is not None else None
+            return single_item[offset:target_end]
 
         # 2. 準備 v2 專屬 Headers
         headers = self._get_headers()
@@ -132,49 +158,87 @@ class SharePointStorage(StorageProvider):
             "Sec-Fetch-User": "?1"
         })
 
-        # 3. 組合分頁請求網址 (設定每次拿 200 筆，避免超時)
+        # 3. 組合分頁請求網址
         if item_api_url.endswith("/root"):
-            children_url = f"{item_api_url}/children?$top=200"
+            base_children_url = f"{item_api_url}/children"
+            default_max_page_size = 200
         else:
-            children_url = f"{item_api_url}:/children?$top=1000"
+            base_children_url = f"{item_api_url}:/children"
+            default_max_page_size = 1000
 
-        items = []
+        target_end = (offset + limit) if limit is not None else None
+        first_window = min(target_end, default_max_page_size) if target_end is not None else default_max_page_size
+        children_url = f"{base_children_url}?$top={first_window}"
+
+        result_items: list[FileItem] = []
+        fetched_total = 0
 
         # HttpClient 已統一處理 429/5xx 與 transient network retry。
         while children_url:
             response = self.session.get(children_url, headers=headers)
             self.session.raise_for_status(response, context="讀取 SharePoint 資料夾內容")
             data = response.json()
+            raw_page_values = data.get('value', [])
+            if not raw_page_values:
+                break
 
-            # 5. 解析這頁的項目
-            for item in data.get('value', []):
-                is_dir = "folder" in item
-                
-                time_str = item.get("fileSystemInfo", {}).get("lastModifiedDateTime")
-                modified_dt = None
-                if time_str:
-                    modified_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+            page_start = fetched_total
+            page_end = page_start + len(raw_page_values)
+            fetched_total = page_end
 
-                clean_remote = remote_path.rstrip('/')
-                item_path = f"{clean_remote}/{item['name']}"
+            # 計算當前頁面與目標區間 [offset, target_end) 的重疊範圍
+            if target_end is not None:
+                slice_start = max(0, offset - page_start)
+                slice_end = min(len(raw_page_values), target_end - page_start)
+            else:
+                slice_start = max(0, offset - page_start)
+                slice_end = len(raw_page_values)
 
-                items.append(FileItem(
-                    name=item.get("name", "Unknown"),
-                    path=item_path,
-                    is_dir=is_dir,
-                    size=item.get("size", 0) if not is_dir else 0,
-                    modified_at=modified_dt
-                ))
-            
-            # 即時更新進度條 (確保加入 flush=True，讓畫面正確渲染)
-            logger.debug("SharePoint 已載入 %d 筆項目", len(items))
-            
-            # 取得下一頁的連結，如果沒有了就代表全數載入完畢
-            children_url = data.get('@odata.nextLink')
+            if slice_start < slice_end:
+                for item in raw_page_values[slice_start:slice_end]:
+                    is_dir = "folder" in item
+                    time_str = item.get("fileSystemInfo", {}).get("lastModifiedDateTime")
+                    modified_dt = None
+                    if time_str:
+                        modified_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
 
-        # 清除動態進度條
-        logger.debug("SharePoint 清單載入完成，共 %d 筆", len(items))
-        return items
+                    clean_remote = remote_path.rstrip('/')
+                    item_path = f"{clean_remote}/{item['name']}"
+
+                    result_items.append(FileItem(
+                        name=item.get("name", "Unknown"),
+                        path=item_path,
+                        is_dir=is_dir,
+                        size=item.get("size", 0) if not is_dir else 0,
+                        modified_at=modified_dt
+                    ))
+
+            logger.debug(
+                "SharePoint 目錄查詢進度: 已累計讀取 %d 筆，已收集目標項目 %d 筆",
+                fetched_total,
+                len(result_items),
+            )
+
+            # 若已達目標終點，立即中斷，達成「最少請求次數」
+            if target_end is not None and fetched_total >= target_end:
+                break
+
+            next_link = data.get('@odata.nextLink')
+            if not next_link:
+                break
+
+            # 動態調整下一頁的滑動視窗大小 ($top)
+            if target_end is not None:
+                remaining_needed = target_end - fetched_total
+                if remaining_needed <= 0:
+                    break
+                next_window = min(remaining_needed, default_max_page_size)
+                children_url = _set_url_query_param(next_link, "$top", next_window)
+            else:
+                children_url = next_link
+
+        logger.debug("SharePoint 清單載入完成，回傳 %d 筆項目", len(result_items))
+        return result_items
 
     def list_dir_old(self, remote_path: str) -> list[FileItem]:
         """

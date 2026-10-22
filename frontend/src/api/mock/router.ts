@@ -139,11 +139,16 @@ class MockRouter {
         return item.path.startsWith(dirPath + '/') && item.path.slice(dirPath.length + 1).split('/').length === 1;
       });
 
+      const totalCount = children.length;
+      const offset = query.offset !== undefined && query.offset !== null ? parseInt(String(query.offset), 10) : 0;
+      const limit = query.limit !== undefined && query.limit !== null ? parseInt(String(query.limit), 10) : undefined;
+      const pagedChildren = limit !== undefined ? children.slice(offset, offset + limit) : children.slice(offset);
+
       return {
         remote,
         path: dirPath,
-        total_count: children.length,
-        items: children.map((c) => ({
+        total_count: totalCount,
+        items: pagedChildren.map((c) => ({
           name: c.name,
           path: c.path,
           is_dir: c.is_dir,

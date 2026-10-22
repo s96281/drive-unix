@@ -97,9 +97,20 @@ class SFTPStorage(StorageProvider):
         """安全地轉換相對路徑為 SFTP 絕對路徑。"""
         return resolve_posix_path(self.root_path, remote_path)
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         target_path = self._get_abs_path(remote_path)
         items = []
+        target_end = (offset + limit) if limit is not None else None
         
         with self._get_connection() as (ssh, sftp):
             try:
@@ -110,13 +121,14 @@ class SFTPStorage(StorageProvider):
                     # 若無法進入，嘗試將其當作單一檔案獲取屬性
                     try:
                         attr = sftp.stat(target_path)
-                        return [FileItem(
+                        single = [FileItem(
                             name=posixpath.basename(target_path),
                             path=remote_path,
                             is_dir=False,
                             size=attr.st_size,
                             modified_at=datetime.fromtimestamp(attr.st_mtime, tz=timezone.utc)
                         )]
+                        return single[offset:target_end]
                     except IOError:
                         raise ValueError(f"路徑不存在或無權限: {remote_path}")
 
@@ -138,7 +150,7 @@ class SFTPStorage(StorageProvider):
             except Exception as e:
                 raise ValueError(f"取得目錄清單失敗: {e}")
                 
-        return items
+        return items[offset:target_end]
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         clean_path = remote_path.strip("/")

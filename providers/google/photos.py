@@ -325,8 +325,19 @@ class GooglePhotosStorage(StorageProvider):
                 return cast(dict[str, Any], item)
         raise FileNotFoundError(f"找不到指定的媒體項目: {path}")
 
-    def list_dir(self, path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         norm_path = self._normalize_path(path)
+        target_end = (offset + limit) if limit is not None else None
 
         # 1. 根目錄：列出全部相簿 + 虛擬 _all 目錄
         if norm_path == "/":
@@ -338,7 +349,7 @@ class GooglePhotosStorage(StorageProvider):
                 if "title" in a
             ]
             items.append(FileItem(name="_all", path="/_all", is_dir=True))
-            return items
+            return items[offset:target_end]
 
         # 2. 相簿或全量目錄
         parts = norm_path.strip("/").split("/")
@@ -352,7 +363,7 @@ class GooglePhotosStorage(StorageProvider):
             album_id = self._resolve_album_id(target)
             media_items = self.client.list_album_items(album_id)
 
-        return [
+        items = [
             FileItem(
                 name=item["filename"],
                 path=f"/{target}/{item['filename']}",
@@ -365,6 +376,7 @@ class GooglePhotosStorage(StorageProvider):
             for item in media_items
             if "filename" in item
         ]
+        return items[offset:target_end]
 
     def upload(
         self,

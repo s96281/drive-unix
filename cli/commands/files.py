@@ -28,11 +28,13 @@ from storage.base import DeleteCapability
 
 def ls(
     path: str = typer.Argument(..., help="路徑格式: [remote_name]:/[remote_path]"),
+    offset: int = typer.Option(0, "--offset", help="起始索引偏移量 (0-based)"),
+    limit: int | None = typer.Option(None, "--limit", "-n", help="最大回傳項目數量"),
     json_output: bool = typer.Option(False, "--json", help="輸出穩定 JSON，適合腳本使用"),
 ):
     """
-    列出指定雲端目錄下的檔案與資料夾
-    範例: python main.py ls work_sp:/Shared Documents
+    列出指定雲端目錄下的檔案與資料夾（支援分頁範圍查詢）
+    範例: python main.py ls work_sp:/Shared Documents --offset 0 --limit 20
     """
     ctx = CLIContext.create()
     config_manager = ctx.config
@@ -46,8 +48,8 @@ def ls(
         # 2. 初始化對應的 Storage Provider (會自動處理快取與認證)
         storage = get_storage_provider(remote_name, config_manager)
         
-        # 3. 呼叫 API 取得檔案清單
-        items = storage.list_dir(remote_path)
+        # 3. 呼叫 API 取得檔案清單（以最少請求數取得指定範圍）
+        items = storage.list_dir(remote_path, offset=offset, limit=limit)
         
         # 4. 顯示結果
         if json_output:

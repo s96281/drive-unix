@@ -58,8 +58,19 @@ class StorageProvider(ABC):
     delete_capability: DeleteCapability = DeleteCapability.PERMANENT_ONLY
 
     @abstractmethod
-    def list_dir(self, remote_path: str) -> list[FileItem]:
-        """List the direct children of ``remote_path``."""
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        """List the direct children of ``remote_path``.
+
+        Args:
+            remote_path: Target directory path.
+            offset: Zero-based starting index for pagination (default 0).
+            limit: Maximum number of items to return, or None for all items.
+        """
         raise NotImplementedError
 
     @abstractmethod

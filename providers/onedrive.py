@@ -1,13 +1,27 @@
 import os
 import posixpath
 import time
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlunparse
 from collections.abc import Mapping
 from datetime import datetime
+from typing import Any
 
 from infrastructure.http import HttpClient, HttpStatusError
 from storage.base import DeleteCapability, FileItem, ProgressCallback, StorageProvider, StorageStat
 from auth.base import AuthProvider
+
+
+def _set_url_query_param(url: str, key: str, value: Any) -> str:
+    """Safely add or replace a query parameter in a URL, preserving OData $ prefixes."""
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query, keep_blank_values=True)
+    decoded_key = key
+    keys_to_remove = [k for k in qs if k == decoded_key or k.lower() == decoded_key.lower()]
+    for k in keys_to_remove:
+        del qs[k]
+    qs[decoded_key] = [str(value)]
+    new_query = urlencode(qs, doseq=True, safe="$")
+    return urlunparse(parsed._replace(query=new_query))
 
 class OneDriveStorage(StorageProvider):
     delete_capability = DeleteCapability.TRASH_ONLY
@@ -59,57 +73,102 @@ class OneDriveStorage(StorageProvider):
             raise ValueError(f"OneDrive item ID 回應格式無效: {remote_path}")
         return item_id
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
-        # $top=999 最大化單次請求量，降低翻頁次數
-        url = self._get_item_url(remote_path, suffix=":/children?$top=999")
-            
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
+        default_max_page_size = 999
+        target_end = (offset + limit) if limit is not None else None
+        first_window = min(target_end, default_max_page_size) if target_end is not None else default_max_page_size
+
+        url = self._get_item_url(remote_path, suffix=f":/children?$top={first_window}")
         headers = self._get_headers()
-        items = []
-        
+        result_items: list[FileItem] = []
+        fetched_total = 0
+
         try:
             while url:
                 resp = self.session.get(url, headers=headers)
                 self.session.raise_for_status(resp)
                 data = resp.json()
-                
-                for item in data.get("value", []):
-                    is_dir = "folder" in item
-                    mod_time_str = item.get("fileSystemInfo", {}).get("lastModifiedDateTime")
-                    mod_time = datetime.fromisoformat(mod_time_str.replace("Z", "+00:00")) if mod_time_str else None
-                    
-                    clean_remote = remote_path.rstrip('/')
-                    item_path = f"{clean_remote}/{item['name']}"
-                    
-                    thumb_url = None
-                    thumbs = item.get("thumbnails", [])
-                    if thumbs and isinstance(thumbs, list):
-                        t_item = thumbs[0]
-                        for sk in ("medium", "large", "small"):
-                            if sk in t_item and isinstance(t_item[sk], dict) and "url" in t_item[sk]:
-                                thumb_url = t_item[sk]["url"]
-                                break
+                raw_page_values = data.get("value", [])
+                if not raw_page_values:
+                    break
 
-                    items.append(FileItem(
-                        name=item['name'],
-                        path=item_path.replace("//", "/"),
-                        is_dir=is_dir,
-                        size=item.get("size", 0) if not is_dir else 0,
-                        modified_at=mod_time,
-                        thumbnail_url=thumb_url if not is_dir else None,
-                    ))
-                url = data.get("@odata.nextLink")
-            return items
+                page_start = fetched_total
+                page_end = page_start + len(raw_page_values)
+                fetched_total = page_end
+
+                if target_end is not None:
+                    slice_start = max(0, offset - page_start)
+                    slice_end = min(len(raw_page_values), target_end - page_start)
+                else:
+                    slice_start = max(0, offset - page_start)
+                    slice_end = len(raw_page_values)
+
+                if slice_start < slice_end:
+                    for item in raw_page_values[slice_start:slice_end]:
+                        is_dir = "folder" in item
+                        mod_time_str = item.get("fileSystemInfo", {}).get("lastModifiedDateTime")
+                        mod_time = datetime.fromisoformat(mod_time_str.replace("Z", "+00:00")) if mod_time_str else None
+
+                        clean_remote = remote_path.rstrip('/')
+                        item_path = f"{clean_remote}/{item['name']}"
+
+                        thumb_url = None
+                        thumbs = item.get("thumbnails", [])
+                        if thumbs and isinstance(thumbs, list):
+                            t_item = thumbs[0]
+                            for sk in ("medium", "large", "small"):
+                                if sk in t_item and isinstance(t_item[sk], dict) and "url" in t_item[sk]:
+                                    thumb_url = t_item[sk]["url"]
+                                    break
+
+                        result_items.append(FileItem(
+                            name=item['name'],
+                            path=item_path.replace("//", "/"),
+                            is_dir=is_dir,
+                            size=item.get("size", 0) if not is_dir else 0,
+                            modified_at=mod_time,
+                            thumbnail_url=thumb_url if not is_dir else None,
+                        ))
+
+                if target_end is not None and fetched_total >= target_end:
+                    break
+
+                next_link = data.get("@odata.nextLink")
+                if not next_link:
+                    break
+
+                if target_end is not None:
+                    remaining_needed = target_end - fetched_total
+                    if remaining_needed <= 0:
+                        break
+                    next_window = min(remaining_needed, default_max_page_size)
+                    url = _set_url_query_param(next_link, "$top", next_window)
+                else:
+                    url = next_link
+
+            return result_items
         except HttpStatusError as e:
             if e.http_response.status_code == 404:
                 # 可能是單一檔案，降級查詢
                 stat_info = self.stat(remote_path)
                 if stat_info["type"] == "file":
                     modified = stat_info.get("modified")
-                    return [FileItem(
+                    single = [FileItem(
                         name=stat_info["name"], path=remote_path, is_dir=False,
                         size=stat_info["size"],
                         modified_at=modified if isinstance(modified, datetime) else None,
                     )]
+                    return single[offset:target_end]
             error_text = e.http_response.text
             if "Tenant does not have a SPO license" in error_text:
                 error_text += (

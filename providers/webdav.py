@@ -42,8 +42,19 @@ class WebDAVStorage(StorageProvider):
                 return child
         return None
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         url = self._get_url(remote_path)
+        target_end = (offset + limit) if limit is not None else None
         # WebDAV 查詢目錄需要設定 Depth: 1 (只看第一層子項目)
         headers = {"Depth": "1"}
         
@@ -124,7 +135,7 @@ class WebDAVStorage(StorageProvider):
                 modified_at=modified_at
             ))
 
-        return items
+        return items[offset:target_end]
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         clean_path = remote_path.strip("/")

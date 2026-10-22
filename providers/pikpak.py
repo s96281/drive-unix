@@ -118,14 +118,35 @@ class PikPakStorage(StorageProvider):
 
         return curr_id
 
-    def list_dir(self, path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         folder_id = self._resolve_path(path)
-        items: list[FileItem] = []
+        result_items: list[FileItem] = []
         page_token: str | None = None
         norm_dir = self._normalize_path(path)
+        fetched_total = 0
+        max_limit = 100
+        target_end = (offset + limit) if limit is not None else None
 
         while True:
-            params: dict[str, Any] = {"parent_id": folder_id, "limit": 100}
+            if target_end is not None:
+                remaining_needed = target_end - fetched_total
+                if remaining_needed <= 0:
+                    break
+                current_limit = min(remaining_needed, max_limit)
+            else:
+                current_limit = max_limit
+
+            params: dict[str, Any] = {"parent_id": folder_id, "limit": current_limit}
             if page_token:
                 params["page_token"] = page_token
 
@@ -133,39 +154,56 @@ class PikPakStorage(StorageProvider):
             self.http.raise_for_status(resp, context="PikPak 列舉目錄")
             data = resp.json()
 
-            for f in data.get("files", []):
-                if f.get("trashed"):
-                    continue
+            raw_files = [f for f in data.get("files", []) if not f.get("trashed")]
+            for f in raw_files:
                 name = f["name"]
                 item_path = f"{norm_dir.rstrip('/')}/{name}" if norm_dir != "/" else f"/{name}"
-                is_dir = f.get("kind") == "drive#folder"
                 with self._cache_lock:
                     self._path_cache[item_path] = f["id"]
 
-                mtime_str = f.get("modified_time")
-                mtime = (
-                    datetime.fromisoformat(mtime_str.replace("Z", "+00:00"))
-                    if mtime_str
-                    else None
-                )
-                thumb_url = f.get("thumbnail_link") or f.get("thumbnail_url") or f.get("icon_link")
-                items.append(
-                    FileItem(
-                        name=name,
-                        path=item_path,
-                        is_dir=is_dir,
-                        size=int(f.get("size", 0)),
-                        modified_at=mtime,
-                        remote_hash=f.get("md5_checksum"),
-                        thumbnail_url=thumb_url if not is_dir else None,
+            page_start = fetched_total
+            page_end = page_start + len(raw_files)
+            fetched_total = page_end
+
+            if target_end is not None:
+                slice_start = max(0, offset - page_start)
+                slice_end = min(len(raw_files), target_end - page_start)
+            else:
+                slice_start = max(0, offset - page_start)
+                slice_end = len(raw_files)
+
+            if slice_start < slice_end:
+                for f in raw_files[slice_start:slice_end]:
+                    name = f["name"]
+                    item_path = f"{norm_dir.rstrip('/')}/{name}" if norm_dir != "/" else f"/{name}"
+                    is_dir = f.get("kind") == "drive#folder"
+                    mtime_str = f.get("modified_time")
+                    mtime = (
+                        datetime.fromisoformat(mtime_str.replace("Z", "+00:00"))
+                        if mtime_str
+                        else None
                     )
-                )
+                    thumb_url = f.get("thumbnail_link") or f.get("thumbnail_url") or f.get("icon_link")
+                    result_items.append(
+                        FileItem(
+                            name=name,
+                            path=item_path,
+                            is_dir=is_dir,
+                            size=int(f.get("size", 0)),
+                            modified_at=mtime,
+                            remote_hash=f.get("md5_checksum"),
+                            thumbnail_url=thumb_url if not is_dir else None,
+                        )
+                    )
+
+            if target_end is not None and fetched_total >= target_end:
+                break
 
             page_token = data.get("next_page_token")
             if not page_token:
                 break
 
-        return items
+        return result_items
 
     def upload(
         self,

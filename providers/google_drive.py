@@ -105,7 +105,17 @@ class GoogleDriveStorage(StorageProvider):
         # 將零件反轉並組合成路徑字串
         return "/" + "/".join(reversed(path_parts))
     
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         service = self._get_service()
         folder_id, is_folder = self._get_id_from_path(remote_path)
         
@@ -113,38 +123,68 @@ class GoogleDriveStorage(StorageProvider):
             raise ValueError(f"[{remote_path}] 是一個檔案，無法列出目錄內容。")
             
         query = f"'{folder_id}' in parents and trashed=false"
-        items = []
+        result_items: list[FileItem] = []
         page_token = None
+        fetched_total = 0
+        max_page_size = 1000
+        target_end = (offset + limit) if limit is not None else None
         
         while True:
+            if target_end is not None:
+                remaining_needed = target_end - fetched_total
+                if remaining_needed <= 0:
+                    break
+                current_window = min(remaining_needed, max_page_size)
+            else:
+                current_window = max_page_size
+
             results = service.files().list(
                 q=query, 
                 fields="nextPageToken, files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
                 pageToken=page_token,
-                pageSize=1000
+                pageSize=current_window
             ).execute()
             
-            for f in results.get('files', []):
-                is_dir = (f['mimeType'] == 'application/vnd.google-apps.folder')
-                mod_time = datetime.fromisoformat(f['modifiedTime'].replace('Z', '+00:00')) if 'modifiedTime' in f else None
+            raw_files = results.get('files', [])
+            if not raw_files:
+                break
+
+            page_start = fetched_total
+            page_end = page_start + len(raw_files)
+            fetched_total = page_end
+
+            if target_end is not None:
+                slice_start = max(0, offset - page_start)
+                slice_end = min(len(raw_files), target_end - page_start)
+            else:
+                slice_start = max(0, offset - page_start)
+                slice_end = len(raw_files)
+
+            if slice_start < slice_end:
+                for f in raw_files[slice_start:slice_end]:
+                    is_dir = (f['mimeType'] == 'application/vnd.google-apps.folder')
+                    mod_time = datetime.fromisoformat(f['modifiedTime'].replace('Z', '+00:00')) if 'modifiedTime' in f else None
+                    
+                    clean_remote = remote_path.rstrip('/')
+                    item_path = f"{clean_remote}/{f['name']}"
+                    
+                    result_items.append(FileItem(
+                        name=f['name'],
+                        path=item_path,
+                        is_dir=is_dir,
+                        size=int(f.get('size', 0)) if not is_dir else 0,
+                        modified_at=mod_time,
+                        thumbnail_url=f.get('thumbnailLink') if not is_dir else None,
+                    ))
                 
-                clean_remote = remote_path.rstrip('/')
-                item_path = f"{clean_remote}/{f['name']}"
-                
-                items.append(FileItem(
-                    name=f['name'],
-                    path=item_path,
-                    is_dir=is_dir,
-                    size=int(f.get('size', 0)) if not is_dir else 0,
-                    modified_at=mod_time,
-                    thumbnail_url=f.get('thumbnailLink') if not is_dir else None,
-                ))
-                
+            if target_end is not None and fetched_total >= target_end:
+                break
+
             page_token = results.get('nextPageToken')
             if not page_token:
                 break
                 
-        return items
+        return result_items
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
         service = self._get_service()

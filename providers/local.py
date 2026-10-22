@@ -16,16 +16,31 @@ class LocalStorage(StorageProvider):
         """將 POSIX 風格的遠端路徑安全地映射到本機絕對路徑。"""
         return str(resolve_local_path(self.root_path, remote_path))
 
-    def list_dir(self, remote_path: str) -> list[FileItem]:
+    def list_dir(
+        self,
+        remote_path: str,
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> list[FileItem]:
+        if offset < 0:
+            offset = 0
+        if limit is not None and limit <= 0:
+            return []
+
         target = self._get_abs_path(remote_path)
         if not os.path.exists(target):
             raise ValueError(f"路徑不存在: {target}")
         
-        items = []
+        items: list[FileItem] = []
+        target_end = (offset + limit) if limit is not None else None
         if os.path.isdir(target):
-            for entry in os.scandir(target):
+            clean_remote = remote_path.rstrip('/')
+            for idx, entry in enumerate(os.scandir(target)):
+                if idx < offset:
+                    continue
+                if target_end is not None and idx >= target_end:
+                    break
                 stat = entry.stat()
-                clean_remote = remote_path.rstrip('/')
                 items.append(FileItem(
                     name=entry.name,
                     path=f"{clean_remote}/{entry.name}",
@@ -34,14 +49,15 @@ class LocalStorage(StorageProvider):
                     modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
                 ))
         else:
-            stat = os.stat(target)
-            items.append(FileItem(
-                name=os.path.basename(target),
-                path=remote_path,
-                is_dir=False,
-                size=stat.st_size,
-                modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-            ))
+            if offset == 0:
+                stat = os.stat(target)
+                items.append(FileItem(
+                    name=os.path.basename(target),
+                    path=remote_path,
+                    is_dir=False,
+                    size=stat.st_size,
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                ))
         return items
 
     def mkdir(self, remote_path: str, parents: bool = False) -> bool:
