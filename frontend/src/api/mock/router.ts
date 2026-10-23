@@ -159,6 +159,15 @@ class MockRouter {
       } as T;
     }
 
+    const readMatch = routePath.match(/^\/fs\/([^/]+)\/read$/);
+    if (readMatch && method === 'GET') {
+      const remote = readMatch[1];
+      const file = (this.db.files[remote] || []).find((f) => f.path === String(query.path));
+      if (!file || file.is_dir) throw new ApiError(404, '找不到檔案');
+      const content = (file as { content?: string }).content ?? '';
+      return { remote, path: file.path, content, size: file.size, truncated: false, is_binary: false, encoding: 'utf-8' } as T;
+    }
+
     const mkdirMatch = routePath.match(/^\/fs\/([^/]+)\/mkdir$/);
     if (mkdirMatch && method === 'POST') {
       const remote = mkdirMatch[1];

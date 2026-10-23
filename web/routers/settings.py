@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from web.cache import directory_cache
 from web.events import broadcaster
 from web.settings import WebSettings, web_settings_manager
+from web.storage_pool import storage_pool
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -29,6 +30,7 @@ class UpdateSettingsRequest(BaseModel):
     ui: dict[str, Any] | None = None
     security: dict[str, Any] | None = None
     transfer: dict[str, Any] | None = None
+    connection_pool: dict[str, Any] | None = None
     extra_options: dict[str, Any] | None = None
 
 
@@ -76,6 +78,23 @@ def clear_cache(
         "cleared_entries": count,
         "message": message,
         "stats": directory_cache.get_stats(),
+    }
+
+
+@router.get("/connections", response_model=dict[str, Any])
+def get_connection_pool_stats() -> dict[str, Any]:
+    """取得 Provider 連線池即時統計 (命中率、活動中節點、閒置秒數)。"""
+    return storage_pool.stats()
+
+
+@router.post("/connections/clear", status_code=status.HTTP_200_OK)
+def clear_connection_pool() -> dict[str, Any]:
+    """手動切斷並清空所有快取之 Provider 連線。"""
+    storage_pool.clear()
+    return {
+        "status": "cleared",
+        "message": "已釋放並切斷所有快取之 Provider 連線。",
+        "stats": storage_pool.stats(),
     }
 
 

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import concurrent.futures
+import logging
 import mimetypes
 import os
 import posixpath
 import tempfile
 import threading
+import time
 import uuid
 from typing import Any, Literal
 
@@ -92,6 +95,62 @@ class TransferRequest(BaseModel):
     mode: Literal["copy", "move"] = Field("copy", description="傳輸模式: copy 或 move")
 
 
+logger = logging.getLogger(__name__)
+
+_warmup_lock = threading.Lock()
+_active_warmups: set[tuple[str, str]] = set()
+_warmup_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4, thread_name_prefix="dir-cache-warmup"
+)
+
+
+def _background_warmup_directory(remote: str, path: str, config_manager: ConfigManager) -> None:
+    """Fetch full directory in background and store in directory_cache, then notify frontend via SSE."""
+    warmup_key = (remote, path)
+    start_time = time.time()
+    try:
+        # Check if already cached
+        if directory_cache.get(remote, path) is not None:
+            return
+
+        storage = resolve_storage(remote, config_manager)
+        with managed_storage(storage) as provider:
+            raw_items = provider.list_dir(path)
+
+        # Skip storing if directory was invalidated while fetching
+        if hasattr(directory_cache, "get_invalidation_time"):
+            if directory_cache.get_invalidation_time(remote, path) > start_time:
+                logger.debug("目錄在預熱期間被使失效，跳過寫入舊快取: %s:%s", remote, path)
+                return
+
+        directory_cache.put(remote, path, raw_items)
+        logger.info("目錄快取背景預熱完成: %s:%s (共 %d 個項目)", remote, path, len(raw_items))
+
+        # Broadcast SSE event to update frontend total counts & total pages
+        broadcaster.publish("fs.cache_warmed", {
+            "remote": remote,
+            "path": path,
+            "total_count": len(raw_items),
+        })
+    except Exception as exc:
+        logger.warning("目錄快取背景預熱失敗 (%s:%s): %s", remote, path, exc)
+    finally:
+        with _warmup_lock:
+            _active_warmups.discard(warmup_key)
+
+
+def _schedule_background_warmup(remote: str, path: str, config_manager: ConfigManager) -> None:
+    """Schedule background full-directory warmup if not already warming up or cached."""
+    warmup_key = (remote, path)
+    with _warmup_lock:
+        if warmup_key in _active_warmups:
+            return
+        if directory_cache.get(remote, path) is not None:
+            return
+        _active_warmups.add(warmup_key)
+        _warmup_executor.submit(_background_warmup_directory, remote, path, config_manager)
+
+
 def _cleanup_temp_file(file_path: str) -> None:
     """Background task to remove temporary downloaded file."""
     try:
@@ -172,6 +231,9 @@ def list_directory(
                 total_count = offset + len(page_items)
             else:
                 total_count = offset + len(page_items) + 1
+
+        # 若未命中快取，在背景非同步預熱完整目錄快取，實現後續翻頁、排序與精確總數 0 延遲
+        _schedule_background_warmup(remote, norm_path, config_manager)
 
         return ListDirResponse(
             remote=remote,
@@ -344,6 +406,99 @@ def download_file(
         media_type=media_type,
         content_disposition_type="attachment",
         background=background_tasks,
+    )
+
+
+class ReadResponse(BaseModel):
+    remote: str
+    path: str
+    content: str
+    size: int
+    truncated: bool
+    is_binary: bool = False
+    encoding: str = "utf-8"
+
+
+def _decode_preview_bytes(data: bytes) -> tuple[str, str]:
+    """Decode preview bytes, trying BOM / common encodings. Returns (text, encoding)."""
+    if data.startswith(b"\xef\xbb\xbf"):
+        return data[3:].decode("utf-8", errors="replace"), "utf-8"
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="replace"), "utf-16"
+    try:
+        return data.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError as exc:
+        # 可能只是被截斷在多位元組字元中間
+        if exc.start >= len(data) - 4:
+            return data[: exc.start].decode("utf-8", errors="replace"), "utf-8"
+    for enc in ("big5", "gb18030"):
+        try:
+            return data.decode(enc), enc
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace"), "utf-8"
+
+
+@router.get("/{remote}/read", response_model=ReadResponse)
+def read_file_text(
+    remote: str,
+    path: str = Query(..., description="要預覽之遠端文字檔路徑"),
+    max_bytes: int = Query(102400, ge=1, le=5 * 1024 * 1024, description="最多讀取位元組數"),
+    config_manager: ConfigManager = Depends(get_config_manager),
+) -> ReadResponse:
+    """讀取檔案開頭內容作為文字預覽（自動偵測編碼與二進位檔）。"""
+    if remote not in config_manager.config.remotes:
+        raise HTTPException(status_code=404, detail=f"找不到名為 '{remote}' 的遠端節點。")
+
+    filename = posixpath.basename(path.rstrip("/"))
+    if not filename:
+        raise HTTPException(status_code=400, detail="無效的檔案路徑。")
+
+    storage = resolve_storage(remote, config_manager)
+    temp_file_path: str | None = None
+    try:
+        with managed_storage(storage) as provider:
+            abs_path: str | None = None
+            if hasattr(provider, "_get_abs_path"):
+                try:
+                    candidate = provider._get_abs_path(path)
+                    if os.path.isfile(candidate):
+                        abs_path = candidate
+                except Exception:
+                    abs_path = None
+
+            if abs_path is None:
+                temp_fd, temp_file_path = tempfile.mkstemp(prefix="drive_read_")
+                os.close(temp_fd)
+                try:
+                    ok = provider.download(path, temp_file_path, recursive=False)
+                    if not ok:
+                        raise RuntimeError("Provider 下載回傳 False。")
+                except Exception as exc:
+                    raise HTTPException(status_code=500, detail=f"讀取檔案失敗: {exc}") from exc
+                abs_path = temp_file_path
+
+            total_size = os.path.getsize(abs_path)
+            with open(abs_path, "rb") as fh:
+                data = fh.read(max_bytes)
+    finally:
+        if temp_file_path:
+            _cleanup_temp_file(temp_file_path)
+
+    if b"\x00" in data and not data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return ReadResponse(
+            remote=remote, path=path, content="", size=total_size,
+            truncated=False, is_binary=True,
+        )
+
+    text, encoding = _decode_preview_bytes(data)
+    return ReadResponse(
+        remote=remote,
+        path=path,
+        content=text,
+        size=total_size,
+        truncated=total_size > len(data),
+        encoding=encoding,
     )
 
 

@@ -221,8 +221,8 @@ def _build_plan_internal(
     if dst_remote not in config_manager.config.remotes:
         raise HTTPException(status_code=404, detail=f"找不到目的節點 '{dst_remote}'")
 
-    src_storage = resolve_storage(src_remote, config_manager)
-    dst_storage = resolve_storage(dst_remote, config_manager)
+    src_storage = resolve_storage(src_remote, config_manager, use_pool=False)
+    dst_storage = resolve_storage(dst_remote, config_manager, use_pool=False)
 
     options = SyncOptions(
         one_way=not req.two_way,

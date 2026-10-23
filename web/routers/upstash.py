@@ -17,6 +17,7 @@ from infrastructure.upstash_client import (
     UpstashError,
 )
 from web.dependencies import get_config_manager
+from web.storage_pool import storage_pool
 
 router = APIRouter(prefix="/api/upstash", tags=["Upstash Sync"])
 
@@ -179,13 +180,16 @@ def pull_from_upstash(
     """從 Upstash 下載、解密並合併至本機節點與 SecretStore。"""
     service = UpstashSyncService(config_mgr)
     try:
-        return service.pull(
+        res = service.pull(
             req.passphrase,
             sync_key=req.sync_key,
             strategy=req.strategy,
             overwrite=req.overwrite,
             dry_run=req.dry_run,
         )
+        if not req.dry_run:
+            storage_pool.clear()
+        return res
     except DecryptionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

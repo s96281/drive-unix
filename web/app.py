@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from web.log_bridge import setup_log_bridge
+from web.storage_pool import storage_pool
 from web.routers.events import router as events_router
 from web.routers.files import router as files_router
 from web.routers.remotes import router as remotes_router
@@ -38,6 +40,13 @@ class SPAStaticFiles(StaticFiles):
             raise
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle; cleanly tear down connection pools on shutdown."""
+    yield
+    storage_pool.clear()
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -46,6 +55,7 @@ def create_app() -> FastAPI:
         description="Modern Web Interface & REST API for multi-provider file synchronization",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=lifespan,
     )
 
     # Initialize log bridge

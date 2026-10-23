@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import {
   Folder,
   File,
@@ -32,6 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatBytes, formatRelativeTime } from '@/lib/format';
 import { useTransferQueueStore } from '@/stores/transfer-queue';
 import { FilePreviewDialog } from '@/components/files/FilePreviewDialog';
+import { FileTypeIcon } from '@/components/files/FileTypeIcon';
 import { FileOpsDialog, type FileOpType } from '@/components/files/FileOpsDialog';
 import { toast } from 'sonner';
 import type { RemoteListResponse, FsListResponse, FsItem, RemoteItem } from '@/api/types';
@@ -126,7 +127,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
   const offset = pageSize > 0 ? (page - 1) * pageSize : 0;
   const limit = pageSize > 0 ? pageSize : undefined;
 
-  const { data: listData, isLoading, refetch } = useQuery<FsListResponse>({
+  const { data: listData, isLoading, isFetching, isPlaceholderData, refetch } = useQuery<FsListResponse>({
     queryKey: ['fs-list', currentRemote, currentPath, page, pageSize],
     queryFn: () =>
       api.request('GET', `/fs/${currentRemote}/ls`, {
@@ -137,17 +138,52 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
         },
       }),
     enabled: !!currentRemote,
+    placeholderData: (previousData, previousQuery) => {
+      // Keep previous data when paginating within the same remote and path to prevent page jumps
+      const prevKey = previousQuery?.queryKey;
+      if (
+        prevKey &&
+        prevKey[1] === currentRemote &&
+        prevKey[2] === currentPath
+      ) {
+        return previousData;
+      }
+      return undefined;
+    },
   });
 
   const items = listData?.items || [];
-  const totalCount = listData?.total_count ?? items.length;
-  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
+  const totalCount = listData?.total_count ?? (isLoading ? 0 : items.length);
+  const totalPages = pageSize > 0 && totalCount > 0 ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
 
   React.useEffect(() => {
-    if (page > totalPages && totalPages > 0) {
-      setPage(totalPages);
+    // Only clamp the page if authoritative, non-placeholder data has arrived from the server.
+    // Never clamp while loading or when data is not yet resolved for the current parameters.
+    if (listData && !isLoading && !isPlaceholderData) {
+      if (page > totalPages && totalPages > 0) {
+        setPage(totalPages);
+      }
     }
-  }, [page, totalPages]);
+  }, [page, totalPages, listData, isLoading, isPlaceholderData]);
+
+  // Prefetch next page in background for instant zero-latency page transitions
+  React.useEffect(() => {
+    if (pageSize > 0 && page < totalPages && currentRemote) {
+      const nextPage = page + 1;
+      const nextOffset = (nextPage - 1) * pageSize;
+      queryClient.prefetchQuery({
+        queryKey: ['fs-list', currentRemote, currentPath, nextPage, pageSize],
+        queryFn: () =>
+          api.request('GET', `/fs/${currentRemote}/ls`, {
+            query: {
+              path: currentPath,
+              offset: nextOffset,
+              limit: pageSize,
+            },
+          }),
+      });
+    }
+  }, [page, totalPages, pageSize, currentRemote, currentPath, queryClient]);
 
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
@@ -243,8 +279,15 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
             </SelectContent>
           </Select>
 
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()} title="重新整理">
-            <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            title="重新整理"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
 
           <Button
@@ -366,10 +409,9 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                 <th className="py-2 px-3 w-28 text-right font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/40">
+            <tbody className={`divide-y divide-border/40 transition-opacity duration-150 ${isPlaceholderData ? 'opacity-50 pointer-events-none' : ''}`}>
               {items.map((item) => {
                 const isSelected = selectedPaths.has(item.path);
-                const isImg = /\.(png|jpe?g|gif|webp|svg)$/i.test(item.name);
                 return (
                   <tr
                     key={item.path}
@@ -395,13 +437,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                     </td>
                     <td className="py-2.5 px-2">
                       <div className="flex items-center gap-2">
-                        {item.is_dir ? (
-                          <Folder className="h-4 w-4 text-amber-400 shrink-0 fill-amber-400/20" />
-                        ) : isImg ? (
-                          <ImageIcon className="h-4 w-4 text-emerald-400 shrink-0" />
-                        ) : (
-                          <FileText className="h-4 w-4 text-sky-400 shrink-0" />
-                        )}
+                        <FileTypeIcon name={item.name} isDir={item.is_dir} />
                         <span className="font-medium text-foreground truncate max-w-xs">{item.name}</span>
                       </div>
                     </td>
@@ -465,7 +501,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
           <span>
             {pageSize > 0 && totalCount > 0 ? (
               <>
-                顯示第 <span className="font-medium text-foreground">{offset + 1}</span> -{' '}
+                顯示第 <span className="font-medium text-foreground">{Math.min(offset + 1, totalCount)}</span> -{' '}
                 <span className="font-medium text-foreground">{Math.min(offset + items.length, totalCount)}</span> 筆
                 （共 <span className="font-medium text-foreground">{totalCount}</span> 個項目）
               </>
@@ -517,7 +553,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                   setPage(1);
                   setSelectedPaths(new Set());
                 }}
-                disabled={page <= 1}
+                disabled={page <= 1 || isFetching}
                 title="第一頁"
               >
                 <ChevronsLeft className="h-3.5 w-3.5" />
@@ -531,14 +567,19 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                   setPage((p) => Math.max(1, p - 1));
                   setSelectedPaths(new Set());
                 }}
-                disabled={page <= 1}
+                disabled={page <= 1 || isFetching}
                 title="上一頁"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
 
-              <span className="px-1.5 text-xs font-medium text-muted-foreground">
-                <span className="text-foreground">{page}</span> / {totalPages}
+              <span className="px-1.5 text-xs font-medium text-muted-foreground inline-flex items-center gap-1.5">
+                <span>
+                  <span className="text-foreground">{page}</span> / {totalPages}
+                </span>
+                {isFetching && (
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin text-muted-foreground shrink-0" />
+                )}
               </span>
 
               <Button
@@ -549,7 +590,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                   setPage((p) => Math.min(totalPages, p + 1));
                   setSelectedPaths(new Set());
                 }}
-                disabled={page >= totalPages}
+                disabled={page >= totalPages || isFetching}
                 title="下一頁"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -563,7 +604,7 @@ function FileBrowserPane({ paneId, defaultRemote, availableRemotes }: FileBrowse
                   setPage(totalPages);
                   setSelectedPaths(new Set());
                 }}
-                disabled={page >= totalPages}
+                disabled={page >= totalPages || isFetching}
                 title="最後一頁"
               >
                 <ChevronsRight className="h-3.5 w-3.5" />

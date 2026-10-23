@@ -164,6 +164,61 @@ def test_api_passes_offset_and_limit_to_provider(tmp_path: Path):
             data = resp.json()
             assert data["total_count"] == 5000
             assert len(data["items"]) == 50
-            # Ensure provider.list_dir was called with offset and limit!
-            mock_provider.list_dir.assert_called_once_with("/large", offset=0, limit=50)
+            # Ensure provider.list_dir was first called with offset and limit for fast initial response!
+            assert mock_provider.list_dir.call_args_list[0] == (("/large",), {"offset": 0, "limit": 50})
+
+
+def test_background_warmup_serves_subsequent_pages_from_cache(tmp_path: Path):
+    import time
+    from unittest.mock import MagicMock, patch
+    from storage.base import FileList
+    from domain.models import FileItem
+    from web.cache import directory_cache
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    manager = ConfigManager(
+        config_dir / "config.toml",
+        secret_store=SecretRepository(config_dir / "secrets.json"),
+    )
+    manager.add_remote("warm_node", LocalRemote(type="local", root_path=str(tmp_path)))
+
+    all_files = [FileItem(name=f"item_{i:03d}.txt", path=f"/test/item_{i:03d}.txt", is_dir=False, size=10) for i in range(120)]
+    mock_provider = MagicMock()
+    mock_provider.list_dir.side_effect = lambda path, offset=0, limit=None: (
+        all_files[offset: (offset + limit) if limit is not None else None]
+    )
+
+    app = create_web_app()
+    app.dependency_overrides[get_config_manager] = lambda: manager
+
+    directory_cache.invalidate("warm_node", "/test")
+
+    with patch("web.routers.files.resolve_storage", return_value=mock_provider):
+        with TestClient(app) as client:
+            # 1. First request asks for page 1 (50 items)
+            resp1 = client.get("/api/fs/warm_node/ls?path=/test&offset=0&limit=50")
+            assert resp1.status_code == 200
+            assert len(resp1.json()["items"]) == 50
+
+            # 2. Wait up to 1 second for background cache warmup to populate directory_cache
+            for _ in range(20):
+                if directory_cache.get("warm_node", "/test") is not None:
+                    break
+                time.sleep(0.05)
+
+            cached = directory_cache.get("warm_node", "/test")
+            assert cached is not None
+            assert len(cached) == 120
+
+            # 3. Subsequent request for page 2 should hit cache directly with exact total_count=120
+            mock_provider.list_dir.reset_mock()
+            resp2 = client.get("/api/fs/warm_node/ls?path=/test&offset=50&limit=50")
+            assert resp2.status_code == 200
+            data2 = resp2.json()
+            assert data2["total_count"] == 120
+            assert len(data2["items"]) == 50
+            assert data2["items"][0]["name"] == "item_050.txt"
+            # provider.list_dir was NOT called because it hit cache!
+            mock_provider.list_dir.assert_not_called()
 

@@ -36,7 +36,7 @@ def run_transfer_job(
         if dst_remote not in config_manager.config.remotes:
             raise ValueError(f"找不到目的節點 '{dst_remote}'")
 
-        dst_storage = resolve_storage(dst_remote, config_manager)
+        dst_storage = resolve_storage(dst_remote, config_manager, use_pool=False)
         transfer_svc = TransferService()
 
         total_items = len(sources)
@@ -60,7 +60,7 @@ def run_transfer_job(
                     failed += 1
                     continue
 
-                src_storage = resolve_storage(src_remote, config_manager)
+                src_storage = resolve_storage(src_remote, config_manager, use_pool=False)
                 item_name = posixpath.basename(src_path.rstrip("/"))
                 target_dest_path = posixpath.join(dst_base_path.rstrip("/"), item_name).replace("//", "/")
 

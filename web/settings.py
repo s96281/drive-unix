@@ -43,11 +43,18 @@ class TransferSettings(BaseModel):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO", description="Web UI 即時日誌等級")
 
 
+class ConnectionPoolSettings(BaseModel):
+    enabled: bool = Field(default=True, description="是否啟用 Provider 連線復用池")
+    idle_timeout_seconds: int = Field(default=300, ge=10, le=86400, description="連線閒置逾時秒數 (預設 300 秒)")
+    max_cached_remotes: int = Field(default=32, ge=1, le=128, description="最大同時快取節點數")
+
+
 class WebSettings(BaseModel):
     cache: CacheSettings = Field(default_factory=CacheSettings)
     ui: UISettings = Field(default_factory=UISettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     transfer: TransferSettings = Field(default_factory=TransferSettings)
+    connection_pool: ConnectionPoolSettings = Field(default_factory=ConnectionPoolSettings)
     # Extensibility container for future features (e.g. plugins, custom CSS, WebDAV mounts)
     extra_options: dict[str, Any] = Field(default_factory=dict)
 
@@ -61,6 +68,7 @@ class WebSettingsManager:
         self.settings: WebSettings = self.load()
         self._apply_cache_settings()
         self._apply_transfer_settings()
+        self._apply_connection_pool_settings()
 
     def load(self) -> WebSettings:
         if not self.settings_file.exists():
@@ -80,6 +88,7 @@ class WebSettingsManager:
             self.settings_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             self._apply_cache_settings()
             self._apply_transfer_settings()
+            self._apply_connection_pool_settings()
         except Exception as exc:
             logger.error("無法寫入網頁設定檔 %s: %s", self.settings_file, exc)
             raise RuntimeError(f"無法儲存網頁設定: {exc}") from exc
@@ -109,6 +118,13 @@ class WebSettingsManager:
         bandwidth_limiter.set_limit_kbps(self.settings.transfer.bandwidth_limit_kbps)
         numeric_level = getattr(logging, self.settings.transfer.log_level.upper(), logging.INFO)
         setup_log_bridge(min_level=numeric_level)
+
+    def _apply_connection_pool_settings(self) -> None:
+        """Apply connection pool settings to storage_pool singleton."""
+        from web.storage_pool import storage_pool
+        storage_pool.enabled = self.settings.connection_pool.enabled
+        storage_pool.idle_timeout_seconds = float(self.settings.connection_pool.idle_timeout_seconds)
+        storage_pool.max_cached_remotes = self.settings.connection_pool.max_cached_remotes
 
 
 # Global web settings manager instance

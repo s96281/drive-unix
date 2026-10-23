@@ -8,6 +8,15 @@ import uvicorn
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if hasattr(sys.stderr, "reconfigure"):
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="drive-unix Web Interface Server")
     parser.add_argument("--host", default="127.0.0.1", help="Bind socket to this host (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Bind socket to this port (default: 8000)")

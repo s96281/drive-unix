@@ -24,6 +24,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const unsubMsg = eventStream.onMessage((event, data) => {
       const ts = Date.now() / 1000;
 
+      if (event === 'fs.cache_warmed') {
+        const payload = data as { remote: string; path: string; total_count: number };
+        queryClient.invalidateQueries({
+          queryKey: ['fs-list', payload.remote, payload.path],
+        });
+      }
+
       if (event === 'task.update') {
         const task = data as TaskRecord;
         queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -80,6 +87,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           queryClient.invalidateQueries({ queryKey: ['settings'] });
         } else if (sysData.topic === 'files') {
           queryClient.invalidateQueries({ queryKey: ['files'] });
+          queryClient.invalidateQueries({ queryKey: ['fs-list'] });
         } else if (sysData.topic === 'upstash') {
           queryClient.invalidateQueries({ queryKey: ['upstash'] });
         }

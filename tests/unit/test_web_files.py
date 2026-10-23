@@ -1,4 +1,4 @@
-"""Unit tests for Virtual Filesystem API (/api/fs)."""
+﻿"""Unit tests for Virtual Filesystem API (/api/fs)."""
 
 from __future__ import annotations
 
@@ -232,3 +232,24 @@ def test_raw_and_link_endpoints(
     assert resp_link_redirect.headers["location"] == "https://cdn.example.com/direct/sample.mp4"
 
 
+
+
+def test_read_text_preview(client: TestClient, temp_env: tuple[ConfigManager, Path]) -> None:
+    _, local_root = temp_env
+    (local_root / "a.txt").write_bytes("你好\nworld".encode("utf-8"))
+    (local_root / "big.txt").write_bytes(b"x" * 500)
+    (local_root / "b.bin").write_bytes(b"\x00\x01\x02binary")
+    (local_root / "gbk.txt").write_bytes("繁體中文".encode("big5"))
+
+    r = client.get("/api/fs/local_node/read", params={"path": "/a.txt"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["content"] == "你好\nworld"
+    assert body["truncated"] is False and body["is_binary"] is False
+
+    r = client.get("/api/fs/local_node/read", params={"path": "/big.txt", "max_bytes": 100})
+    assert len(r.json()["content"]) == 100 and r.json()["truncated"] is True and r.json()["size"] == 500
+
+    assert client.get("/api/fs/local_node/read", params={"path": "/b.bin"}).json()["is_binary"] is True
+    assert client.get("/api/fs/local_node/read", params={"path": "/gbk.txt"}).json()["content"] == "繁體中文"
+    assert client.get("/api/fs/nope/read", params={"path": "/a.txt"}).status_code == 404

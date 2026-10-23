@@ -19,7 +19,8 @@ class FTPStorage(StorageProvider):
         self.tls = tls
         self.passive = passive
         self.root_path = root_path
-        self._connections: dict[int, FTP] = {}
+        self._idle_connections: list[FTP] = []
+        self._all_connections: set[FTP] = set()
         self._connection_lock = threading.RLock()
 
     def _create_connection(self) -> FTP:
@@ -43,31 +44,39 @@ class FTPStorage(StorageProvider):
 
     @contextmanager
     def _get_connection(self):
-        """Reuse one FTP connection per worker thread."""
-        thread_id = threading.get_ident()
+        """Reuse FTP connections across worker threads via an idle connection pool."""
+        ftp = None
         with self._connection_lock:
-            ftp = self._connections.get(thread_id)
-            if ftp is None:
-                ftp = self._create_connection()
-                self._connections[thread_id] = ftp
-            else:
+            while self._idle_connections:
+                candidate = self._idle_connections.pop()
                 try:
-                    ftp.voidcmd("NOOP")
+                    candidate.voidcmd("NOOP")
+                    ftp = candidate
+                    break
                 except Exception:
                     try:
-                        ftp.close()
+                        candidate.close()
                     except Exception:
                         pass
-                    ftp = self._create_connection()
-                    self._connections[thread_id] = ftp
+                    self._all_connections.discard(candidate)
 
-        yield ftp
+            if ftp is None:
+                ftp = self._create_connection()
+                self._all_connections.add(ftp)
+
+        try:
+            yield ftp
+        finally:
+            with self._connection_lock:
+                if ftp in self._all_connections and ftp not in self._idle_connections:
+                    self._idle_connections.append(ftp)
 
     def close(self) -> None:
         """Close all persistent worker-thread FTP connections."""
         with self._connection_lock:
-            connections = list(self._connections.values())
-            self._connections.clear()
+            connections = list(self._all_connections)
+            self._all_connections.clear()
+            self._idle_connections.clear()
 
         for ftp in connections:
             try:

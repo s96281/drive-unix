@@ -28,6 +28,7 @@ from storage.base import DeleteCapability, managed_storage
 from storage.registry import DEFAULT_PROVIDER_REGISTRY
 from web.dependencies import get_config_manager, resolve_storage
 from web.events import broadcaster
+from web.storage_pool import storage_pool
 
 router = APIRouter(prefix="/api/remotes", tags=["Remotes"])
 
@@ -277,6 +278,9 @@ def update_remote(
         config_manager.save()
 
     updated = config_manager.get_remote(target_name)
+    storage_pool.evict(name)
+    if target_name != name:
+        storage_pool.evict(target_name)
     broadcaster.publish("system", {"topic": "remotes", "action": "updated", "name": target_name})
     return RemoteSummary(
         name=target_name,
@@ -300,11 +304,19 @@ def delete_remote(
         config_manager.config.default_remote = None
         config_manager.save()
 
+    storage_pool.evict(name)
     _remotes_health.pop(name, None)
     _quota_cache.pop(name, None)
     broadcaster.publish("system", {"topic": "remotes", "action": "deleted", "name": name})
 
     return {"status": "deleted", "name": name}
+
+
+@router.post("/{name}/disconnect", status_code=status.HTTP_200_OK)
+def disconnect_remote(name: str) -> dict[str, Any]:
+    """手動中斷指定節點在連線池中的長效連線。"""
+    evicted = storage_pool.evict(name)
+    return {"status": "disconnected" if evicted else "not_connected", "name": name}
 
 
 @router.post("/{name}/test", response_model=TestRemoteResponse)
@@ -319,7 +331,7 @@ def test_remote(
 
     start_time = time.perf_counter()
     try:
-        storage = resolve_storage(name, config_manager)
+        storage = resolve_storage(name, config_manager, use_pool=False)
     except Exception as exc:
         elapsed = (time.perf_counter() - start_time) * 1000
         res = TestRemoteResponse(

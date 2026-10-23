@@ -47,6 +47,7 @@ class DirectoryCacheManager:
 
         self._cache: dict[tuple[str, str], CacheEntry] = {}
         self._thumb_cache: dict[tuple[str, str], tuple[str, float, float]] = {}  # url, timestamp, ttl
+        self._last_invalidated: dict[tuple[str, str], float] = {}
         self._hits: int = 0
         self._misses: int = 0
         self._lock = threading.Lock()
@@ -297,12 +298,19 @@ class DirectoryCacheManager:
             except Exception:
                 pass
 
+    def get_invalidation_time(self, remote: str, path: str) -> float:
+        """Return the timestamp of the last invalidation for this remote and path."""
+        norm_p = self._norm(path)
+        with self._lock:
+            return self._last_invalidated.get((remote, norm_p), 0.0)
+
     def invalidate(self, remote: str, path: str | None = None) -> int:
         """Invalidate cache for a remote or specific directory subtree."""
         count = 0
         norm_p = self._norm(path) if path else "/"
 
         with self._lock:
+            self._last_invalidated[(remote, norm_p)] = time.time()
             if path is None or norm_p == "/":
                 keys_to_del = [k for k in self._cache if k[0] == remote]
                 thumb_keys = [k for k in self._thumb_cache if k[0] == remote]

@@ -22,7 +22,8 @@ class SFTPStorage(StorageProvider):
         self.key_filename = key_filename
         self.root_path = root_path
         self.known_hosts = known_hosts
-        self._connections: dict[int, tuple[paramiko.SSHClient, paramiko.SFTPClient]] = {}
+        self._idle_connections: list[tuple[paramiko.SSHClient, paramiko.SFTPClient]] = []
+        self._all_connections: set[tuple[paramiko.SSHClient, paramiko.SFTPClient]] = set()
         self._connection_lock = threading.RLock()
 
     def _create_connection(self):
@@ -53,17 +54,17 @@ class SFTPStorage(StorageProvider):
 
     @contextmanager
     def _get_connection(self):
-        """Reuse one SSH/SFTP connection per worker thread."""
-        thread_id = threading.get_ident()
+        """Reuse SSH/SFTP connections across worker threads via an idle connection pool."""
+        connection = None
         with self._connection_lock:
-            connection = self._connections.get(thread_id)
-            if connection is None:
-                connection = self._create_connection()
-                self._connections[thread_id] = connection
-            else:
-                ssh, sftp = connection
+            while self._idle_connections:
+                candidate = self._idle_connections.pop()
+                ssh, sftp = candidate
                 transport = ssh.get_transport()
-                if transport is None or not transport.is_active():
+                if transport is not None and transport.is_active():
+                    connection = candidate
+                    break
+                else:
                     try:
                         sftp.close()
                     except Exception:
@@ -72,16 +73,25 @@ class SFTPStorage(StorageProvider):
                         ssh.close()
                     except Exception:
                         pass
-                    connection = self._create_connection()
-                    self._connections[thread_id] = connection
+                    self._all_connections.discard(candidate)
 
-        yield connection
+            if connection is None:
+                connection = self._create_connection()
+                self._all_connections.add(connection)
+
+        try:
+            yield connection
+        finally:
+            with self._connection_lock:
+                if connection in self._all_connections and connection not in self._idle_connections:
+                    self._idle_connections.append(connection)
 
     def close(self) -> None:
         """Close all persistent worker-thread SSH/SFTP connections."""
         with self._connection_lock:
-            connections = list(self._connections.values())
-            self._connections.clear()
+            connections = list(self._all_connections)
+            self._all_connections.clear()
+            self._idle_connections.clear()
 
         for ssh, sftp in connections:
             try:
