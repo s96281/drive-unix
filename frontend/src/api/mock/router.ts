@@ -168,6 +168,16 @@ class MockRouter {
       return { remote, path: file.path, content, size: file.size, truncated: false, is_binary: false, encoding: 'utf-8' } as T;
     }
 
+    const linkMatch = routePath.match(/^\/fs\/([^/]+)\/(?:link|download-link)$/);
+    if (linkMatch && method === 'GET') {
+      const remote = linkMatch[1];
+      const filePath = String(query.path);
+      const file = (this.db.files[remote] || []).find((f) => f.path === filePath);
+      if (!file || file.is_dir) throw new ApiError(404, '找不到檔案');
+      const directUrl = file.thumbnail_url || `/api/fs/${encodeURIComponent(remote)}/raw?path=${encodeURIComponent(filePath)}`;
+      return { remote, path: filePath, url: directUrl } as T;
+    }
+
     const mkdirMatch = routePath.match(/^\/fs\/([^/]+)\/mkdir$/);
     if (mkdirMatch && method === 'POST') {
       const remote = mkdirMatch[1];

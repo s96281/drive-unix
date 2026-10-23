@@ -422,6 +422,24 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
   const [mediaError, setMediaError] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(true);
 
+  // 嘗試取得雲端節點的直鏈/下載網址 (Direct download link)
+  const { data: directLinkData } = useQuery<{ url: string }>({
+    queryKey: ['media-direct-link', remote, item?.path],
+    queryFn: async () => {
+      if (!item) return null as any;
+      try {
+        return await api.request<{ url: string }>('GET', `/fs/${encodeURIComponent(remote)}/link`, {
+          query: { path: item.path },
+        });
+      } catch {
+        return null as any;
+      }
+    },
+    enabled: open && !!item,
+    staleTime: 60_000,
+    retry: false,
+  });
+
   useEffect(() => {
     setMediaError(false);
     setPdfLoading(true);
@@ -430,10 +448,11 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
   if (!item) return null;
 
   const kind = getFileKind(item.name, item.mime_type);
-  const src = rawUrl(remote, item.path);
+  // 優先使用雲端直接下載網址，若無則回退至原生的串流/重定向網址
+  const src = directLinkData?.url || rawUrl(remote, item.path);
   const handleDownload = () => {
     toast.success(`開始下載 [${item.name}]...`);
-    window.open(downloadUrl(remote, item.path), '_blank');
+    window.open(directLinkData?.url || downloadUrl(remote, item.path), '_blank');
   };
 
   const renderBody = () => {

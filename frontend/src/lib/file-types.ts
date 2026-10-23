@@ -100,7 +100,7 @@ export function isTextual(kind: FileKind): boolean {
 }
 
 export function rawUrl(remote: string, path: string): string {
-  return `/api/fs/${encodeURIComponent(remote)}/raw?path=${encodeURIComponent(path)}`;
+  return `/api/fs/${encodeURIComponent(remote)}/raw?path=${encodeURIComponent(path)}&redirect=true`;
 }
 
 export function downloadUrl(remote: string, path: string): string {

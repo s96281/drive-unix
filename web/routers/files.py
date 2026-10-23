@@ -506,7 +506,7 @@ def read_file_text(
 def raw_file(
     remote: str,
     path: str = Query(..., description="要直接串流或預覽之遠端檔案路徑"),
-    redirect: bool = Query(False, description="若 Provider 支援直鏈是否直接 307 重導向"),
+    redirect: bool = Query(True, description="若 Provider 支援直鏈是否直接 307 重導向（預設 True 避免後端重複下載）"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     config_manager: ConfigManager = Depends(get_config_manager),
 ) -> Any:

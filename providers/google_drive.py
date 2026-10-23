@@ -368,6 +368,22 @@ class GoogleDriveStorage(StorageProvider):
             raise ValueError("Google Drive 未回傳 webViewLink。")
         return link
 
+    def get_download_link(self, remote_path: str) -> str:
+        file_id, is_folder = self._get_id_from_path(remote_path)
+        if is_folder:
+            raise ValueError("無法為資料夾產生下載連結。")
+        service = self._get_service()
+        # 建立公開讀取權限並取得直接下載網址 webContentLink
+        try:
+            service.permissions().create(fileId=file_id, body={'type': 'anyone', 'role': 'reader'}).execute()
+        except Exception:
+            pass
+        f = service.files().get(fileId=file_id, fields='webContentLink').execute()
+        link = f.get('webContentLink')
+        if not isinstance(link, str) or not link:
+            return f"https://drive.google.com/uc?export=download&id={file_id}"
+        return link
+
     def get_thumbnail_link(self, remote_path: str) -> str:
         file_id, is_folder = self._get_id_from_path(remote_path)
         if is_folder:
