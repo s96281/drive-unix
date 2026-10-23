@@ -35,7 +35,7 @@ export function ArtPlayerViewer({
       art = new Artplayer({
         container: containerRef.current,
         url,
-        poster,
+        poster: poster || '',
         volume: 0.7,
         isLive: false,
         muted: false,

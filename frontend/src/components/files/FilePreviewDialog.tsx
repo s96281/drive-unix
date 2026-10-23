@@ -475,7 +475,7 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
           url={src}
           name={item.name}
           isAudio={kind === 'audio'}
-          poster={item.thumbnail_url || undefined}
+          poster={item.thumbnail_url || ''}
         />
       );
     }
