@@ -485,6 +485,9 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
     }
 
     if (kind === 'pdf') {
+      // PDF 必須使用本機 /raw 且 redirect=false 取得 Content-Disposition: inline 串流
+      // 若使用外部雲端直鏈重導向，瀏覽器會收到 attachment 或外部下載標頭而直接觸發下載行為
+      const pdfInlineSrc = rawUrl(remote, item.path, false);
       return (
         <div className="relative rounded-md overflow-hidden border border-border/60 bg-background">
           {pdfLoading && (
@@ -492,7 +495,7 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
               <Loader2 className="h-6 w-6 animate-spin" />
             </div>
           )}
-          <iframe title={item.name} src={src} onLoad={() => setPdfLoading(false)} className="w-full h-[60vh]" />
+          <iframe title={item.name} src={pdfInlineSrc} onLoad={() => setPdfLoading(false)} className="w-full h-[60vh]" />
         </div>
       );
     }

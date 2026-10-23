@@ -99,8 +99,9 @@ export function isTextual(kind: FileKind): boolean {
   return kind === 'markdown' || kind === 'json' || kind === 'csv' || kind === 'code' || kind === 'text';
 }
 
-export function rawUrl(remote: string, path: string): string {
-  return `/api/fs/${encodeURIComponent(remote)}/raw?path=${encodeURIComponent(path)}&redirect=true`;
+export function rawUrl(remote: string, path: string, redirect: boolean = true): string {
+  const redirectParam = redirect ? '&redirect=true' : '&redirect=false';
+  return `/api/fs/${encodeURIComponent(remote)}/raw?path=${encodeURIComponent(path)}${redirectParam}`;
 }
 
 export function downloadUrl(remote: string, path: string): string {
