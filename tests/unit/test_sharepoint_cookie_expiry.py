@@ -9,8 +9,8 @@ from auth.providers.sharepoint_cookie import (
 
 
 def test_sharepoint_cookie_expiry_constant():
-    # 1 days in seconds = 1 * 24 * 3600 = 86,400
-    assert DEFAULT_SHAREPOINT_EXPIRY_SECONDS == 86_000
+    # 1 day in seconds = 1 * 24 * 3600 = 86,400
+    assert DEFAULT_SHAREPOINT_EXPIRY_SECONDS == 86_400
 
 
 def test_sharepoint_cookie_provider_default_expiry():
@@ -20,17 +20,17 @@ def test_sharepoint_cookie_provider_default_expiry():
         password="secretpassword",
     )
     assert provider.expires_in_seconds == DEFAULT_SHAREPOINT_EXPIRY_SECONDS
-    assert provider.expires_in_seconds == 86_000
+    assert provider.expires_in_seconds == 86_400
 
 
-def test_sharepoint_cookie_provider_none_falls_back_to_four_days():
+def test_sharepoint_cookie_provider_none_falls_back_to_default():
     provider = SharePointCookieProvider(
         base_url="https://contoso.sharepoint.com",
         email="user@contoso.com",
         password="secretpassword",
         expires_in_seconds=None,
     )
-    assert provider.expires_in_seconds == 86_000
+    assert provider.expires_in_seconds == 86_400
 
 
 def test_sharepoint_cookie_result_to_auth_context_expiry():
@@ -48,5 +48,5 @@ def test_sharepoint_cookie_result_to_auth_context_expiry():
         resource="https://contoso.sharepoint.com",
         expires_at=result.created_at + DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
     )
-    assert ctx.expires_at == now + 86_000
+    assert ctx.expires_at == now + 86_400
     assert not ctx.is_expired(leeway_seconds=60)

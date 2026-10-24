@@ -96,19 +96,19 @@ export function SchedulePage() {
   });
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-5 w-full">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">定時排程器</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">定時排程器 (Schedules)</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
             管理背景 Cron 自動同步規則與系統守護行程 (Daemon) 運作狀態
           </p>
         </div>
 
         <Button
           size="sm"
-          className="gap-1.5 shadow-sm"
+          className="gap-1.5"
           onClick={() => {
             setEditingTask(null);
             setFormOpen(true);
@@ -119,7 +119,7 @@ export function SchedulePage() {
       </div>
 
       {/* Daemon Status Card */}
-      <Card className="border border-border">
+      <Card className="border border-border bg-[var(--alist-card-bg)]">
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">

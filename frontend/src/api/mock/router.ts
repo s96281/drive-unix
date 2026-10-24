@@ -102,6 +102,11 @@ class MockRouter {
     const singleRemoteMatch = routePath.match(/^\/remotes\/([^/]+)$/);
     if (singleRemoteMatch) {
       const name = singleRemoteMatch[1];
+      if (method === 'GET') {
+        const remote = this.db.remotes[name];
+        if (!remote) throw new ApiError(404, `找不到節點 '${name}'`);
+        return remote as T;
+      }
       if (method === 'DELETE') {
         delete this.db.remotes[name];
         delete this.db.files[name];
@@ -457,6 +462,12 @@ class MockRouter {
       }
       if (body.cache) {
         this.db.settings.cache = { ...this.db.settings.cache, ...body.cache };
+      }
+      if (body.security) {
+        this.db.settings.security = { ...this.db.settings.security, ...body.security };
+      }
+      if (body.extra_options) {
+        this.db.settings.extra_options = { ...this.db.settings.extra_options, ...body.extra_options };
       }
       return {
         settings: this.db.settings,

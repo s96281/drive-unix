@@ -538,12 +538,26 @@ export function FilePreviewDialog({ item, remote, open, onOpenChange }: FilePrev
             路徑: <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px]">{item.path}</code>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={() => {
+                const fullUrl = src.startsWith('http') ? src : `${window.location.origin}${src}`;
+                void navigator.clipboard?.writeText(fullUrl).then(
+                  () => toast.success('已複製檔案直鏈網址！'),
+                  () => toast.error('複製直鏈失敗'),
+                );
+              }}
+              className="gap-1.5"
+            >
+              <Copy className="h-3.5 w-3.5" /> 複製直鏈
+            </Button>
             {(kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio') && (
-              <Button variant="ghost" size="sm" onClick={() => window.open(src, '_blank')} className="gap-1.5">
+              <Button variant="subtle" size="sm" onClick={() => window.open(src, '_blank')} className="gap-1.5">
                 <ExternalLink className="h-3.5 w-3.5" /> 新分頁開啟
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={handleDownload} className="gap-1.5">
+            <Button variant="default" size="sm" onClick={handleDownload} className="gap-1.5">
               <Download className="h-3.5 w-3.5" /> 下載
             </Button>
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>

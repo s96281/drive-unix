@@ -15,18 +15,18 @@ import { getExtension, getFileKind, type FileKind } from '@/lib/file-types';
 import { cn } from '@/lib/utils';
 
 const KIND_STYLE: Record<FileKind, { Icon: typeof FileIcon; color: string }> = {
-  image: { Icon: ImageIcon, color: 'text-emerald-400' },
-  video: { Icon: FileVideo, color: 'text-fuchsia-400' },
-  audio: { Icon: FileAudio, color: 'text-pink-400' },
-  pdf: { Icon: FileText, color: 'text-red-400' },
-  markdown: { Icon: FileText, color: 'text-sky-400' },
-  json: { Icon: FileJson, color: 'text-yellow-400' },
-  csv: { Icon: FileSpreadsheet, color: 'text-green-400' },
-  code: { Icon: FileCode, color: 'text-violet-400' },
-  text: { Icon: FileText, color: 'text-sky-400' },
-  archive: { Icon: FileArchive, color: 'text-orange-400' },
-  office: { Icon: Presentation, color: 'text-blue-400' },
-  binary: { Icon: FileIcon, color: 'text-muted-foreground' },
+  image: { Icon: ImageIcon, color: 'text-[var(--alist-main)]' },
+  video: { Icon: FileVideo, color: 'text-[var(--alist-main)]' },
+  audio: { Icon: FileAudio, color: 'text-[var(--alist-main)]' },
+  pdf: { Icon: FileText, color: 'text-[var(--alist-main)]' },
+  markdown: { Icon: FileText, color: 'text-[var(--alist-main)]' },
+  json: { Icon: FileJson, color: 'text-[var(--alist-main)]' },
+  csv: { Icon: FileSpreadsheet, color: 'text-[var(--alist-main)]' },
+  code: { Icon: FileCode, color: 'text-[var(--alist-main)]' },
+  text: { Icon: FileText, color: 'text-[var(--alist-main)]' },
+  archive: { Icon: FileArchive, color: 'text-[var(--alist-main)]' },
+  office: { Icon: Presentation, color: 'text-[var(--alist-main)]' },
+  binary: { Icon: FileIcon, color: 'text-[var(--alist-main)]' },
 };
 
 export function kindStyle(kind: FileKind) {
@@ -41,16 +41,22 @@ interface Props {
 
 export function FileTypeIcon({ name, isDir, className }: Props) {
   if (isDir) {
-    return <Folder className={cn('h-4 w-4 text-amber-400 shrink-0 fill-amber-400/20', className)} />;
+    return (
+      <Folder
+        className={cn(
+          'h-5 w-5 text-[var(--alist-main)] shrink-0 fill-[var(--alist-main)]/20',
+          className,
+        )}
+      />
+    );
   }
   const kind = getFileKind(name);
   let { Icon, color } = KIND_STYLE[kind];
   const ext = getExtension(name);
   if (kind === 'office' && /^xls|^ods/.test(ext)) {
     Icon = FileSpreadsheet;
-    color = 'text-green-400';
   } else if (kind === 'office' && /^doc|^odt/.test(ext)) {
     Icon = FileText;
   }
-  return <Icon className={cn('h-4 w-4 shrink-0', color, className)} />;
+  return <Icon className={cn('h-5 w-5 shrink-0', color, className)} />;
 }

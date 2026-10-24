@@ -42,7 +42,18 @@ def test_static_index_html_delivery(test_client: TestClient) -> None:
 
 
 def test_spa_deep_links(test_client: TestClient) -> None:
-    for route in ["/remotes", "/files", "/sync", "/schedule", "/settings"]:
+    for route in [
+        "/remotes",
+        "/files",
+        "/sync",
+        "/schedule",
+        "/settings",
+        "/@manage",
+        "/@manage/storages",
+        "/@manage/tasks",
+        "/@manage/schedules",
+        "/@manage/settings",
+    ]:
         resp = test_client.get(route)
         assert resp.status_code == 200
         assert 'id="root"' in resp.text

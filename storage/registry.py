@@ -157,7 +157,10 @@ def _build_sharepoint(
 ) -> StorageProvider:
     try:
         from auth.identity import build_identity_cache_key, get_canonical_auth_identity
-        from auth.providers.sharepoint_cookie import SharePointCookieProvider
+        from auth.providers.sharepoint_cookie import (
+            DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
+            SharePointCookieProvider,
+        )
         from providers.sharepoint import SharePointStorage
     except ModuleNotFoundError as exc:
         raise _missing_provider_extra(
@@ -189,7 +192,7 @@ def _build_sharepoint(
         cache_key=ident_key,
         remote_token_service=token_svc,
         identity_key=ident_key,
-        ttl_seconds=4 * 24 * 3600,
+        ttl_seconds=DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
     )
     return SharePointStorage(
         auth_provider=cached,
@@ -205,7 +208,10 @@ def _build_onedrive_business(
 ) -> StorageProvider:
     try:
         from auth.identity import build_identity_cache_key, get_canonical_auth_identity
-        from auth.providers.sharepoint_cookie import SharePointCookieProvider
+        from auth.providers.sharepoint_cookie import (
+            DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
+            SharePointCookieProvider,
+        )
         from providers.onedrive_business import OneDriveBusinessStorage
     except ModuleNotFoundError as exc:
         raise _missing_provider_extra(
@@ -237,7 +243,7 @@ def _build_onedrive_business(
         cache_key=ident_key,
         remote_token_service=token_svc,
         identity_key=ident_key,
-        ttl_seconds=4 * 24 * 3600,
+        ttl_seconds=DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
     )
     return OneDriveBusinessStorage(
         auth_provider=cached,

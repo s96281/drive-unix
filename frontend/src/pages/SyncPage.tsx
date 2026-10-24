@@ -158,27 +158,27 @@ export function SyncPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-5 w-full">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">同步與傳輸監控</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <h2 className="text-xl font-bold tracking-tight text-foreground">跨端同步與傳輸任務 (Tasks)</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
             規劃跨網盤增量備份、雙向同步、即時傳輸控制與歷史任務紀錄
           </p>
         </div>
       </div>
 
       {/* Sync Job Builder Card */}
-      <Card>
+      <Card className="bg-[var(--alist-card-bg)]">
         <CardHeader className="pb-4">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-[var(--alist-main-subtle)] text-[var(--alist-main)]">
               <FolderSync className="h-5 w-5" />
             </div>
             <div>
               <CardTitle className="text-base font-semibold">新建同步任務 (Sync Job Builder)</CardTitle>
-              <CardDescription>設定來源端與目的端儲存路徑，並挑選最適備份模式與比對策略</CardDescription>
+              <CardDescription className="text-xs">設定來源端與目的端儲存路徑，並挑選最適備份模式與比對策略</CardDescription>
             </div>
           </div>
         </CardHeader>

@@ -226,3 +226,49 @@ export type FsListResponse = ListDirResponse;
 export type TransferSettings = WebSettings['transfer'];
 export type CacheStats = CacheStatsResponse;
 
+export interface MetaRule {
+  id: string;
+  path: string;
+  password?: string;
+  p_sub?: boolean;
+  write?: boolean;
+  w_sub?: boolean;
+  hide?: string;
+  h_sub?: boolean;
+  readme?: string;
+  r_sub?: boolean;
+  header?: string;
+  header_sub?: boolean;
+}
+
+export const PERMISSIONS = {
+  SEE_HIDES: 1 << 0,
+  ACCESS_WITHOUT_PASSWORD: 1 << 1,
+  OFFLINE_DOWNLOAD: 1 << 2,
+  WRITE: 1 << 3,
+  RENAME: 1 << 4,
+  MOVE: 1 << 5,
+  COPY: 1 << 6,
+  REMOVE: 1 << 7,
+  WEBDAV_READ: 1 << 8,
+  WEBDAV_MANAGE: 1 << 9,
+} as const;
+
+export interface ManageUser {
+  id: string;
+  username: string;
+  base_path: string;
+  role: 'admin' | 'general' | 'guest';
+  disabled: boolean;
+  permission: number;
+}
+
+export interface IndexConfig {
+  search_index: boolean;
+  auto_update_index: boolean;
+  ignore_paths: string[];
+  max_depth: number;
+  last_updated_at?: number;
+}
+
+

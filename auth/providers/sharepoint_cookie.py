@@ -33,7 +33,7 @@ logger = logging.getLogger("drive_unix.auth.sharepoint")
 DEFAULT_LOGIN_TIMEOUT_MS = 30_000
 DEFAULT_STAY_SIGNED_IN_TIMEOUT_MS = 5_000
 DEFAULT_AFTER_LOGIN_WAIT_SECONDS = 5
-DEFAULT_SHAREPOINT_EXPIRY_SECONDS = 4 * 24 * 3600  # 4 天 (345,600 秒)
+DEFAULT_SHAREPOINT_EXPIRY_SECONDS = 1 * 24 * 3600  # 1 天 (86,400 秒)
 
 
 def _capture_failure_artifact(

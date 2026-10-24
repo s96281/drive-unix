@@ -2,48 +2,72 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
-    --foreground: 222 47% 11%;
+    /* AList / Hope UI Light Theme Tokens (#f7f8fa background, white cards, #1890ff info9) */
+    --background: 220 23% 97.5%;
+    --foreground: 210 15% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 210 15% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 215 25% 91%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 215 25% 91%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 215 25% 93%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%;
+    --popover-foreground: 210 15% 15%;
+    --primary: 209 100% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 20% 93%;
+    --secondary-foreground: 210 15% 20%;
+    --muted: 214 20% 94%;
+    --muted-foreground: 215 12% 46%;
+    --accent: 214 20% 93%;
+    --accent-foreground: 210 15% 15%;
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 89%;
+    --input: 214 20% 93%;
+    --ring: 209 100% 55%;
     --radius: 0.625rem;
+
+    /* AList specific design tokens */
+    --alist-main: #1890ff;
+    --alist-main-subtle: rgba(24, 144, 255, 0.15);
+    --alist-main-subtle-hover: rgba(24, 144, 255, 0.22);
+    --alist-hover: rgba(132, 133, 141, 0.18);
+    --alist-card-bg: #ffffff;
+    --alist-manage-bg: #ffffff;
+    --alist-info4: #e6f4ff;
+    --alist-info11: #0958d9;
+    --alist-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
   }
 
   .dark {
-    --background: 224 71% 4%;
-    --foreground: 213 31% 91%;
-    --card: 224 71% 6%;
-    --card-foreground: 213 31% 91%;
-    --popover: 224 71% 7%;
-    --popover-foreground: 213 31% 91%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 224 71% 4%;
-    --secondary: 222 47% 11%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 223 47% 11%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 223 47% 14%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 216 34% 17%;
-    --input: 216 34% 17%;
-    --ring: 217 91% 60%;
+    /* AList / Hope UI Dark Theme Tokens ($loContrast #111113, $neutral2 #1a1d1e, $neutral3 #202425) */
+    --background: 240 6% 7%;
+    --foreground: 210 17% 93%;
+    --card: 192 7% 14%;
+    --card-foreground: 210 17% 93%;
+    --popover: 192 7% 14%;
+    --popover-foreground: 210 17% 93%;
+    --primary: 209 100% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 195 7% 18%;
+    --secondary-foreground: 210 17% 93%;
+    --muted: 195 7% 17%;
+    --muted-foreground: 215 12% 63%;
+    --accent: 195 7% 19%;
+    --accent-foreground: 210 17% 93%;
+    --destructive: 358 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 195 7% 21%;
+    --input: 195 7% 18%;
+    --ring: 209 100% 55%;
+
+    /* AList specific design tokens (Dark) */
+    --alist-main: #1890ff;
+    --alist-main-subtle: rgba(24, 144, 255, 0.16);
+    --alist-main-subtle-hover: rgba(24, 144, 255, 0.24);
+    --alist-hover: rgba(132, 133, 141, 0.18);
+    --alist-card-bg: #202425;
+    --alist-manage-bg: #1a1d1e;
+    --alist-info4: #112545;
+    --alist-info11: #69b1ff;
+    --alist-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.45), 0 8px 10px -6px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -73,9 +97,73 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
+}
+
 body {
   margin: 0;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* AList ObjBox & ReadmeBox Card Surface */
+.alist-obj-box {
+  background-color: var(--alist-card-bg);
+  border-radius: 0.75rem;
+  box-shadow: var(--alist-shadow);
+}
+
+/* AList List Item & Grid Item Micro-interactions */
+.alist-list-item {
+  border-radius: 0.5rem;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.alist-list-item:hover {
+  transform: scale(1.01);
+  background-color: var(--alist-hover);
+}
+.alist-list-item.selected {
+  background-color: var(--alist-hover);
+}
+
+.alist-grid-item {
+  border-radius: 0.5rem;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s ease;
+}
+.alist-grid-item:hover {
+  transform: scale(1.06);
+  background-color: var(--alist-hover);
+}
+.alist-grid-item.selected {
+  background-color: var(--alist-hover);
+}
+
+.alist-nav-link {
+  border-radius: 0.5rem;
+  transition: transform 0.1s ease, background-color 0.15s ease;
+}
+.alist-nav-link:hover {
+  background-color: var(--alist-hover);
+}
+.alist-nav-link:active {
+  transform: scale(0.95);
+}
+
+/* Marquee animation for long filenames in scrollable mode */
+@keyframes alist-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-55%);
+  }
+}
+
+.alist-marquee-hover:hover .alist-marquee-inner {
+  display: inline-block;
+  animation: alist-marquee 6s linear infinite alternate;
 }
 
 /* Custom scrollbars */
