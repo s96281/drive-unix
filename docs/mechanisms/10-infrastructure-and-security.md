@@ -6,13 +6,13 @@
 
 ```mermaid
 flowchart TB
-    A[HTTP 請求] --> B{status}
-    B -->|429/500/502/503/504<br/>且 method 在 GET/HEAD/OPTIONS/DELETE| C[should_retry = True]
-    B -->|其他| End[回傳]
-    C --> D[delay = Retry-After<br/>min(max_delay)]
-    D --> E{無 Retry-After}
-    E -->|是| F[delay = backoff_factor * 2^attempt + jitter<br/>cap 8s]
-    F --> G[之後重發<br/>最多 max_attempts=4]
+    A["HTTP 請求"] --> B{"status"}
+    B -->|429/500/502/503/504<br/>且 method 在 GET/HEAD/OPTIONS/DELETE| C["should_retry = True"]
+    B -->|其他| Done["回傳"]
+    C --> D["delay = Retry-After<br/>min(max_delay)"]
+    D --> E{"無 Retry-After"}
+    E -->|是| F["delay = backoff_factor * 2^attempt + jitter<br/>cap 8s"]
+    F --> G["之後重發<br/>最多 max_attempts=4"]
     D --> G
 ```
 
@@ -22,11 +22,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph RL[infrastructure/rate_limit.py<br/>RateLimiter 操作間隔]
-        Call[每次 sync action 前] --> Acquire[acquire<br/>預留 next_allowed_at<br/>鎖外 sleep]
+    subgraph RL["infrastructure/rate_limit.py<br/>RateLimiter 操作間隔"]
+        Call["每次 sync action 前"] --> Acquire["acquire<br/>預留 next_allowed_at<br/>鎖外 sleep"]
     end
-    subgraph BW[web/bandwidth.py<br/>BandwidthLimiter token bucket]
-        Data[傳輸 callback 每次] --> Consume[consume delta<br/>記 tokens 補 rate<br/>不足鎖外 sleep]
+    subgraph BW["web/bandwidth.py<br/>BandwidthLimiter token bucket"]
+        Data["傳輸 callback 每次"] --> Consume["consume delta<br/>記 tokens 補 rate<br/>不足鎖外 sleep"]
     end
 ```
 

@@ -6,17 +6,17 @@
 
 ```mermaid
 flowchart TB
-    App[create_app] --> Routers[7 routers]
-    Routers --> Events[/api/events]
-    Routers --> Remotes[/api/remotes]
-    Routers --> Files[/api/fs]
-    Routers --> Sync[/api/sync]
-    Routers --> Schedule[/api/schedule]
-    Routers --> Settings[/api/settings]
-    Routers --> Upstash[/api/upstash]
-    App --> Health[GET /api/health]
-    App --> Static[SPAStaticFiles]
-    App --> Bridge[setup_log_bridge]
+    App["create_app"] --> Routers["7 routers"]
+    Routers --> Events["/api/events"]
+    Routers --> Remotes["/api/remotes"]
+    Routers --> Files["/api/fs"]
+    Routers --> Sync["/api/sync"]
+    Routers --> Schedule["/api/schedule"]
+    Routers --> Settings["/api/settings"]
+    Routers --> Upstash["/api/upstash"]
+    App --> Health["GET /api/health"]
+    App --> Static["SPAStaticFiles"]
+    App --> Bridge["setup_log_bridge"]
 ```
 
 ## 8.2 API 一覽
@@ -41,18 +41,18 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[resolve_storage<br/>use_pool=True] --> B[storage_pool.acquire<br/>remote_name]
-    B --> C{設定 hash<br/>SHA-256 前 16 字<br/>remote model_dump 排序 JSON}
-    C -->|變了| Evict[關舊池條目<br/>重建]
-    C -->|沒變 + 池有| Reuse[PooledStorageProxy]
-    C -->|池無| Create[get_storage_provider<br/>鎖外建立防阻塞]
-    Create --> D{已有併發加入?}
-    D -->|有且 hash 同| CloseNew[關掉新建者<br/>回既有 proxy]
-    D -->|無| LRU{池滿 32?}
-    LRU -->|是| EvictLRU[淘汰 LRU 非 in_use 優先]
-    LRU -->|否| Insert[存入 PooledEntry<br/>計數 in_use]
-    Reuse --> Use[try list/upload/...<br/>致命連線錯誤 → evict]
-    Use --> Release[proxy.close → pool.release<br/>不關底層連線]
+    A["resolve_storage<br/>use_pool=True"] --> B["storage_pool.acquire<br/>remote_name"]
+    B --> C{"設定 hash<br/>SHA-256 前 16 字<br/>remote model_dump 排序 JSON"}
+    C -->|變了| Evict["關舊池條目<br/>重建"]
+    C -->|沒變 + 池有| Reuse["PooledStorageProxy"]
+    C -->|池無| Create["get_storage_provider<br/>鎖外建立防阻塞"]
+    Create --> D{"已有併發加入?"}
+    D -->|有且 hash 同| CloseNew["關掉新建者<br/>回既有 proxy"]
+    D -->|無| LRU{"池滿 32?"}
+    LRU -->|是| EvictLRU["淘汰 LRU 非 in_use 優先"]
+    LRU -->|否| Insert["存入 PooledEntry<br/>計數 in_use"]
+    Reuse --> Use["try list/upload/...<br/>致命連線錯誤 → evict"]
+    Use --> Release["proxy.close → pool.release<br/>不關底層連線"]
 ```
 
 - `PooledStorageProxy._handle_call` 攔截 `ConnectionReset/Aborted/Refused/BrokenPipe/EOF/Timeout/paramiko.SSHException` → 淘汰該池條目。
@@ -65,13 +65,13 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    GET[get remote path] --> L1{L1 命中且未過期}
-    L1 -->|命中| Hit[hit++ 回傳]
-    L1 -->|過期| DelL1[刪 L1 + L2]
-    L1 -->|未命中| L2{L2 命中且未過期}
-    L2 -->|命中| Warm[暖 L1<br/>hit++ 回傳]
-    L2 -->|未命中| Miss[miss++<br/>回 None → Provider 讀取]
-    Miss --> Put[put 寫 L1<br/>→ L2 + 淘汰最舊]
+    GET["get remote path"] --> L1{"L1 命中且未過期"}
+    L1 -->|命中| Hit["hit++ 回傳"]
+    L1 -->|過期| DelL1["刪 L1 + L2"]
+    L1 -->|未命中| L2{"L2 命中且未過期"}
+    L2 -->|命中| Warm["暖 L1<br/>hit++ 回傳"]
+    L2 -->|未命中| Miss["miss++<br/>回 None → Provider 讀取"]
+    Miss --> Put["put 寫 L1<br/>→ L2 + 淘汰最舊"]
 ```
 
 - TTL 預設 300s，`max_entries=1000` 滿時先清過期、再刪最舊 timestamp。
@@ -84,13 +84,13 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[POST /transfer 或 /sync/execute<br/>202 回 task_id] --> B[task_event_manager.register_task<br/>TaskRecord + cancel/pause gate]
-    B --> C[Thread 啟 run_transfer_job<br/>或 _run_sync_worker]
-    C --> D{逐項目<br/>wait_if_paused / is_cancelled}
-    D --> E[單檔 copy_between<br/>或目錄 SyncPlanner+Executor]
-    E --> F[emit_progress<br/>全域 250ms 節流 task.update]
-    F --> G[directory_cache.invalidate<br/>src + dst]
-    G --> H[complete / fail]
+    A["POST /transfer 或 /sync/execute<br/>202 回 task_id"] --> B["task_event_manager.register_task<br/>TaskRecord + cancel/pause gate"]
+    B --> C["Thread 啟 run_transfer_job<br/>或 _run_sync_worker"]
+    C --> D{"逐項目<br/>wait_if_paused / is_cancelled"}
+    D --> E["單檔 copy_between<br/>或目錄 SyncPlanner+Executor"]
+    E --> F["emit_progress<br/>全域 250ms 節流 task.update"]
+    F --> G["directory_cache.invalidate<br/>src + dst"]
+    G --> H["complete / fail"]
 ```
 
 - `web/transfer_jobs.py::run_transfer_job`：單檔走 `copy_between` + `bandwidth_limiter.consume`；目錄走 `SyncPlanner(one_way=True, delete=False, conflict=auto)` + `SyncExecutor(workers=4)`；`move` 模式成功後刪源。
@@ -100,23 +100,23 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph Global[全域 EventBroadcaster]
-        Pub[publish event data<br/>seq++ + 保留 500 條]
-        Sub[stream<br/>hello → replay → loop]
-        Sub -->|15s 無事件| HB[heartbeat]
-        Sub -->|Last-Event-Id 太舊| Resync[resync]
+    subgraph Global["全域 EventBroadcaster"]
+        Pub["publish event data<br/>seq++ + 保留 500 條"]
+        Sub["stream<br/>hello → replay → loop"]
+        Sub -->|15s 無事件| HB["heartbeat"]
+        Sub -->|Last-Event-Id 太舊| Resync["resync"]
     end
-    subgraph Task[TaskEventManager]
-        Reg[register_task]
-        Pause[pause/resume<br/>EventGate]
-        Cancel[cancel<br/>Token + 解 pause]
-        Emit[emit / emit_progress]
-        SSE[subscribe task_id<br/>typed events]
+    subgraph Task["TaskEventManager"]
+        Reg["register_task"]
+        Pause["pause/resume<br/>EventGate"]
+        Cancel["cancel<br/>Token + 解 pause"]
+        Emit["emit / emit_progress"]
+        SSE["subscribe task_id<br/>typed events"]
     end
-    Hooks[WebSyncHooks<br/>transfer / sync] --> Emit
+    Hooks["WebSyncHooks<br/>transfer / sync"] --> Emit
     Emit --> Pub
     Emit --> SSE
-    Cleanup[訂閱結束清 queue/loop/token/gate] --> Pub
+    Cleanup["訂閱結束清 queue/loop/token/gate"] --> Pub
 ```
 
 - `TaskRecord` 欄位：`kind(sync/transfer/renew)`、`status(running/pausing/paused/completed/failed/cancelled)`、`bytes_done/total`、`speed_bps`（EMA）、`eta_seconds`、`files_done/total`、`request_payload`（供 retry）。

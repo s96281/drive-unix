@@ -23,23 +23,23 @@
 
 ```mermaid
 flowchart TB
-    User[使用者] --> CLI[CLI<br/>cli/app.py]
-    User --> WebUI[Web UI / 靜態前端<br/>web/static + FastAPI]
+    User["使用者"] --> CLI["CLI<br/>cli/app.py"]
+    User --> WebUI["Web UI / 靜態前端<br/>web/static + FastAPI"]
 
-    CLI --> AppSvc[Application 層<br/>transfer / sync / scheduling<br/>upstash_*_service]
-    WebUI --> Routers[Web Routers<br/>/api/fs /api/sync /api/schedule<br/>/api/remotes /api/upstash /api/events]
+    CLI --> AppSvc["Application 層<br/>transfer / sync / scheduling<br/>upstash_*_service"]
+    WebUI --> Routers["Web Routers<br/>/api/fs /api/sync /api/schedule<br/>/api/remotes /api/upstash /api/events"]
     Routers --> AppSvc
-    Routers --> Pool[WebStoragePool<br/>web/storage_pool.py]
-    Pool --> Registry[Provider Registry<br/>storage/registry.py]
+    Routers --> Pool["WebStoragePool<br/>web/storage_pool.py"]
+    Pool --> Registry["Provider Registry<br/>storage/registry.py"]
     AppSvc --> Registry
 
-    Registry --> AuthStack[驗證堆疊<br/>CachedAuthProvider<br/>AuthCache + Upstash Token<br/>+ Browser Profile]
-    Registry --> Providers[Storage Providers<br/>providers/*.py]
+    Registry --> AuthStack["驗證堆疊<br/>CachedAuthProvider<br/>AuthCache + Upstash Token<br/>+ Browser Profile"]
+    Registry --> Providers["Storage Providers<br/>providers/*.py"]
 
-    AppSvc --> Domain[Domain 層<br/>Scanner / Planner<br/>SyncPlan batches]
-    AppSvc --> Infra[Infrastructure<br/>HTTP Retry / RateLimiter<br/>BandwidthLimiter / Crypto / UpstashClient]
+    AppSvc --> Domain["Domain 層<br/>Scanner / Planner<br/>SyncPlan batches"]
+    AppSvc --> Infra["Infrastructure<br/>HTTP Retry / RateLimiter<br/>BandwidthLimiter / Crypto / UpstashClient"]
 
-    AppSvc --> Sched[Scheduler<br/>SchedulerService + DaemonManager]
+    AppSvc --> Sched["Scheduler<br/>SchedulerService + DaemonManager"]
     Sched --> CLI
 ```
 

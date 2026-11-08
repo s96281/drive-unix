@@ -9,12 +9,12 @@
 
 ```mermaid
 flowchart TB
-    TOML[config.toml] -->|tomlkit 讀取| RawDict[raw dict]
-    RawDict -->|_migrate_legacy_secrets| Migrated[遷移後 dict]
-    Migrated -->|Pydantic 驗證| AppConfig[AppConfig]
-    AppConfig --> Remotes[remotes: RemoteType → *Remote]
-    AppConfig --> Tasks[tasks: CronTask]
-    AppConfig --> Upstash[upstash: UpstashSyncConfig]
+    TOML["config.toml"] -->|tomlkit 讀取| RawDict["raw dict"]
+    RawDict -->|_migrate_legacy_secrets| Migrated["遷移後 dict"]
+    Migrated -->|Pydantic 驗證| AppConfig["AppConfig"]
+    AppConfig --> Remotes["remotes: RemoteType → *Remote"]
+    AppConfig --> Tasks["tasks: CronTask"]
+    AppConfig --> Upstash["upstash: UpstashSyncConfig"]
     AppConfig -->|save| TOML
 ```
 
@@ -40,14 +40,14 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    Config[Remote 設定] --> Ref{password_ref / client_secret_ref}
-    Ref -->|env:NAME| Env[環境變數<br/>唯讀]
-    Ref -->|keyring:key| Keyring[OS Keyring<br/>優先]
-    Ref -->|file:key| File[secrets.json<br/>0600 + 目錄 0700 fallback]
-    Env --> Value[明文值<br/>僅記憶體中使用]
+    Config["Remote 設定"] --> Ref{"password_ref / client_secret_ref"}
+    Ref -->|env:NAME| Env["環境變數<br/>唯讀"]
+    Ref -->|keyring:key| Keyring["OS Keyring<br/>優先"]
+    Ref -->|file:key| File["secrets.json<br/>0600 + 目錄 0700 fallback"]
+    Env --> Value["明文值<br/>僅記憶體中使用"]
     Keyring --> Value
     File --> Value
-    Value --> Provider[Provider 建立<br/>例如 _secret_or_legacy_env]
+    Value --> Provider["Provider 建立<br/>例如 _secret_or_legacy_env"]
 ```
 
 - `SecretRepository`（`core/secrets.py`）：service 名 `drive-unix`，`keyring` 優先、headless 才落 `file:`。
@@ -62,13 +62,13 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[Provider builder 需要密碼] --> B{有 password_ref?}
-    B -->|是| C[resolve_secret]
-    B -->|否| D{舊版 env fallback<br/>如 SHAREPOINT_PASSWORD}
-    D -->|有| E[用環境變數值]
-    D -->|無且 required| F[raise ValueError<br/>提示設定 reference 或 env]
-    D -->|無且 optional| G[回傳 None]
-    C --> H[明文值]
+    A["Provider builder 需要密碼"] --> B{"有 password_ref?"}
+    B -->|是| C["resolve_secret"]
+    B -->|否| D{"舊版 env fallback<br/>如 SHAREPOINT_PASSWORD"}
+    D -->|有| E["用環境變數值"]
+    D -->|無且 required| F["raise ValueError<br/>提示設定 reference 或 env"]
+    D -->|無且 optional| G["回傳 None"]
+    C --> H["明文值"]
     E --> H
 ```
 

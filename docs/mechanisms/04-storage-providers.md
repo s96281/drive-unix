@@ -6,24 +6,24 @@
 
 ```mermaid
 flowchart TB
-    subgraph Contract[StorageProvider contract]
-        List[list_dir]
-        Up[upload]
-        Down[download]
-        Del[delete]
-        Move[move]
-        Copy[copy]
-        Mkdir[mkdir]
-        Stat[stat]
-        Hash[get_hash]
-        Link[get_share_link / get_download_link]
-        Thumb[get_thumbnail_link]
-        Search[search]
-        Close[close]
+    subgraph Contract["StorageProvider contract"]
+        List["list_dir"]
+        Up["upload"]
+        Down["download"]
+        Del["delete"]
+        Move["move"]
+        Copy["copy"]
+        Mkdir["mkdir"]
+        Stat["stat"]
+        Hash["get_hash"]
+        Link["get_share_link / get_download_link"]
+        Thumb["get_thumbnail_link"]
+        Search["search"]
+        Close["close"]
     end
-    Contract --> Managed[managed_storage<br/>contextmanager 保證 close]
-    Contract --> FileList[list → FileList<br/>夾帶 total_count 供分頁]
-    Contract --> Capability[delete_capability<br/>trash / permanent_only]
+    Contract --> Managed["managed_storage<br/>contextmanager 保證 close"]
+    Contract --> FileList["list → FileList<br/>夾帶 total_count 供分頁"]
+    Contract --> Capability["delete_capability<br/>trash / permanent_only"]
 ```
 
 - `ProgressCallback = Callable[[int, int], None]`（transferred, total）。
@@ -36,16 +36,16 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[get_storage_provider<br/>remote_name] --> B[ConfigManager.get_remote<br/>失敗 → ValueError]
-    B --> C[Registry.get type<br/>未知 type → 列出支援類型]
-    C --> D{取 builder}
-    D -->|sharepoint/onedrive_business| E[_build_* Cookie Provider<br/>OAuth/檔案 + CachedAuthProvider<br/>+ identity_key + profile_dir]
-    D -->|onedrive| F[OneDriveAuthProvider<br/>token_cache_path *_onedrive_token.json]
-    D -->|google_drive/photos| G[Google*AuthProvider<br/>credentials + token_cache_path]
-    D -->|pikpak| H[PikPakAuthProvider]
-    D -->|ftp/webdav/sftp/local| I[直接解 secret<br/>建連線型 Storage]
-    D -->|alist| J[NotImplementedError]
-    E --> K[回傳 StorageProvider]
+    A["get_storage_provider<br/>remote_name"] --> B["ConfigManager.get_remote<br/>失敗 → ValueError"]
+    B --> C["Registry.get type<br/>未知 type → 列出支援類型"]
+    C --> D{"取 builder"}
+    D -->|sharepoint/onedrive_business| E["_build_* Cookie Provider<br/>OAuth/檔案 + CachedAuthProvider<br/>+ identity_key + profile_dir"]
+    D -->|onedrive| F["OneDriveAuthProvider<br/>token_cache_path *_onedrive_token.json"]
+    D -->|google_drive/photos| G["Google*AuthProvider<br/>credentials + token_cache_path"]
+    D -->|pikpak| H["PikPakAuthProvider"]
+    D -->|ftp/webdav/sftp/local| I["直接解 secret<br/>建連線型 Storage"]
+    D -->|alist| J["NotImplementedError"]
+    E --> K["回傳 StorageProvider"]
     F --> K
     G --> K
     H --> K
@@ -76,9 +76,9 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    A[Provider] --> B{delete_capability}
-    B -->|trash| C[delete permanent=False 可還原<br/>Web 同步計畫統計為 trash_delete]
-    B -->|permanent_only| D[delete 即永久刪除<br/>Web 同步計畫統計為 permanent_delete<br/>FTP/SFTP 照這類處理]
+    A["Provider"] --> B{"delete_capability"}
+    B -->|trash| C["delete permanent=False 可還原<br/>Web 同步計畫統計為 trash_delete"]
+    B -->|permanent_only| D["delete 即永久刪除<br/>Web 同步計畫統計為 permanent_delete<br/>FTP/SFTP 照這類處理"]
 ```
 
 - `validate_delete_request(permanent)` 由 contract 預設實作，`permanent` 與 capability 矛盾時拒絕。

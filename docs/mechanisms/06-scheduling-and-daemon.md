@@ -13,19 +13,19 @@
 
 ```mermaid
 flowchart TB
-    A[tick now] --> B{enabled?}
-    B -->|否| Skip[略過]
-    B -->|是| C[is_cron_match now<br/>且 has_missed_run last_attempt→now]
-    C --> D{due_now 或 missed?}
+    A["tick now"] --> B{"enabled?"}
+    B -->|否| Skip["略過"]
+    B -->|是| C["is_cron_match now<br/>且 has_missed_run last_attempt→now"]
+    C --> D{"due_now 或 missed?"}
     D -->|否| Skip
-    D -->|是| E[_build_run_key<br/>name:scheduled/missed:YYYY-MM-DD HH:MM]
-    E --> F{_last_run_keys 已記?}
+    D -->|是| E["_build_run_key<br/>name:scheduled/missed:YYYY-MM-DD HH:MM"]
+    E --> F{"_last_run_keys 已記?"}
     F -->|是| Skip
-    F -->|否| G[_normalize_command<br/>剝 mycli/drive-unix/python/main.py 等頭]
-    G --> H{_try_mark_running<br/>防重入}
-    H --> I[update_task_attempt<br/>先持久化再啟動<br/>失敗則不啟動避免重複]
-    I --> J[Thread 啟 _run_job<br/>subprocess]
-    J --> K[update_task_result<br/>exit code + completed_at]
+    F -->|否| G["_normalize_command<br/>剝 mycli/drive-unix/python/main.py 等頭"]
+    G --> H{"_try_mark_running<br/>防重入"}
+    H --> I["update_task_attempt<br/>先持久化再啟動<br/>失敗則不啟動避免重複"]
+    I --> J["Thread 啟 _run_job<br/>subprocess"]
+    J --> K["update_task_result<br/>exit code + completed_at"]
 ```
 
 ## 6.2 SchedulerService（`application/scheduler_service.py`）
@@ -41,16 +41,16 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph Install[install]
-        Linux[Linux<br/>~/.config/systemd/user/drive-unix-scheduler.service<br/>ExecStart = python main --plain schedule _run-service]
-        Mac[macOS<br/>~/Library/LaunchAgents/io.drive-unix.scheduler.plist<br/>RunAtLoad + KeepAlive]
-        Win[Windows<br/>schtasks DriveUnixScheduler / ONLOGON<br/>TR = python main --plain schedule _run-service]
+    subgraph Install["install"]
+        Linux["Linux<br/>~/.config/systemd/user/drive-unix-scheduler.service<br/>ExecStart = python main --plain schedule _run-service"]
+        Mac["macOS<br/>~/Library/LaunchAgents/io.drive-unix.scheduler.plist<br/>RunAtLoad + KeepAlive"]
+        Win["Windows<br/>schtasks DriveUnixScheduler / ONLOGON<br/>TR = python main --plain schedule _run-service"]
     end
-    subgraph Runtime[執行狀態]
-        Status[status<br/>pidfile + backend 存活檢測]
-        Detached[無 service 時<br/>Popen + log scheduler.log<br/>pidfile scheduler.pid]
+    subgraph Runtime["執行狀態"]
+        Status["status<br/>pidfile + backend 存活檢測"]
+        Detached["無 service 時<br/>Popen + log scheduler.log<br/>pidfile scheduler.pid"]
     end
-    CLI[CLI schedule start/stop/status] --> Status
+    CLI["CLI schedule start/stop/status"] --> Status
     Status --> Linux
     Status --> Mac
     Status --> Win

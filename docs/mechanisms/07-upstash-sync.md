@@ -6,24 +6,24 @@
 
 ```mermaid
 flowchart TB
-    subgraph Setup[前置]
-        C[drive-unix upstash config<br/>或 env UPSTASH_REDIS_REST_URL / TOKEN]
-        C --> P[設定 passphrase<br/>E2EE 主密碼]
+    subgraph Setup["前置"]
+        C["drive-unix upstash config<br/>或 env UPSTASH_REDIS_REST_URL / TOKEN"]
+        C --> P["設定 passphrase<br/>E2EE 主密碼"]
     end
-    subgraph Bundle[設定 Bundle 同步]
-        Push[push<br/>collect → encrypt → SET]
-        Pull[pull<br/>GET → decrypt → merge/replace]
+    subgraph Bundle["設定 Bundle 同步"]
+        Push["push<br/>collect → encrypt → SET"]
+        Pull["pull<br/>GET → decrypt → merge/replace"]
     end
-    subgraph Token[Token 同步]
-        Get[try_get_token]
-        Put[try_put_token]
-        Lock[with_distributed_refresh_lock]
+    subgraph Token["Token 同步"]
+        Get["try_get_token"]
+        Put["try_put_token"]
+        Lock["with_distributed_refresh_lock"]
     end
     Setup --> Push
     Setup --> Pull
     Setup --> Get
     Setup --> Put
-    Bundle -->|AES-256-GCM + PBKDF2 600k| Upstash[(Upstash Redis<br/>drive-unix:sync:default)]
+    Bundle -->|AES-256-GCM + PBKDF2 600k| Upstash[("Upstash Redis<br/>drive-unix:sync:default")]
     Token -->|100k iterations| Upstash
 ```
 
@@ -33,29 +33,29 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph Push[push]
-        A[collect_sync_bundle] --> B[remotes + secrets<br/>secret-files + tasks?<br/>auth_cache?]
-        B --> C[明文 JSON<br/>public_metadata:<br/>created_at/device/remote_names]
-        C --> D[encrypt_payload<br/>AES-256-GCM + PBKDF2]
-        D --> E[UpstashClient.set<br/>sync_key]
+    subgraph Push["push"]
+        A["collect_sync_bundle"] --> B["remotes + secrets<br/>secret-files + tasks?<br/>auth_cache?"]
+        B --> C["明文 JSON<br/>public_metadata:<br/>created_at/device/remote_names"]
+        C --> D["encrypt_payload<br/>AES-256-GCM + PBKDF2"]
+        D --> E["UpstashClient.set<br/>sync_key"]
     end
-    subgraph Pull[pull]
-        F[UpstashClient.get] --> G[decrypt_payload]
-        G --> H[dry_run?]
-        H -->|是| I[回傳 new/conflicting]
-        H -->|否| J[1. 還原 secret-files 0600/0700]
-        J --> K[2. secret 值寫入本機 store<br/>env: 維持引用跳過]
-        K --> L{strategy}
-        L -->|merge| M[存在跳過除非 overwrite]
-        L -->|replace| N[先刪本機全部 remotes]
-        M --> O[重映射 ref → 新 store ref<br/>驗證 → 存入]
+    subgraph Pull["pull"]
+        F["UpstashClient.get"] --> G["decrypt_payload"]
+        G --> H["dry_run?"]
+        H -->|是| I["回傳 new/conflicting"]
+        H -->|否| J["1. 還原 secret-files 0600/0700"]
+        J --> K["2. secret 值寫入本機 store<br/>env: 維持引用跳過"]
+        K --> L{"strategy"}
+        L -->|merge| M["存在跳過除非 overwrite"]
+        L -->|replace| N["先刪本機全部 remotes"]
+        M --> O["重映射 ref → 新 store ref<br/>驗證 → 存入"]
         N --> O
-        O --> P[回補 default_remote + tasks<br/>+ auth_cache 若有]
-        P --> Q[save]
+        O --> P["回補 default_remote + tasks<br/>+ auth_cache 若有"]
+        P --> Q["save"]
     end
-    subgraph Status[fetch_status]
-        R[GET 只讀 metadata<br/>不解密]
-        R --> S[exists/version/algorithm<br/>created_at/device/remote_names<br/>對比 local_remotes]
+    subgraph Status["fetch_status"]
+        R["GET 只讀 metadata<br/>不解密"]
+        R --> S["exists/version/algorithm<br/>created_at/device/remote_names<br/>對比 local_remotes"]
     end
 ```
 
@@ -68,10 +68,10 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Pass[passphrase] -->|PBKDF2-HMAC-SHA256<br/>salt 16B| K[Derive key 32B]
-    K -->|AES-256-GCM<br/>nonce 12B| Cipher[密文 + tag]
-    Cipher --> Payload[JSON<br/>version/algorithm/iterations<br/>metadata(明文)/ciphertext]
-    Payload -->|b64| Upstash[(Upstash)]
+    Pass["passphrase"] -->|PBKDF2-HMAC-SHA256<br/>salt 16B| K["Derive key 32B"]
+    K -->|AES-256-GCM<br/>nonce 12B| Cipher["密文 + tag"]
+    Cipher --> Payload["JSON<br/>version/algorithm/iterations<br/>metadata(明文)/ciphertext"]
+    Payload -->|b64| Upstash[("Upstash")]
 ```
 
 - `encrypt_payload(plaintext, passphrase, metadata, iterations)`；`decrypt_payload(payload, passphrase)`，tag 不符 → `DecryptionError`，結構損毀 → `PayloadCorruptedError`。

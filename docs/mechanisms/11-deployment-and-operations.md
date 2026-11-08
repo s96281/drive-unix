@@ -4,17 +4,17 @@
 
 ```mermaid
 flowchart TB
-    Repo[/root/drive-unix<br/>git main] --> WebUnit[drive-unix-web.service<br/>FastAPI uvicorn]
-    WebUnit --> Health[GET /api/health 200]
-    Repo --> RenewUnit[drive-unix-renew.service<br/>drive-unix upstash renew-tokens<br/>--interval 1800 --leeway 60]
-    RenewUnit --> TokenFlow[renew_all_tokens<br/>分散式鎖 + profile 沿用]
-    TokenFlow --> BrowserProfile[~/.config/drive-unix/browser-profiles/<id>]
-    TokenFlow --> AuthCache[~/.auth_cache/**]
-    TokenFlow --> Upstash[(Upstash E2EE Token)]
-    WebUnit --> Pool[WebStoragePool + directory_cache]
-    Env[/root/drive-unix/.env<br/>DRIVE_UNIX_BROWSER_PROFILE_DIR<br/>=/root/.config/drive-unix/browser-profiles]
-    Env -.注入.-> WebUnit
-    Env -.注入.-> RenewUnit
+    Repo["/root/drive-unix<br/>git main"] --> WebUnit["drive-unix-web.service<br/>FastAPI uvicorn"]
+    WebUnit --> Health["GET /api/health 200"]
+    Repo --> RenewUnit["drive-unix-renew.service<br/>drive-unix upstash renew-tokens<br/>--interval 1800 --leeway 60"]
+    RenewUnit --> TokenFlow["renew_all_tokens<br/>分散式鎖 + profile 沿用"]
+    TokenFlow --> BrowserProfile["~/.config/drive-unix/browser-profiles/＜id＞"]
+    TokenFlow --> AuthCache["~/.auth_cache/**"]
+    TokenFlow --> Upstash[("Upstash E2EE Token")]
+    WebUnit --> Pool["WebStoragePool + directory_cache"]
+    Env["/root/drive-unix/.env<br/>DRIVE_UNIX_BROWSER_PROFILE_DIR<br/>=/root/.config/drive-unix/browser-profiles"]
+    Env -. 注入 .-> WebUnit
+    Env -. 注入 .-> RenewUnit
 ```
 
 | Unit | 作用 | 重啟指令 |
@@ -44,14 +44,14 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[systemctl status drive-unix-renew] --> B{active?}
-    B -->|否| Fix[檢查 .env + profile 目錄權限]
-    B -->|是| C[從任一 SharePoint remote<br/>registry.create → get/refresh]
-    C --> D{profile 路徑正確?}
+    A["systemctl status drive-unix-renew"] --> B{"active?"}
+    B -->|否| Fix["檢查 .env + profile 目錄權限"]
+    B -->|是| C["從任一 SharePoint remote<br/>registry.create → get/refresh"]
+    C --> D{"profile 路徑正確?"}
     D -->|否| Fix
-    D -->|是| E[第一次約 10s+ / 第二次 <1s 沿用]
-    E --> F[cookie 完全一致?]
-    F -->|否| G[檢查 Upstash token<br/>與 AuthCache TTL]
+    D -->|是| E["第一次約 10s+ / 第二次 <1s 沿用"]
+    E --> F["cookie 完全一致?"]
+    F -->|否| G["檢查 Upstash token<br/>與 AuthCache TTL"]
 ```
 
 - 實測基準（見第 03 章）：首次 12.67s、沿用 0.74s；目前只建立了 `ea1994…`，其他 identity 會在各自下次換發時新建。

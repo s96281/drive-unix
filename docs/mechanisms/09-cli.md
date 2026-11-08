@@ -4,14 +4,14 @@
 
 ```mermaid
 flowchart TB
-    Root[drive-unix<br/>--plain 全域開關] --> Remote[remote<br/>節點管理]
-    Root --> Schedule[schedule<br/>排程 + daemon]
-    Root --> Env[env<br/>環境匯入匯出]
-    Root --> Upstash[upstash<br/>雲端同步 + renew]
-    Root --> Files[files<br/>ls/tree/find/search/mkdir/remove/stat]
-    Root --> Transfer[copy/move/upload/download/download-link]
-    Root --> Sync[sync/bisync/diff/get-checksum]
-    Root --> Nodes[Nodes 直達子指令]
+    Root["drive-unix<br/>--plain 全域開關"] --> Remote["remote<br/>節點管理"]
+    Root --> Schedule["schedule<br/>排程 + daemon"]
+    Root --> Env["env<br/>環境匯入匯出"]
+    Root --> Upstash["upstash<br/>雲端同步 + renew"]
+    Root --> Files["files<br/>ls/tree/find/search/mkdir/remove/stat"]
+    Root --> Transfer["copy/move/upload/download/download-link"]
+    Root --> Sync["sync/bisync/diff/get-checksum"]
+    Root --> Nodes["Nodes 直達子指令"]
     Remote --> Nodes
     Schedule --> Cron
 ```
@@ -35,11 +35,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    A[add-* ] --> B[_password_reference<br/>hidden prompt 互動]
-    B --> C[store_remote_secret<br/>keyring 優先 else file:0600]
-    C --> D[reference 寫 config.toml]
-    A -->|自動化| E[--password-env / --secret-env<br/>寫 env:VAR]
-    A -->|OAuth| F[開瀏覽器彈跳<br/>callback server 接回<br/>存 token_cache_path]
+    A["add-* "] --> B["_password_reference<br/>hidden prompt 互動"]
+    B --> C["store_remote_secret<br/>keyring 優先 else file:0600"]
+    C --> D["reference 寫 config.toml"]
+    A -->|自動化| E["--password-env / --secret-env<br/>寫 env:VAR"]
+    A -->|OAuth| F["開瀏覽器彈跳<br/>callback server 接回<br/>存 token_cache_path"]
 ```
 
 - `nodes.py:_prompt_remote_provider` 互動時詢問 Provider 類型；密碼 reference 寫入後絕不保留明文在 `config.toml`。

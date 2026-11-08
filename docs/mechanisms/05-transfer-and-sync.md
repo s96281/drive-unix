@@ -6,15 +6,15 @@
 
 ```mermaid
 flowchart TB
-    A[copy_between / move_between] --> B{同 remote?}
-    B -->|是| C[源 Storage.copy / move<br/>直接呼叫<br/>overwrite=True]
-    B -->|否| D[TemporaryDirectory]
-    D --> E[call_download<br/>源 → 暫存]
-    E --> F[ensure_remote_directory<br/>stat 不存在才 mkdir parents]
-    F --> G[call_upload<br/>暫存 → 目標]
-    G -->|move 模式| H[delete 源 permanent=False]
-    H --> End[完成]
-    G --> End
+    A["copy_between / move_between"] --> B{"同 remote?"}
+    B -->|是| C["源 Storage.copy / move<br/>直接呼叫<br/>overwrite=True"]
+    B -->|否| D["TemporaryDirectory"]
+    D --> E["call_download<br/>源 → 暫存"]
+    E --> F["ensure_remote_directory<br/>stat 不存在才 mkdir parents"]
+    F --> G["call_upload<br/>暫存 → 目標"]
+    G -->|move 模式| H["delete 源 permanent=False"]
+    H --> Done["完成"]
+    G --> Done
 ```
 
 - `call_upload/call_download`：Provider 回 `False` 即轉例外；上傳若來源消失補 `callback(0,0)`。
@@ -25,12 +25,12 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    Plan[build_recursive_*_plan<br/>純計算不做 I/O] --> Exec[upload_tree / download_tree]
-    Exec --> RunBatch[run_batch<br/>ThreadPoolExecutor<br/>最多 workers 個 future 在飛]
-    RunBatch -->|FIRST_COMPLETED| Each[逐一回收<br/>成功計數 / 收集失敗]
-    Each --> More{還有 job?}
+    Plan["build_recursive_*_plan<br/>純計算不做 I/O"] --> Exec["upload_tree / download_tree"]
+    Exec --> RunBatch["run_batch<br/>ThreadPoolExecutor<br/>最多 workers 個 future 在飛"]
+    RunBatch -->|FIRST_COMPLETED| Each["逐一回收<br/>成功計數 / 收集失敗"]
+    Each --> More{"還有 job?"}
     More -->|是| RunBatch
-    More -->|否| Result[BatchTransferResult<br/>succeeded + failures[]]
+    More -->|否| Result["BatchTransferResult<br/>succeeded + failures list"]
 ```
 
 - 上傳計畫：`os.walk` 展開，目錄空缺記 `empty_directories`；路徑 `remote_leaf == local_dir_name` 時不重複層。
@@ -41,20 +41,20 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    A[SyncService.scan] --> B[scan_storage_tree<br/>遞迴 + throttle + workers]
-    B --> C[SyncSnapshot<br/>items + complete]
-    C --> D[build_plan<br/>snapshot 不完整 → ScanIncompleteError]
-    D --> E[SyncPlanner.build_plan<br/>checksum 選項時併行 get_hash]
-    E --> F[SyncPlan<br/>batches 序列]
-    F --> G[SyncExecutor.execute<br/>throttle + hooks]
-    G --> H{逐 batch}
-    H -->|workers==1 或單動作| Seq[循序 run_action<br/>失敗收集]
-    H -->|併行| Par[ThreadPoolExecutor<br/>最多 workers 在飛]
-    Seq --> I{本 batch 有錯?}
+    A["SyncService.scan"] --> B["scan_storage_tree<br/>遞迴 + throttle + workers"]
+    B --> C["SyncSnapshot<br/>items + complete"]
+    C --> D["build_plan<br/>snapshot 不完整 → ScanIncompleteError"]
+    D --> E["SyncPlanner.build_plan<br/>checksum 選項時併行 get_hash"]
+    E --> F["SyncPlan<br/>batches 序列"]
+    F --> G["SyncExecutor.execute<br/>throttle + hooks"]
+    G --> H{"逐 batch"}
+    H -->|workers 為 1 或單動作| Seq["循序 run_action<br/>失敗收集"]
+    H -->|併行| Par["ThreadPoolExecutor<br/>最多 workers 在飛"]
+    Seq --> I{"本 batch 有錯?"}
     Par --> I
-    I -->|有| J[略過後續全部 batches<br/>skipped = 後續總動作]
+    I -->|有| J["略過後續全部 batches<br/>skipped = 後續總動作"]
     I -->|無| H
-    J --> Result[SyncExecutionResult]
+    J --> Result["SyncExecutionResult"]
     H --> Result
 ```
 
@@ -75,13 +75,12 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    Input[線性動作序列] --> Classify{分類}
-    Classify -->|與後續寫入重疊的删除| PreDel[prepare-delete-depth<br/>深→淺]
-    Classify -->|與寫入重疊的 rename| PreRename[prepare-backup]
-    Classify -->|mkdir| Mkdir[mkdir-depth<br/>淺→深]
-    Classify -->|copy/sync_office/rename| Transfer[transfer
-    批次內併發]
-    Classify -->|獨立删除| Cleanup[cleanup-delete-depth<br/>深→淺, 全寫入成功才删]
+    Input["線性動作序列"] --> Classify{"分類"}
+    Classify -->|與後續寫入重疊的删除| PreDel["prepare-delete-depth<br/>深→淺"]
+    Classify -->|與寫入重疊的 rename| PreRename["prepare-backup"]
+    Classify -->|mkdir| Mkdir["mkdir-depth<br/>淺→深"]
+    Classify -->|copy/sync_office/rename| Transfer["transfer<br/>批次內併發"]
+    Classify -->|獨立删除| Cleanup["cleanup-delete-depth<br/>深→淺, 全寫入成功才删"]
     PreDel --> Mkdir --> Transfer --> Cleanup
     PreRename --> Mkdir
 ```
