@@ -60,7 +60,13 @@ class SharePointStorage(StorageProvider):
     def _get_v2_metadata(self, remote_path: str) -> tuple[dict[str, Any], str]:
         return self.client.get_v2_metadata(
             remote_path,
-            library_aliases=("Shared Documents", "Documents"),
+            library_aliases=("Shared Documents", "Documents", "文件"),
+        )
+
+    def get_server_relative_path(self, remote_path: str) -> str:
+        return self.client.get_server_relative_path(
+            remote_path,
+            library_aliases=("Shared Documents", "Documents", "文件"),
         )
 
     def _get_request_digest(self) -> str:
@@ -110,10 +116,11 @@ class SharePointStorage(StorageProvider):
                     modified_dt = None
                     if time_str:
                         modified_dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-                    raw_name = drive.get('webUrl', '').split('/')[-1]
+                    raw_name = drive.get('webUrl', '').rstrip('/').split('/')[-1]
+                    lib_name = unquote(raw_name) if raw_name else drive.get('name', 'Documents')
                     items.append(FileItem(
-                        name=unquote(raw_name),
-                        path=f"/{drive['name']}",
+                        name=lib_name,
+                        path=f"/{lib_name}",
                         is_dir=True,
                         size=0,
                         modified_at=modified_dt
@@ -252,7 +259,7 @@ class SharePointStorage(StorageProvider):
         """
         headers = self._get_headers()
         clean_path = "/" + remote_path.strip("/") if remote_path else ""
-        server_relative_url = f"{self.site}{clean_path}"
+        server_relative_url = self.get_server_relative_path(remote_path)
         encoded_url = quote(server_relative_url.replace("'", "''"))
         
         # 定義時間解析工具
@@ -343,8 +350,13 @@ class SharePointStorage(StorageProvider):
         if not parents:
             # === 單層建立邏輯 (預設) ===
             parent_path, folder_name = posixpath.split(cleaned_path)
-            clean_parent = "/" + parent_path if parent_path else ""
-            server_relative_parent = f"{self.site}{clean_parent}"
+            if not parent_path:
+                self._init_drives_cache()
+                if folder_name in (self._drive_id_cache or {}):
+                    return True
+                server_relative_parent = self.site or "/"
+            else:
+                server_relative_parent = self.get_server_relative_path(parent_path)
             
             encoded_parent = quote(server_relative_parent.replace("'", "''"))
             encoded_folder = quote(folder_name.replace("'", "''"))
@@ -369,8 +381,7 @@ class SharePointStorage(StorageProvider):
             
             # 從第二層開始，一層一層向下建立
             for folder_name in parts[1:]:
-                clean_parent = "/" + current_parent
-                server_relative_parent = f"{self.site}{clean_parent}"
+                server_relative_parent = self.get_server_relative_path(current_parent)
                 
                 encoded_parent = quote(server_relative_parent.replace("'", "''"))
                 encoded_folder = quote(folder_name.replace("'", "''"))
@@ -534,8 +545,7 @@ class SharePointStorage(StorageProvider):
         if not file_name:
             file_name = os.path.basename(local_path)
             
-        clean_folder = "/" + remote_folder.strip("/") if remote_folder else ""
-        server_relative_folder = f"{self.site}{clean_folder}"
+        server_relative_folder = self.get_server_relative_path(remote_folder)
         
         encoded_folder_url = quote(server_relative_folder.replace("'", "''"))
         encoded_filename = quote(file_name.replace("'", "''"))
@@ -802,8 +812,7 @@ class SharePointStorage(StorageProvider):
         headers["X-RequestDigest"] = digest_value
 
         # 3. 組合 v1 路徑
-        clean_path = "/" + remote_path.strip("/") if remote_path else ""
-        server_relative_path = f"{self.site}{clean_path}"
+        server_relative_path = self.get_server_relative_path(remote_path)
         encoded_path = quote(server_relative_path.replace("'", "''"))
 
         # 根據類型決定端點
@@ -847,11 +856,8 @@ class SharePointStorage(StorageProvider):
         headers["X-RequestDigest"] = digest_value
 
         # 3. 組合伺服器相對路徑 (ServerRelativeUrl)
-        clean_src = "/" + source_path.strip("/")
-        clean_dest = "/" + dest_path.strip("/")
-        
-        server_relative_src = f"{self.site}{clean_src}"
-        server_relative_dest = f"{self.site}{clean_dest}"
+        server_relative_src = self.get_server_relative_path(source_path)
+        server_relative_dest = self.get_server_relative_path(dest_path)
 
         encoded_src = quote(server_relative_src.replace("'", "''"))
         encoded_dest = quote(server_relative_dest.replace("'", "''"))
@@ -894,11 +900,8 @@ class SharePointStorage(StorageProvider):
         headers["X-RequestDigest"] = digest_value
 
         # 3. 組合伺服器相對路徑
-        clean_src = "/" + source_path.strip("/")
-        clean_dest = "/" + dest_path.strip("/")
-        
-        server_relative_src = f"{self.site}{clean_src}"
-        server_relative_dest = f"{self.site}{clean_dest}"
+        server_relative_src = self.get_server_relative_path(source_path)
+        server_relative_dest = self.get_server_relative_path(dest_path)
 
         encoded_src = quote(server_relative_src.replace("'", "''"))
         encoded_dest = quote(server_relative_dest.replace("'", "''"))
@@ -935,7 +938,11 @@ class SharePointStorage(StorageProvider):
             self._init_drives_cache()
             
             # 優先取得預設文件庫的 ID
-            drive_id = self._drive_id_cache.get("Shared Documents") or self._drive_id_cache.get("Documents")
+            drive_id = (
+                self._drive_id_cache.get("Shared Documents")
+                or self._drive_id_cache.get("Documents")
+                or self._drive_id_cache.get("文件")
+            )
             if not drive_id and self._drive_id_cache:
                 # 若找不到預設的，就隨便抓一個可用的來查容量
                 drive_id = list(self._drive_id_cache.values())[0]

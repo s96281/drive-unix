@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 
 import requests
 
@@ -32,6 +32,7 @@ class Microsoft365Client:
         self.site = self._normalize_site(site)
         self.http = HttpClient(user_agent=MICROSOFT_USER_AGENT)
         self._drive_id_cache: dict[str, str] | None = None
+        self._drive_path_cache: dict[str, str] | None = None
 
     def close(self) -> None:
         """Release HTTP sessions owned by this Microsoft 365 client."""
@@ -54,10 +55,15 @@ class Microsoft365Client:
         if normalized != self.site:
             self.site = normalized
             self._drive_id_cache = None
+            self._drive_path_cache = None
 
     @property
     def drive_id_cache(self) -> dict[str, str] | None:
         return self._drive_id_cache
+
+    @property
+    def drive_path_cache(self) -> dict[str, str] | None:
+        return self._drive_path_cache
 
     def get_headers(self, extra: Mapping[str, str] | None = None) -> dict[str, str]:
         """Build request headers from the current authentication context."""
@@ -79,7 +85,7 @@ class Microsoft365Client:
         return self.http.request(method, url, **kwargs)
 
     def init_drives_cache(self, *, resolve_site: Callable[[], None] | None = None) -> None:
-        if self._drive_id_cache is not None:
+        if self._drive_id_cache is not None and self._drive_path_cache is not None:
             return
 
         if resolve_site is not None:
@@ -97,6 +103,7 @@ class Microsoft365Client:
 
         payload = self._json_object(response, context="Microsoft 365 drives")
         drive_cache: dict[str, str] = {}
+        path_cache: dict[str, str] = {}
         for drive in payload.get("value", []):
             if not isinstance(drive, dict):
                 continue
@@ -107,20 +114,80 @@ class Microsoft365Client:
             drive_cache[drive_name] = drive_id
 
             web_url = drive.get("webUrl")
+            folder_url_name = ""
+            server_relative_path = ""
             if web_url:
+                parsed_path = urlparse(web_url).path
+                server_relative_path = unquote(parsed_path).rstrip("/")
                 folder_url_name = unquote(web_url.rstrip("/").split("/")[-1])
                 drive_cache[folder_url_name] = drive_id
 
+            if not server_relative_path:
+                server_relative_path = f"{self.site}/{folder_url_name or drive_name}".rstrip("/")
+
+            path_cache[drive_name] = server_relative_path
+            if folder_url_name:
+                path_cache[folder_url_name] = server_relative_path
+
+            # Common aliases for default document library:
+            is_default_doc_lib = (
+                folder_url_name in ("Shared Documents", "Documents")
+                or drive_name in ("Shared Documents", "Documents", "文件")
+            )
+            if is_default_doc_lib:
+                for alias in ("Shared Documents", "Documents", "文件"):
+                    drive_cache[alias] = drive_id
+                    path_cache[alias] = server_relative_path
+
         self._drive_id_cache = drive_cache
+        self._drive_path_cache = path_cache
+
+    def get_server_relative_path(
+        self,
+        remote_path: str,
+        *,
+        resolve_site: Callable[[], None] | None = None,
+        library_aliases: tuple[str, ...] = ("Shared Documents", "Documents", "文件"),
+    ) -> str:
+        """Resolve a logical remote path to a SharePoint server-relative URL path."""
+        cleaned = remote_path.replace("\\", "/").strip("/")
+        if not cleaned:
+            return self.site or "/"
+
+        # If already starts with self.site (e.g. /sites/drive/Shared Documents/foo)
+        if self.site and (f"/{cleaned}" == self.site or f"/{cleaned}".startswith(f"{self.site}/")):
+            return f"/{cleaned}"
+
+        self.init_drives_cache(resolve_site=resolve_site)
+        path_cache = self._drive_path_cache or {}
+
+        parts = [p for p in cleaned.split("/") if p]
+        first_part = parts[0]
+        rest = parts[1:]
+
+        base_path = path_cache.get(first_part)
+        if not base_path:
+            for alias in library_aliases:
+                if first_part in library_aliases:
+                    base_path = path_cache.get(alias)
+                    if base_path:
+                        break
+
+        if base_path:
+            if rest:
+                return f"{base_path}/{'/'.join(rest)}"
+            return base_path
+
+        return f"{self.site}/{cleaned}"
 
     def get_v2_metadata(
         self,
         remote_path: str,
         *,
         resolve_site: Callable[[], None] | None = None,
-        library_aliases: tuple[str, ...] = ("Shared Documents", "Documents"),
+        library_aliases: tuple[str, ...] = ("Shared Documents", "Documents", "文件"),
     ) -> tuple[dict[str, Any], str]:
-        parts = [part for part in remote_path.strip("/").split("/") if part]
+        parts = [part for part in remote_path.replace("\\", "/").strip("/").split("/") if part]
         if not parts:
             raise ValueError("遠端路徑不可為空。")
 
