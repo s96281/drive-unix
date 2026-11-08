@@ -10,7 +10,6 @@
 |---|---|
 | [完整使用手冊](docs/user-guide.md) | 安裝、Provider 設定、命令參考、同步安全模型、排程、自動化與錯誤排查 |
 | [機制文件總覽](docs/mechanisms/README.md) | 全機制分門別類說明與流程圖（系統總覽、驗證、Provider、傳輸/同步、排程、Upstash、Web、CLI、基礎設施、維運） |
-| [架構筆記](docs/architecture.md) | 分階段架構變更與決策紀錄 |
 | [部署指南](docs/DEPLOYMENT.md) | Web / renew 部署、systemd unit、profile 與 env 設定 |
 | [VPS Token 換發中心](docs/vps-deployment-token-center.md) | 將 VPS 設為憑證換發中心的操作教學 |
 
