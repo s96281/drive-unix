@@ -1,450 +1,104 @@
 # 07 常見情境與錯誤排查
 
-[← 手冊目錄](README.md) | [← 上一章](06-command-reference.md)
+[← 上一章](06-command-reference.md) | [手冊目錄](README.md)
 
-本章內容：
+## 7.1 常見情境
 
-- # 20. 常見使用情境
-- # 21. 錯誤排查
-- # 22. 相容舊版命令
-
----
-
-## 20. 常見使用情境
-
-### 20.1 本機資料夾備份到 Google Drive
-
-建立兩個 Remote：
-
-```bash
-drive-unix remote add local --name laptop
-drive-unix remote add google-drive --name cloud
-```
-
-驗證：
-
-```bash
-drive-unix remote test laptop --write
-drive-unix remote test cloud --write
-```
-
-Dry run：
-
-```bash
-drive-unix sync laptop:/Documents cloud:/DocumentsBackup --dry-run
-```
-
-執行：
-
-```bash
-drive-unix sync laptop:/Documents cloud:/DocumentsBackup
-```
-
-Mirror：
-
-```bash
-drive-unix sync laptop:/Documents cloud:/DocumentsBackup --delete --dry-run
-```
-
-確認後：
-
-```bash
-drive-unix sync laptop:/Documents cloud:/DocumentsBackup --delete
-```
-
-### 20.2 Laptop 與 Cloud 雙向文件同步
-
-```bash
-drive-unix bisync laptop:/Documents cloud:/Documents --dry-run
-```
-
-確認後：
-
-```bash
-drive-unix bisync laptop:/Documents cloud:/Documents
-```
-
-如果任何 conflict 都希望完整保留：
-
-```bash
-drive-unix bisync laptop:/Documents cloud:/Documents --conflict rename
-```
-
-### 20.3 比較兩份資料是否一致
-
-快速 metadata comparison：
-
-```bash
-drive-unix diff A:/data B:/data
-```
-
-完整度較高：
-
-```bash
-drive-unix diff A:/data B:/data --checksum
-```
-
-給 script：
-
-```bash
-drive-unix diff A:/data B:/data --checksum --json > diff.json
-```
-
-### 20.4 每晚 02:00 備份
-
-先測試：
-
-```bash
-drive-unix sync laptop:/data cloud:/backup --dry-run
-```
-
-新增：
-
-```bash
-drive-unix schedule add nightly '0 2 * * *' \
-  'sync laptop:/data cloud:/backup --yes'
-```
-
-安裝並啟動 background service：
-
-```bash
-drive-unix schedule service install
-drive-unix schedule service start
-drive-unix schedule service status
-```
-
-### 20.5 只備份 PDF
-
-```bash
-drive-unix sync work:/docs archive:/docs \
-  --include '*.pdf' \
-  --dry-run
-```
-
-### 20.6 排除暫存檔
-
-```bash
-drive-unix sync work:/docs archive:/docs --exclude '*.tmp'
-```
-
-目前 `--exclude` / `--include` 各接受一個 glob pattern，請不要假設重複提供 option 會累積多組規則。需要多組 filter rule 時，應拆成不同同步流程或後續擴充 filter-list 功能。
-
-### 20.7 找出最近的大型 PDF
-
-```bash
-drive-unix find work:/docs \
-  --name '*.pdf' \
-  --type file \
-  --size-gt 20MB \
-  --modified-after 2026-01-01
-```
-
-### 20.8 CI 中安全檢查 mirror plan
-
-```bash
-drive-unix --plain sync source:/data mirror:/data \
-  --delete \
-  --dry-run \
-  --json > plan.json
-```
-
-正式執行：
-
-```bash
-drive-unix --plain sync source:/data mirror:/data \
-  --delete \
-  --yes \
-  --json > result.json
-```
-
----
-
-## 21. 錯誤排查
-
-CLI 的人類可讀 error 預設採：
-
-```text
-問題
-原因
-下一步
-```
-
-排查時建議依下列順序。
-
-### 21.1 找不到 Remote
-
-```bash
-drive-unix remote list
-```
-
-確認名稱後再：
-
-```bash
-drive-unix remote test NAME
-```
-
-### 21.2 認證錯誤
-
-```bash
-drive-unix remote test NAME
-```
-
-檢查：
-
-- OAuth 是否完成
-- Password env 是否存在
-- Secret reference 是否仍有效
-- Browser auth Provider 是否已安裝 Playwright Chromium
-
-### 21.3 寫入 / 刪除失敗
-
-```bash
-drive-unix remote test NAME --write
-```
-
-確認帳號具備：
-
-- create directory
-- write
-- delete / trash
-
-權限。
-
-### 21.4 Provider 套件缺失
-
-例如會看到類似：
-
-```text
-Google Drive provider 缺少選用套件 ...
-```
-
-依 Provider 安裝對應 extra：
+### 7.1.1 新手第一次接 Google Drive
 
 ```bash
 uv sync --extra google
-uv sync --extra onedrive
-uv sync --extra sharepoint
-uv sync --extra sftp
+drive-unix remote add google-drive --name gdrive
+# 在 Wizard 按提示貼上 credentials.json 路徑，瀏覽器完成 OAuth
+drive-unix remote test gdrive
+drive-unix ls gdrive:/
 ```
 
-### 21.5 `search` 不支援
-
-使用：
+### 7.1.2 Laptop 本機資料備份到雲端
 
 ```bash
-drive-unix find REMOTE:/path --name keyword
+drive-unix remote add local --name laptop
+# （gdrive 已在上一節建好）
+drive-unix diff laptop:/docs gdrive:/docs
+drive-unix sync laptop:/docs gdrive:/docs --dry-run --full-plan
+drive-unix sync laptop:/docs gdrive:/docs --yes
 ```
 
-### 21.6 `checksum --mode remote` 不支援
-
-改：
+### 7.1.3 定時夜間備份
 
 ```bash
-drive-unix checksum REMOTE:/file --mode auto
-```
-
-或：
-
-```bash
-drive-unix checksum REMOTE:/file --mode download
-```
-
-### 21.7 Sync conflict exit code 2
-
-先：
-
-```bash
-drive-unix bisync A:/ B:/ --dry-run --full-plan
-```
-
-再依需求：
-
-```bash
-drive-unix bisync A:/ B:/ --conflict rename
-```
-
-或：
-
-```bash
-drive-unix bisync A:/ B:/ --conflict prefer-source
-```
-
-或：
-
-```bash
-drive-unix bisync A:/ B:/ --conflict prefer-destination
-```
-
-### 21.8 Sync 有永久刪除風險
-
-不要直接加 `-y`。
-
-先：
-
-```bash
-drive-unix sync A:/ B:/ --delete --dry-run --full-plan
-```
-
-確認 `irreversible_deletes` / 人類可讀風險摘要，再正式執行。
-
-### 21.9 Scheduler 沒有執行
-
-```bash
-drive-unix schedule list
+drive-unix schedule add nightly '0 2 * * *' 'sync local:/data cloud:/backup --yes'
+drive-unix schedule service install
+drive-unix schedule service start
 drive-unix schedule service status
+# 重開機後可查 ~/.config/mycli/scheduler/scheduler.log
 ```
 
-檢查 log：
-
-```text
-~/.config/mycli/scheduler/scheduler.log
-```
-
-若要直接觀察：
+### 7.1.4 找百份 PDF、跨廠商查同一檔名
 
 ```bash
-drive-unix schedule start
+# 本機遞迴找（任何 Provider 都可用）
+drive-unix find work:/ --name '*.pdf' --type file --max-depth 5
+# Provider 原生搜尋（支援時更快）
+drive-unix search gdrive:/ invoice
 ```
 
-以前景模式確認 task 能否觸發。
-
-### 21.10 `--one-way=False` 錯誤
-
-錯誤：
+### 7.1.5 換一台電腦還要能登入
 
 ```bash
-drive-unix sync A:/ B:/ --one-way=False
+# 舊電腦
+drive-unix env export backup.zip
+# 新電腦：先裝依賴，再匯入
+uv sync --extra all
+drive-unix env import backup.zip --force
+drive-unix remote test work
 ```
 
-正確單向：
+憑證不要用這個流程傳（除非你把 `--include-secrets` 的檔案視為高敏感並經加密通道傳遞）。
+
+### 7.1.6 VPS 第二台機器當換發中心
+
+需求：VPS 幫多台自動換 token（完全見 [VPS Token 換發中心](../vps-deployment-token-center.md)）。
 
 ```bash
-drive-unix sync A:/ B:/
+uv sync --extra all
+# 設好 UPSTASH_REDIS_REST_URL / TOKEN（或用 upstash config）
+drive-unix upstash renew-tokens --interval 1800 --leeway 60 -p 'MySecretPassphrase'
 ```
 
-正確雙向：
+## 7.2 錯誤排查
 
-```bash
-drive-unix bisync A:/ B:/
-```
+| 症狀 | 可能原因與下一步 |
+|---|---|
+| `remote test` 顯示讀取失敗 | 帳號 / site / root 設定錯；先 `remote list --verbose` 對路徑，再 `remote test <name>` 細看錯誤訊息。 |
+| `search` 報支援錯誤 | Provider 沒有原生搜尋；改用 `find <remote>:/ --name ...`。 |
+| `rm --permanent` 被拒絕 | Provider 只有回收桶（OneDrive 個人版）；拿掉 `--permanent`。 |
+| sync 提示「永久刪除數量」 | 目標端是 Local/SFTP/FTP/WebDAV 且 `--delete` 開了；先 `--dry-run --full-plan`，再決定是否加 `--yes`。 |
+| `bisync` exit 2 | 衝突無法判定新舊（`newer` 策略）或 Photos 雙向；改 `auto`/`rename`，或避開 Photos。 |
+| `checksum --mode remote` exit 2 | Provider 不提供遠端 hash（例如 FTP）；改 `--mode auto` 或 `--mode download`。 |
+| `--json` 執行卡住 | 忘了加 `--yes`；實際執行時的 `--json` 必須搭配 `--yes`。 |
+| `=False` 形式的旗標被拒絕 | 布林旗標不要加等號；`--two-way=False` → `--two-way`。 |
+| Scheduler 沒跑 | 查 `schedule service status` 與 `~/.config/mycli/scheduler/scheduler.log`；前景版（`schedule start`）不具登入自動啟動能力。 |
+| Upstash 密碼錯誤 | passphrase 錯誤或 bundle 損壞；重跑 `upstash config` 即可重置（不會刪雲端資料）；勿把明文 passphrase 寫進腳本。 |
 
-或 compatibility form：
+### 7.2.1 能力對照速查
 
-```bash
-drive-unix sync A:/ B:/ --two-way
-```
+| Provider | 刪除 | `search` | `download-link` | extras |
+|---|---|---|---|---|
+| Local | 永久 | 有 | `file://` | — |
+| Google Drive | 回收桶+永久 | 有 | 有（分享 URL） | `google` |
+| Google Photos | 永久（移除連結） | 無 | 有 | `google` |
+| OneDrive | 回收桶 | 有 | 有（Graph URL） | `onedrive` |
+| SharePoint / ODB | 回收桶+永久 | 有 | 有 | `sharepoint` |
+| SFTP | 永久 | 無 | 有（含帳密） | `sftp` |
+| FTP | 永久 | 無 | 有（含帳密） | — |
+| WebDAV | 永久 | 無 | 有（含帳密） | — |
+| PikPak | 回收桶+永久 | 無 | 有 | — |
 
----
+## 7.3 需要更多幫助
 
-## 22. 相容舊版命令
+- 機制原理（呼叫鏈、快取、Upstash 分散式鎖、Office 同步）：[docs/mechanisms/](../mechanisms/README.md)
+- 伺服器部署（systemd、nginx、SSE、Profile、env）：[DEPLOYMENT](../DEPLOYMENT.md)
+- Windows/Linux 跨機部署實務：看 `deploy/` 與 `docker-compose.yml`
 
-目前新版 root help 不再顯示以下命令，但為了既有 script 相容仍可使用。
-
-### Remote aliases
-
-```text
-add-sp
-add-odb
-add-gdrive
-add-local
-add-ftp
-add-webdav
-add-onedrive
-list-nodes
-remove-node
-rename-node
-edit-node
-```
-
-推薦逐步改成：
-
-```text
-remote add
-remote list
-remote remove
-remote rename
-remote edit
-```
-
-SFTP 建議直接使用新版 Wizard：
-
-```bash
-drive-unix remote add sftp
-```
-
-### Environment aliases
-
-```text
-export-env
-import-env
-```
-
-推薦：
-
-```text
-env export
-env import
-```
-
-### Scheduler aliases
-
-```text
-cron-add
-cron-ls
-cron-rm
-cron-toggle
-cron-start
-```
-
-推薦：
-
-```text
-schedule add
-schedule list
-schedule remove
-schedule enable / disable
-schedule start
-```
-
-### Two-way sync compatibility
-
-舊腳本：
-
-```bash
-drive-unix sync A:/ B:/ --two-way
-```
-
-仍可執行。
-
-新腳本推薦：
-
-```bash
-drive-unix bisync A:/ B:/
-```
-
----
-
-## 最佳實務摘要
-
-日常操作建議遵守以下原則：
-
-1. **第一次設定先用 `init` / `remote add`，設定後用 `remote test`。**
-2. **正式腳本一律明確寫 `REMOTE:/path`。**
-3. **同步前先 `--dry-run`；mirror `--delete` 更應如此。**
-4. **雙向同步優先使用 `bisync`，預設 `auto` 已針對 ambiguity 做保守處理。**
-5. **重要資料遇到 conflict 優先選 `rename` 或 `abort`，不要任意 prefer 某一側。**
-6. **Local / FTP / SFTP / WebDAV 的刪除是永久的。**
-7. **自動化 sync 要加 `--yes`；使用 JSON 時實際 sync 強制要求 `--yes`。**
-8. **CI / Log 使用 `--plain`；機器判斷優先使用 `--json` 與 exit code。**
-9. **排程先手動 dry-run，再加入 `schedule add`。**
-10. **包含 secrets / auth cache 的環境備份視同帳號憑證保存。**
-
-需要查看任何單一命令的即時參數時，以程式本身為最終依據：
-
-```bash
-drive-unix COMMAND --help
-```
-
----
-
-[← 手冊目錄](README.md)
+> 相容別名：`add-local`、`add-gdrive`、`add-sp`、`add-odb`、`add-ftp`、`add-webdav`、`list-nodes`、`cron-add`、`export-env` 等仍有效，適合舊腳本平滑過渡；新的自動化請逐步改用 `remote` / `schedule` / `env` 子指令。

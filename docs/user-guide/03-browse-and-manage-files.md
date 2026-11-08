@@ -1,392 +1,147 @@
 # 03 瀏覽、建立與傳輸檔案
 
-[← 手冊目錄](README.md) | [← 上一章](02-providers-and-secrets.md) | [下一章 →](04-diff-and-sync.md)
+[← 上一章](02-providers-and-secrets.md) | [手冊目錄](README.md) | [下一章 →](04-diff-and-sync.md)
 
-本章內容：
+## 3.1 瀏覽：ls / tree / stat
 
-- # 7. 瀏覽、搜尋與資訊查詢
-- # 8. 建立與刪除
-- # 9. 複製、移動、上傳與下載
+所有瀏覽指令的第一參數都是 `REMOTE:/path`。路徑根目錄寫成 `別名:/` 即可。
 
----
-
-## 7. 瀏覽、搜尋與資訊查詢
-
-### 7.1 `ls`：列出目錄
+### ls — 列目錄
 
 ```bash
-drive-unix ls work:/docs
+drive-unix ls work:/
+drive-unix ls work:/docs --limit 50 --offset 0
+drive-unix --plain ls gdrive:/docs --json
 ```
 
-JSON：
+- `--limit / -n`（預設不限）、`--offset`（預設 0）：分頁取用。想完整列出大目錄時用 `--limit 0` 相當於不限制。
+- `--json`：輸出穩定 JSON `{remote, path, items[]}`，供腳本解析。錯誤時輸出 `{status: "error", ...}`。
+
+### tree — 樹狀展開
 
 ```bash
-drive-unix ls work:/docs --json
+drive-unix tree work:/docs --depth 2          # 只展開兩層
+drive-unix tree work:/docs -L 2               # 同上短寫
+drive-unix tree work:/docs --files-only       # 只看檔案
+drive-unix tree work:/docs --dirs-only        # 只看資料夾（-d）
+drive-unix tree work:/ --max-items 500        # 限制載入筆數（預設 1000）
 ```
 
-`--json` 適合 script 使用，失敗時也輸出 JSON error object。
+- `--files-only` 與 `--dirs-only` 不能同時用。
+- `--max-items` 預設 1000，刻意防呆，避免一口氣展開極大目錄把終端洗掉。
 
-### 7.2 `tree`：樹狀瀏覽
+### stat — 資訊檢視
 
 ```bash
-drive-unix tree work:/docs
+drive-unix stat work:/                    # Remote 根目錄的總容量等資訊
+drive-unix stat work:/docs/report.pdf
+drive-unix stat work:/docs/report.pdf --json
 ```
 
-限制深度：
+Provider 沒提供容量時，根目錄的容量欄位會是「未提供」，不是錯誤。
 
-```bash
-drive-unix tree work:/docs --depth 2
-## 或
-drive-unix tree work:/docs -L 2
-```
+## 3.2 搜尋：find vs search
 
-只顯示檔案：
+兩條搜尋指令分工不同，先理解差異再示範：
 
-```bash
-drive-unix tree work:/docs --files-only
-```
+| 指令 | 運作方式 | 適用情境 |
+|---|---|---|
+| `find` | 本機遞迴爬目錄，用條件過濾 | 任何 Provider 都能用；要跨 Provider 一致時用 |
+| `search` | 交給 Provider 原生 API | Provider 支援且資料量大、求速度時用 |
 
-只顯示資料夾：
-
-```bash
-drive-unix tree work:/docs --dirs-only
-## 或
-drive-unix tree work:/docs -d
-```
-
-限制最多載入項目：
-
-```bash
-drive-unix tree work:/ --max-items 500
-```
-
-預設 `--max-items 1000`，用來避免意外展開極大型目錄。
-
-`--files-only` 與 `--dirs-only` 不可同時使用。
-
-### 7.3 `find`：跨 Provider 客戶端遞迴搜尋
-
-基本搜尋：
+### find
 
 ```bash
 drive-unix find work:/docs --name report
-```
-
-如果 `--name` 沒有 `*` / `?`，會使用 fuzzy partial match。
-
-調整模糊門檻：
-
-```bash
-drive-unix find work:/docs --name report --fuzzy-threshold 85
-```
-
-萬用字元：
-
-```bash
-drive-unix find work:/docs --name '*.xlsx'
-drive-unix find work:/docs --name 'report_??.pdf'
-```
-
-類型：
-
-```bash
-drive-unix find work:/docs --type file
-drive-unix find work:/docs --type folder
-```
-
-大小：
-
-```bash
-drive-unix find work:/docs --size-gt 10MB
-drive-unix find work:/docs --size-lt 1.5GB
-```
-
-支援 B / KB / MB / GB / TB 類似格式；實際倍率以 1024 為基礎。
-
-日期：
-
-```bash
-drive-unix find work:/docs --modified-after 2026-01-01
-drive-unix find work:/docs --modified-before 2026-10-01
-```
-
-也接受可由 Python ISO-8601 parser 解析的 timestamp。
-
-限制深度：
-
-```bash
+drive-unix find work:/docs --name report --fuzzy-threshold 85   # 模糊門檻（預設 70）
+drive-unix find work:/docs --name '*.xlsx'                      # 萬用字元
+drive-unix find work:/docs --type file --size-gt 10MB --modified-after 2026-01-01
 drive-unix find work:/ --max-depth 3
 ```
 
-條件可組合：
+- `--name` 若不含 `*`/`?`，會用 fuzzy partial match；含才用 fnmatch。
+- `--fuzzy-threshold 0–100`，預設 70（`--fuzzy-threshold` 越高越嚴格）。
+- `--size-gt / --size-lt` 接受 `B/KB/MB/GB/TB`，以 1024 為倍率。
+- `--modified-after / --modified-before` 接受 `YYYY-MM-DD` 或 ISO timestamp。
+- `--max-depth`（預設無限）防止在極大樹中失控。
 
-```bash
-drive-unix find work:/projects \
-  --name '*.pdf' \
-  --type file \
-  --size-gt 1MB \
-  --modified-after 2026-01-01 \
-  --max-depth 5
-```
-
-### 7.4 `search`：Provider 原生搜尋
+### search
 
 ```bash
 drive-unix search work:/docs invoice
 ```
 
-這通常比 `find` 快，但並非每個 Provider 都支援。
+不支援原生搜尋的 Provider（SFTP、FTP、WebDAV、PikPak、Photos）會報錯並提示改用 `find`。
 
-如果 Provider 不支援，改用：
+## 3.3 建立與刪除
 
-```bash
-drive-unix find work:/docs --name invoice
-```
-
-選擇原則：
-
-- 想要跨 Provider 一致性 → `find`
-- Provider 支援原生 API、資料量大、追求速度 → `search`
-
-### 7.5 `stat`：查看項目資訊
-
-Remote root：
-
-```bash
-drive-unix stat work:/
-```
-
-單一檔案：
-
-```bash
-drive-unix stat work:/docs/report.pdf
-```
-
-JSON：
-
-```bash
-drive-unix stat work:/docs/report.pdf --json
-```
-
-Provider 如果有提供容量資料，root stat 會顯示總容量、已用空間等資訊；若 Provider 不提供，欄位可能顯示為未提供。
-
----
-
-## 8. 建立與刪除
-
-### 8.1 `mkdir`
-
-建立一層：
+### mkdir
 
 ```bash
 drive-unix mkdir work:/docs/new-folder
+drive-unix mkdir work:/a/b/c --parents    # 自動建父目錄（-p）
 ```
 
-自動建立父目錄：
+### rm — 先搞懂刪除安全模型
+
+`rm` 是否可還原，完全看 Provider 的 `DeleteCapability`。刪之前先想想：
+
+| Provider | `rm` 預設 | `--permanent` | `--force` |
+|---|---|---|---|
+| Local / SFTP / FTP / WebDAV | **永久刪除** | 無此概念（本來就是永久） | 跳過確認 |
+| Google Drive / SharePoint / ODB / PikPak | 進回收桶 | 永久刪除 | 跳過確認 |
+| OneDrive（個人版） | 進回收桶 | 會被拒絕（報錯） | 跳過確認 |
+| Google Photos | 移除連結 | 移除連結 | — |
 
 ```bash
-drive-unix mkdir work:/a/b/c --parents
-## 或
-drive-unix mkdir work:/a/b/c -p
+drive-unix rm gdrive:/old/file.txt              # 回收桶
+drive-unix rm gdrive:/old/file.txt --permanent  # 永久
+drive-unix rm work:/docs --force                # 不提示直接刪目錄
 ```
 
-### 8.2 `rm`
+> 誤認常見點：Local 的 `rm` 雖然不帶 `--permanent`，仍然是永久刪除。同步引擎會在執行前統計「永久刪除的數量」並在提示裡標示；大量同步時先用 `--dry-run` 看清單。
 
-一般刪除：
+## 3.4 複製、移動、上傳與下載
+
+### cp / mv（Remote 取用）
 
 ```bash
-drive-unix rm work:/docs/old.txt
+drive-unix cp work:/docs/a.pdf gdrive:/archive/a.pdf
+drive-unix mv work:/docs/tmp.pdf gdrive:/archive/
 ```
 
-CLI 會在執行前顯示這個 Provider 實際的刪除語意。
+_behavior：同一台 Remote 內盡量走伺服器端直接複製/移動；跨 Remote 則用「下載→本機暫存→上傳」中繼。目標若是目錄，檔案會保留檔名放入該目錄。
 
-跳過確認：
+`mv` 跨 Remote 採安全橋接：**先完整複製成功，才刪來源**。中途失敗不會兩邊同時被刪。
 
-```bash
-drive-unix rm work:/docs/old.txt --force
-```
-
-要求永久刪除：
-
-```bash
-drive-unix rm work:/docs/old.txt --permanent
-```
-
-或：
-
-```bash
-drive-unix rm work:/docs/old.txt -p
-```
-
-#### 刪除安全規則
-
-- Local / FTP / SFTP / WebDAV：無回收桶，本來就是永久刪除。
-- Google Drive / SharePoint / OneDrive Business：預設走回收機制，可依 Provider 支援要求永久刪除。
-- OneDrive：目前只支援移至回收桶；`--permanent` 會被拒絕。
-
-對永久刪除型 Provider：
-
-```bash
-drive-unix rm local:/important/data
-```
-
-CLI 會明確提示「永久刪除」，不會誤稱為移至回收桶。
-
-> `--force` 只會跳過確認，不會改變 Provider 的刪除模式。請勿把 `--force` 當成一般互動操作的預設選項。
-
----
-
-## 9. 複製、移動、上傳與下載
-
-### 9.1 `cp`
-
-同 Remote：
-
-```bash
-drive-unix cp work:/docs/A.pdf work:/archive/A.pdf
-```
-
-跨 Remote：
-
-```bash
-drive-unix cp work:/docs/A.pdf gdrive:/backup/A.pdf
-```
-
-`drive-unix` 會由 TransferService 選擇同 Provider 直接操作或跨 Provider bridge transfer。
-
-### 9.2 `mv`
-
-同 Remote：
-
-```bash
-drive-unix mv work:/docs/A.pdf work:/archive/A.pdf
-```
-
-跨 Remote：
-
-```bash
-drive-unix mv work:/docs/A.pdf nas:/archive/A.pdf
-```
-
-跨 Remote move 的心理模型是：
-
-```text
-copy to destination -> successful destination write -> remove source
-```
-
-因此跨 Remote `mv` 同時需要：
-
-- Source read / delete permission
-- Destination write permission
-
-若資料非常重要，建議先用 `cp` 驗證目標，再手動 `rm`，而不是直接使用跨 Remote `mv`。
-
-### 9.3 `upload`
-
-上傳單一檔案：
+### upload（本機 → Remote）
 
 ```bash
 drive-unix upload ./report.pdf work:/docs/report.pdf
+drive-unix upload ./docs work:/docs --recursive --workers 8
 ```
 
-資料夾必須明確指定遞迴：
+- 單檔：自動建立遠端父目錄。
+- 目錄：必須加 `--recursive / -r`；空目錄會建立空殼。
+- `--workers / -w`（預設 4）：目錄上傳時的並發數。
 
-```bash
-drive-unix upload ./Photos work:/backup/Photos --recursive
-## 或
-drive-unix upload ./Photos work:/backup/Photos -r
-```
-
-控制併發：
-
-```bash
-drive-unix upload ./Photos work:/backup/Photos -r --workers 8
-```
-
-預設 workers：
-
-```text
-4
-```
-
-`workers` 必須至少為 1。
-
-### 9.4 `download`
-
-下載檔案到目前目錄：
-
-```bash
-drive-unix download work:/docs/report.pdf
-```
-
-指定本機路徑：
+### download（Remote → 本機）
 
 ```bash
 drive-unix download work:/docs/report.pdf ./downloads/
+drive-unix download work:/docs ./backup --recursive
+drive-unix download work:/docs/report.pdf ./downloads/ --force
 ```
 
-資料夾：
+- 目標省略時落在當前工作目錄。
+- 若本機同名同大小，已存在即跳過；要強制重下加 `--force`。
+- 下載目錄必須加 `--recursive`（TTY 下會先提示你補上）。
+- `--workers / -w`（預設 4）。
+
+### download-link（分享）
 
 ```bash
-drive-unix download work:/Photos ./backup --recursive
+drive-unix download-link personal:/docs/report.pdf
 ```
 
-或：
-
-```bash
-drive-unix download work:/Photos ./backup -r
-```
-
-控制併發：
-
-```bash
-drive-unix download work:/Photos ./backup -r --workers 8
-```
-
-若本機已有**相同大小**的檔案，預設可能略過下載。
-
-強制重新下載：
-
-```bash
-drive-unix download work:/docs/report.pdf ./downloads --force
-```
-
-對資料夾也可以：
-
-```bash
-drive-unix download work:/Photos ./backup -r --force
-```
-
-> 「相同大小」不是完整內容驗證。如果你需要內容級完整性確認，下載後再使用 checksum 或其他驗證流程。
-
-互動式 TTY 中，如果下載目標其實是資料夾但沒有指定 `-r`，CLI 可能詢問是否遞迴；在 CI / 非互動環境則必須明確提供 `--recursive`。
-
-### 9.5 `download-link`
-
-取得 Provider 提供的直接下載或分享 URL：
-
-```bash
-drive-unix download-link work:/docs/report.pdf
-```
-
-此功能取決於 Provider 是否實作 download-link。
-
-目前可用於：
-
-- OneDrive
-- OneDrive Business
-- SharePoint
-- FTP / FTPS
-- WebDAV
-
-若 Provider 不支援，使用：
-
-```bash
-drive-unix download work:/docs/report.pdf
-```
-
-> 有效期限與認證方式由 Provider 決定。FTP / WebDAV 的目前實作可能把帳號或密碼直接放進 URL；這類連結應視為敏感憑證，不要貼到公開聊天、Issue、Log 或文件。
-
----
-
-[← 手冊目錄](README.md)
+這會吐出 Provider 的暫存下載 URL。SFTP / FTP / WebDAV 的 URL 可能內含明文帳密，**不要公開傳播**，請轉成加密傳輸。Local 的分享連結是 `file://` 形式。

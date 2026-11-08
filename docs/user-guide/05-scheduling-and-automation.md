@@ -1,426 +1,147 @@
 # 05 排程與自動化
 
-[← 手冊目錄](README.md) | [← 上一章](04-diff-and-sync.md) | [下一章 →](06-command-reference.md)
+[← 上一章](04-diff-and-sync.md) | [手冊目錄](README.md) | [下一章 →](06-command-reference.md)
 
-本章內容：
+## 5.1 JSON / Plain / exit code
 
-- # 15. JSON、Plain 與自動化
-- # 16. 排程
-- # 17. 環境備份與還原
-
----
-
-## 15. JSON、Plain 與自動化
-
-### 15.1 提供 JSON 的命令
-
-目前：
-
-```text
-ls
-stat
-diff
-sync
-bisync
-```
-
-#### `ls`
+### 5.1.1 讓腳本讀的輸出
 
 ```bash
 drive-unix ls work:/ --json
-```
-
-#### `stat`
-
-```bash
-drive-unix stat work:/docs/A.pdf --json
-```
-
-#### `diff`
-
-```bash
+drive-unix stat work:/docs/report.pdf --json
 drive-unix diff A:/ B:/ --json
-```
-
-#### Sync dry run
-
-```bash
 drive-unix sync A:/ B:/ --dry-run --json
 ```
 
-典型 JSON summary 包含：
+- `--json` 的錯誤狀態不會假裝正常：會輸出 `{status: "error", ...}`。
+- 真正執行 sync 並加 `--json` 時，必須同時加 `--yes`，避免腳本卡在互動確認。
+- Sync JSON 中的 status 可能為 `noop`、`dry-run`、`ok`、`partial-failure`、`conflict`、`aborted`、`error`。
+- 通用失敗 exit 1；衝突中止（`abort` / `newer` 判定失敗）exit 2。CI 判斷只要看 exit code 即可。
 
-```text
-status
-mode
-operations
-transfers
-directories
-renames
-deletes
-irreversible_deletes
-transfer_bytes
-delete_bytes
-```
-
-#### 實際 JSON sync
-
-實際修改檔案時必須搭配 `--yes`：
+### 5.1.2 讓人／log 讀的純文字
 
 ```bash
-drive-unix sync A:/ B:/ --json --yes
+drive-unix --plain ls work:/      # 關色彩、emoji、live 進度
+NO_COLOR=1 ls work:/              # 只關色彩
 ```
 
-這是為了避免 script 卡在互動確認。
+`--plain` 是全域參數，要放在子指令之前。`ls`、`stat`、`diff`、`sync`、`bisync` 都支援 `--json`；真正執行同步時的 `--json` 必須搭配 `--yes`。
 
-如果寫：
+### 5.1.3 CI 範式
 
 ```bash
-drive-unix sync A:/ B:/ --json
+# 1) 只看計畫
+drive-unix sync A:/ B:/ --dry-run --json
+# 2) 按計畫執行（跳過確認，失敗就 exit 非零）
+drive-unix sync A:/ B:/ --yes --json
 ```
 
-而又不是 `--dry-run`，CLI 會拒絕執行。
+## 5.2 排程（Cron）
 
-### 15.2 Sync JSON status
-
-可能包含：
-
-```text
-noop
-```
-
-代表沒有操作需要執行。
-
-```text
-dry-run
-```
-
-代表只產生 plan。
-
-```text
-ok
-```
-
-全部操作成功。
-
-```text
-partial-failure
-```
-
-有部分 action 失敗。
-
-```text
-conflict
-```
-
-Planner 因安全衝突停止。
-
-```text
-error
-```
-
-其他錯誤。
-
-### 15.3 Exit code
-
-一般原則：
-
-| Exit code | 含義 |
-|---:|---|
-| `0` | 成功、noop、正常 dry-run 或使用者已正常取消某些互動流程 |
-| `1` | 一般錯誤、部分執行失敗 |
-| `2` | 特定可辨識情況，例如 sync conflict、Provider 不支援要求的 remote checksum / native search |
-
-腳本不要只解析人類文字；有 `--json` 的命令應優先搭配 exit code 與 JSON `status`。
-
-### 15.4 CI 建議
-
-例如先驗證同步計畫：
+### 5.2.1 任務管理
 
 ```bash
-drive-unix --plain sync source:/data backup:/data --dry-run --json > plan.json
-```
-
-正式執行：
-
-```bash
-drive-unix --plain sync source:/data backup:/data --yes --json > result.json
-```
-
-> `--plain` 對 JSON 本身沒有額外價值，但如果同一套 wrapper 還會執行其他人類輸出命令，可保持統一的非互動 presentation policy。
-
----
-
-## 16. 排程
-
-`drive-unix` 內建五欄 Cron scheduler。
-
-格式：
-
-```text
-分 時 日 月 星期
-```
-
-例如每天 02:00：
-
-```text
-0 2 * * *
-```
-
-每 15 分鐘：
-
-```text
-*/15 * * * *
-```
-
-工作日 09:00：
-
-```text
-0 9 * * 1-5
-```
-
-Scheduler 支援：
-
-- `*`
-- 數值
-- comma list，例如 `1,3,5`
-- range，例如 `1-5`
-- step，例如 `*/15`、`1-20/2`
-
-### 16.1 新增排程
-
-```bash
-drive-unix schedule add nightly '0 2 * * *' \
-  'sync local:/data cloud:/backup --yes'
-```
-
-也可以把 command 寫成包含 executable 的形式：
-
-```bash
-drive-unix schedule add nightly '0 2 * * *' \
-  'drive-unix sync local:/data cloud:/backup --yes'
-```
-
-或現有 uv workflow：
-
-```bash
-drive-unix schedule add nightly '0 2 * * *' \
-  'uv run drive-unix sync local:/data cloud:/backup --yes'
-```
-
-Scheduler 會正規化這些常見 executable prefix，再由目前 drive-unix Python process 執行內部命令。
-
-#### 排程 command 建議
-
-實際 sync 排程通常應包含：
-
-```text
---yes
-```
-
-否則 background scheduler 無法回答確認問題。
-
-推薦先手動 dry-run：
-
-```bash
-drive-unix sync local:/data cloud:/backup --dry-run
-```
-
-確認後再新增：
-
-```bash
-drive-unix schedule add nightly '0 2 * * *' \
-  'sync local:/data cloud:/backup --yes'
-```
-
-### 16.2 列出排程
-
-```bash
+drive-unix schedule add nightly '0 2 * * *' 'sync local:/data cloud:/backup --yes'
 drive-unix schedule list
-```
-
-每個 task 會顯示：
-
-- enabled / disabled
-- Cron expression
-- 最後嘗試時間
-- 最後成功時間
-- 最後 exit code
-- command
-
-### 16.3 Enable / Disable
-
-```bash
 drive-unix schedule disable nightly
 drive-unix schedule enable nightly
-```
-
-### 16.4 移除
-
-```bash
 drive-unix schedule remove nightly
 ```
 
-### 16.5 前景模式
+- `schedule` 用 5 欄 Cron：`分 時 日 月 星期`，每欄支援 `*`、單一數字、範圍 `a-b`、`*/step`、逗號列表。不支援秒、`@daily`、英文星期名（`MON`）。
+- 星期欄 `0` 與 `7` 都代表星期日；`1` 到 `6` 代表週一到週六。
+- 日與星期用 **AND**（兩欄都要吻合），與傳統 Vixie cron 的 OR 不同。寫每天凌晨 2 點請用 `0 2 * * *`，不要寫 `0 2 * * 1-5` 來表達平日時段（那會變成「平日 + 每天」）。
+- 指令字串可以省略前綴（`drive-unix`、`python main.py`、`mycli` 等），執行前會自動正規化；空指令會被擋下並提示錯誤。
+
+### 5.2.2 前景與背景
 
 ```bash
-drive-unix schedule start
-```
-
-這會在目前終端機中持續執行 scheduler。
-
-停止：
-
-```text
-Ctrl+C
-```
-
-適合：
-
-- 開發
-- Debug
-- 觀察 task output
-
-不適合需要長期背景執行的正式環境。
-
-### 16.6 背景 Service
-
-安裝 service：
-
-```bash
-drive-unix schedule service install
-```
-
-啟動：
-
-```bash
+drive-unix schedule start          # 前景常駐，Ctrl+C 停止
+drive-unix schedule service install  # 註冊 OS service，登入自動啟動
 drive-unix schedule service start
-```
-
-狀態：
-
-```bash
 drive-unix schedule service status
-```
-
-停止：
-
-```bash
 drive-unix schedule service stop
-```
-
-移除：
-
-```bash
 drive-unix schedule service uninstall
 ```
 
-#### OS backend
+| 平台 | 後端 | 安裝產物 |
+|---|---|---|
+| Linux | `systemd-user` | `~/.config/systemd/user/drive-unix-scheduler.service` |
+| macOS | `launchd` | `~/Library/LaunchAgents/io.drive-unix.scheduler.plist` |
+| Windows | Task Scheduler | `DriveUnixScheduler`（登入觸發）|
+| 其他 | detached process | 只有 PID 檔 |
 
-| OS | Backend |
-|---|---|
-| Linux | user-level systemd |
-| macOS | LaunchAgent / launchd |
-| Windows | Task Scheduler |
-| 其他 / 未安裝 service | detached process fallback |
+- `service status` 會印 backend、是否已安裝、PID 與 log 路徑。
+- Daemon 的 stdout/stderr 都寫到單一檔案：`~/.config/mycli/scheduler/scheduler.log`（啟動失敗請先去那裡看）。
+- 排程執行失敗時，只有失敗時的 stderr 會被記錄下來；成功／失敗最終寫回 `config.toml` 的 `last_success_at` / `last_exit_code` 供 `schedule list` 查詢。
 
-如果尚未執行 `service install`，仍可：
+### 5.2.3 補跑（Missed-run）
 
-```bash
-drive-unix schedule service start
-```
+若 Scheduler 有一段時間沒開（例如筆電休眠三天），下次啟動會從「上次執行」補查最近 7 天內遺漏的時段：只要有任一分鐘符合 Cron，就會補執行一次（同一分鐘不會重跑）。新任務從未跑過時不會立即補跑，會等到下一個排定時間。
 
-此時會使用 detached process，但不代表已設定 login auto-start。
-
-#### Log
-
-Scheduler log 預設位於設定目錄下：
-
-```text
-~/.config/mycli/scheduler/scheduler.log
-```
-
-Windows 上 `~` 代表目前使用者 home directory。
-
-查看狀態時也會顯示實際 log path：
-
-```bash
-drive-unix schedule service status
-```
-
-### 16.7 Missed run
-
-Scheduler 會檢查先前 task 是否錯過符合的 Cron 時點；目前最多回看約 7 天。
-
-這讓短暫中斷後重新啟動 scheduler 時，可以補執行近期錯過的 task。
-
----
-
-## 17. 環境備份與還原
-
-### 17.1 一般設定備份
+## 5.3 環境備份與還原
 
 ```bash
 drive-unix env export backup.zip
-```
-
-預設主要匯出設定，不包含敏感 secret store 與 auth cache。
-
-### 17.2 包含 Secrets
-
-```bash
-drive-unix env export backup.zip --include-secrets
-```
-
-這可能包含：
-
-- secret store
-- OAuth client credential files
-
-屬於高度敏感資料。
-
-### 17.3 包含 Auth Cache
-
-```bash
-drive-unix env export backup.zip --include-auth-cache
-```
-
-這可能包含：
-
-- Refresh token
-- Cookie
-- OAuth cache
-
-同樣屬於敏感資料。
-
-### 17.4 完整可攜備份
-
-```bash
-drive-unix env export full-backup.zip \
-  --include-secrets \
-  --include-auth-cache
-```
-
-請把這類檔案當作 credential bundle 保護，不應上傳公共雲端、Git repository 或聊天內容。
-
-Export 會盡力把 archive 權限設定為只有目前使用者可讀寫。
-
-### 17.5 Import
-
-```bash
 drive-unix env import backup.zip
-```
-
-如果本機已有設定，會要求確認。
-
-自動覆蓋：
-
-```bash
 drive-unix env import backup.zip --force
 ```
 
-Import 有 Zip Slip 與 symbolic-link escape 防護，只允許預期的 archive top-level 內容。
+| 項目 | 預設 | 含密文時 |
+|---|---|---|
+| `config/`（Remote 拓撲與任務） | 一定含 | — |
+| `secrets.json`、`secret-files/` | **排除** | `--include-secrets` |
+| `auth_cache/`（OAuth token/cookie） | **排除** | `--include-auth-cache` |
 
----
+- 匯出 zip 的權限是 `0600`：即使不含秘密，拓撲與帳號識別仍可能敏感。
+- `--include-secrets` / `--include-auth-cache` 產出的檔案請視為憑證妥善保管，絕不公開分享。
+- 匯入時會拒絕 Zip Slip（`..`、絕對路徑、symlink），且只接受 `config/`、`auth_cache/` 頂層，復原檔案自動設回 `0600` / `0700`。
 
-[← 手冊目錄](README.md)
+## 5.4 Upstash E2EE 多端同步
+
+> Upstash 只看到 AES-256-GCM 密文，密碼與憑證在離開本機前完成加密。家裡多台電腦、或把 VPS 設為「換發中心」，都用這套。
+
+### 5.4.1 一次性設定
+
+```bash
+export UPSTASH_REDIS_REST_URL='https://.../...'     # 或 upstash config --url
+export UPSTASH_REDIS_REST_TOKEN='...'              # 或 --token / --token-env
+drive-unix upstash config --passphrase-env MY_SECRET
+drive-unix upstash test
+drive-unix upstash push -p 'MySecretPassphrase'
+drive-unix upstash status
+```
+
+- `--sync-key` 預設 `drive-unix:sync:default`；多台各有自己的群組就用不同 key 區隔。
+- `--token-env` 優於 `--token`；顯式 `--url/--token` 會覆寫環境變數。
+- Token 與 passphrase 存進 secret store，不會寫明文到 `config.toml`。
+
+### 5.4.2 push / pull
+
+```bash
+drive-unix upstash push -p 'MySecretPassphrase' --yes
+drive-unix upstash pull -p 'MySecretPassphrase' --dry-run --strategy merge
+drive-unix upstash pull -p 'MySecretPassphrase' --strategy replace --yes
+```
+
+- `push` 會加密本機 topology 與 secrets 後上傳；沒有任何 Remote 時會警告。
+- `pull` 預設 `merge`（同名 Remote 預設跳過）；`replace` 會先清掉本機全部 Remote 再覆寫，必須加 `--yes`。
+- `env:` 引用會原樣保留（機器專屬的參照不傳遞）；其餘密文會在新機器上重新放入 secret store 並對應。
+
+### 5.4.3 Token 續期（renew-tokens）
+
+```bash
+drive-unix upstash renew-tokens --interval 1800 --leeway 60
+```
+
+- 無 `--interval` 時跑一次；有 `--interval` 時變成常駐迴圈（最小 5 秒）。
+- `--leeway`（預設 30 分鐘）：還有幾分鐘就過期的 token 會提早換發。
+- 未在各台機器開 Upstash 時，`renew-tokens` 會回傳 disabled 或 failed，不會崩潰。
+
+VPS 常駐換發中心（開 Upstash 時建議必開）：
+
+```bash
+drive-unix upstash renew-tokens --interval 1800 --leeway 60 -p 'MySecretPassphrase'
+```
+
+設定好 `--auto-sync-tokens`（從雲端撿 token）與 `--auto-push-tokens`（換完推回雲端）後，網內其他電腦會自動拿到最新 token，不必各自登入。

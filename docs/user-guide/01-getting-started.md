@@ -1,97 +1,37 @@
 # 01 入門：功能概覽、安裝與基本操作
 
-[← 手冊目錄](README.md) | [下一章 →](02-providers-and-secrets.md)
+[← 手冊目錄](README.md) | [下一章：Remote 與各 Provider 設定 →](02-providers-and-secrets.md)
 
-本章內容：
+## 1.1 功能概覽
 
-- # 1. 功能概覽
-- # 2. 安裝
-- # 3. 第一次使用
-- # 4. 命令與路徑基本規則
+`drive-unix` 把十幾種儲存後端收進同一個 CLI 介面。你面對的只有 Remote 別名與 `REMOTE:/path` 路徑，不用切換每家廠商自己的工具。
 
----
+核心能力可分為四類（括號內為主指令，細節在後續章節）：
 
-## 1. 功能概覽
+- **瀏覽與查詢**：`ls` 列目錄、`tree` 樹狀展開、`find` 條件遞迴搜尋、`search` 交給 Provider 原生搜尋、`stat` 看容量與時間資訊。
+- **單檔操作**：`mkdir` 建資料夾、`rm` 刪除（依 Provider 決定是進回收桶還是永久刪除）、複製／移動／上傳／下載（`cp`／`mv`／`upload`／`download`），跨不同廠商的內容會自動經本機中繼。
+- **比對與同步**：`diff` 只比對不改動；`sync` 單向把來源推到目標（可選 `--delete` 做鏡像）；`bisync` 雙向拉齊；`checksum` 驗證內容是否一致。
+- **自動化與多機**：Cron 排程 + OS 背景 service、環備份還原（`env export/import`）、Upstash E2EE 雲端同步（多台電腦共用 topology 與 token）。
 
-`drive-unix` 的核心能力包括：
+支援的 Provider 型別（在設定檔中的 `type`）：`local`、`google_drive`、`googlephotos`、`onedrive`、`onedrive_business`、`sharepoint`、`sftp`、`ftp`、`webdav`、`pikpak`，以及尚未實作的 `alist`（保留型別，會直接報錯）。各家差異（刪除模式、extras、必填欄位）見 [下一章](02-providers-and-secrets.md)。
 
-- 用同一套 `REMOTE:/path` 語法操作多種儲存服務。
-- 瀏覽、樹狀顯示、條件搜尋與 Provider 原生搜尋。
-- 建立、刪除、複製、移動檔案與資料夾。
-- Local ↔ Remote 上傳與下載。
-- Remote ↔ Remote 跨 Provider 傳輸。
-- 單向 `sync` 與安全雙向 `bisync`。
-- `diff` 與同步共用相同 comparison policy。
-- Provider-side 或下載後本機 Checksum。
-- Cron 排程與 OS-level 背景 Scheduler service。
-- JSON output、`--plain`、`NO_COLOR`，可用於 CI / Script / Log。
-- Secret reference、OS keyring 與權限限制的 fallback secret store。
+## 1.2 安裝
 
-目前公開的頂層命令：
+需求：Python 3.12 或以上。CI 會在 3.12 / 3.13 / 3.14 都跑完整測試。
 
-```text
-drive-unix
-├── init
-├── remote
-├── ls
-├── tree
-├── find
-├── search
-├── mkdir
-├── rm
-├── stat
-├── cp
-├── mv
-├── upload
-├── download
-├── download-link
-├── diff
-├── sync
-├── bisync
-├── checksum
-├── schedule
-└── env
-```
-
-隨時可以用：
+### 1.2.1 用 pip 安裝
 
 ```bash
-drive-unix --help
-drive-unix COMMAND --help
-drive-unix remote --help
-drive-unix schedule service --help
-```
-
----
-
-## 2. 安裝
-
-### 2.1 Python 版本
-
-需要：
-
-```text
-Python 3.12+
-```
-
-### 2.2 使用 pip
-
-在專案根目錄：
-
-```bash
+# 核心 CLI
 python -m pip install .
 drive-unix --help
 ```
 
-開發模式：
+如果只是想確認安裝是否正確，先跑 `drive-unix --help`；根指令沒有參數時會直接顯示說明（`no_args_is_help`）。
 
-```bash
-python -m pip install -e '.[all,dev]'
-```
+### 1.2.2 用 uv 管理
 
-### 2.3 使用 uv
-
-推薦使用 `uv`：
+專案根目錄有 `.python-version`（預設 3.12），uv 會自動下載缺少的 Python：
 
 ```bash
 uv python install 3.12
@@ -99,206 +39,78 @@ uv sync
 uv run drive-unix --help
 ```
 
-開發環境：
+### 1.2.3 Provider extras
 
-```bash
-uv sync --extra dev
-```
+核心安裝不含大型 SDK。各 Provider 用到第三方套件時，請按需安裝 extras（缺少 extras 時，Provider factory 會直接告訴你要裝哪一個）：
 
-全部 Provider 與開發工具：
+| extras | 用途 |
+|---|---|
+| `google` | Google Drive / Google Photos（`google-api-python-client`、`google-auth`、`google-auth-oauthlib`） |
+| `onedrive` | Microsoft OneDrive（`requests-oauthlib`） |
+| `sharepoint` | SharePoint / OneDrive Business（Playwright 瀏覽器自動化，裝完還要 `playwright install chromium`） |
+| `sftp` | SFTP（`paramiko`） |
+| `all` | 上述全部加上 `httpx`、`uvicorn` 等 Web / 傳輸依賴 |
+| `dev` | 開發檢查工具（`build`、`mypy`、`pytest`、`ruff`） |
 
-```bash
-uv sync --extra all --extra dev
-```
+uv 寫法：`uv sync --extra google`；多個 extra 可重複指定，或 `uv sync --all-extras`。
 
-或：
+> 本機驗證（與 CI 同步）：`python -m compileall`、`ruff check .`、`mypy`、`python -m pytest`。uv 環境下在每條後面加 `uv run` 即可。
 
-```bash
-uv sync --all-extras
-```
+## 1.3 第一次使用：三分鐘導引
 
-### 2.4 Provider optional dependencies
-
-核心安裝不會強制安裝所有大型 SDK。依需要啟用：
-
-| Provider / 功能 | pip | uv |
-|---|---|---|
-| Google Drive | `pip install '.[google]'` | `uv sync --extra google` |
-| OneDrive OAuth | `pip install '.[onedrive]'` | `uv sync --extra onedrive` |
-| SharePoint / OneDrive Business | `pip install '.[sharepoint]'` | `uv sync --extra sharepoint` |
-| SFTP | `pip install '.[sftp]'` | `uv sync --extra sftp` |
-| fuzzy search speedup | `pip install '.[speedups]'` | `uv sync --extra speedups` |
-| 全部 | `pip install '.[all]'` | `uv sync --extra all` |
-
-SharePoint / OneDrive Business 另外需要 Chromium：
-
-```bash
-playwright install chromium
-```
-
-使用 uv：
-
-```bash
-uv run playwright install chromium
-```
-
-如果缺少 Provider 套件，CLI 會顯示需要安裝的 `drive-unix[...]` extra。
-
----
-
-## 3. 第一次使用
-
-最簡單的方式：
+最省事的入口是互動式導引：
 
 ```bash
 drive-unix init
 ```
 
-若目前沒有任何 Remote，`init` 會：
+行為：若已存在至少一個 Remote，會列出來並提示下一步；若一個都沒有，會直接啟動 `remote add` wizard 問你要接哪一家。
 
-1. 讓你選擇 Provider。
-2. 詢問 Remote 名稱。
-3. 收集必要的連線或認證資料。
-4. 儲存 Remote。
-5. 提示執行連線測試與第一個 `ls`。
-
-例如建立完成後：
+第一次正式操作建議固定三步走（先建 Remote、再測連線、最後看根目錄）：
 
 ```bash
-drive-unix remote test work
-drive-unix ls work:/
+drive-unix remote add local --name laptop      # 互動 wizard，選 local 並填本機根目錄
+drive-unix remote test laptop                  # 驗證認證 + 讀取
+drive-unix ls laptop:/
 ```
 
-若需要確認寫入權限：
+若想直接以命令列方式建立，不走 wizard，可參考 [下一章](02-providers-and-secrets.md) 的舊版直供指令（`add-local`、`add-gdrive` 等，屬相容別名）。
+
+## 1.4 命令與路徑基本規則
+
+### 1.4.1 `REMOTE:/path` 語法
+
+| 寫法 | 意義 |
+|---|---|
+| `work:/` | Remote `work` 的根目錄 |
+| `work:/docs/a.pdf` | Remote `work` 下 `docs/a.pdf` |
+| `drive-unix ls gdrive:/docs` | 列出 `gdrive` 的 `/docs` |
+| `drive-unix upload ./report.pdf work:/docs/report.pdf` | 本機檔上傳到遠端 |
+
+規則：
+
+- Remote 名稱不可含 `:` 或 `/`；路徑一律以 `/` 分隔，首尾斜線可省略（`work:/docs` 與 `work:/docs/` 相同）。
+- 本機相對路徑（`./x`、`../x`）只有在 `upload` 的來源與 `download` 的目標時才合法；其餘指令的來源/目標必須是 `REMOTE:/path`。
+- Remote 名稱大小寫敏感；Provider `type` 會被轉成小寫。
+- 第一個 Remote 會自動成為 `default_remote`；`remote list` 中 `⭐ (預設)` 即為預設。預設 Remote 的作用在於 Web 介面與部分工具的初始選擇，不影響 CLI 上所有 `REMOTE:/path` 指令。
+
+### 1.4.2 全域選項只有兩個
 
 ```bash
-drive-unix remote test work --write
+drive-unix --plain ls work:/          # 純文字：關色彩、emoji、動態進度
+NO_COLOR=1 drive-unix ls work:/       # 只關色彩
 ```
 
-`--write` 會建立一個暫存測試資料夾，之後立即清理。清理方式會依 Provider 的刪除能力而不同。
+- `--plain` 特別適合 CI log、檔案輸出或 screen reader。它會關閉 ANSI 色彩、emoji/符號、以及 Rich 的 live 進度動畫。注意：它是 root 指令的參數，必須放在子指令之前。
+- `NO_COLOR` 只關色彩，不關 emoji，也不關 live 進度。
+- 當輸出不是 TTY（例如 pipe 到檔案），live 進度會自動關閉，無須加參數。
 
-如果已經有 Remote，`init` 不會覆蓋現有設定，只會列出 Remote 並提示後續操作。
+### 1.4.3 設定檔與權限
 
----
+預設設定檔在 `~/.config/mycli/config.toml`，同目錄下還有：
 
-## 4. 命令與路徑基本規則
+- `secrets.json`（`0600`，keyring 後備）
+- `secret-files/`（Google OAuth JSON 等）
+- `scheduler/`（PID 與 `scheduler.log`）
 
-### 4.1 Remote 路徑格式
-
-標準格式：
-
-```text
-REMOTE:/path/to/item
-```
-
-例如：
-
-```text
-work:/Shared Documents/report.xlsx
-nas:/backup/photos
-local:/Projects/app
-```
-
-根目錄：
-
-```text
-work:/
-```
-
-路徑含空白時，建議用引號：
-
-```bash
-drive-unix ls 'work:/Shared Documents'
-```
-
-Windows PowerShell：
-
-```powershell
-drive-unix ls 'work:/Shared Documents'
-```
-
-### 4.2 預設 Remote
-
-第一次透過 `drive-unix remote add` / `drive-unix init` 建立的 Remote，如果當時還沒有預設 Remote，會成為 `default_remote`。
-
-有預設 Remote 時，部分命令允許省略 `REMOTE:`；但為了避免腳本在不同環境指到錯誤位置，**建議正式指令與排程一律明確寫出 Remote 名稱**。
-
-推薦：
-
-```bash
-drive-unix ls work:/docs
-```
-
-不推薦在自動化中依賴：
-
-```bash
-drive-unix ls /docs
-```
-
-### 4.3 Local Remote 與本機路徑的差異
-
-若已建立：
-
-```text
-local -> D:\Data
-```
-
-那麼：
-
-```text
-local:/docs/report.pdf
-```
-
-代表的是：
-
-```text
-D:\Data\docs\report.pdf
-```
-
-`drive-unix` 的 Remote 指令中應使用 `local:/...`，不要直接把 `D:\Data\...` 當作 Remote 路徑。
-
-例外是 `upload` 的第一個參數與 `download` 的本機目的地，這兩處本來就接受 OS 本機路徑。
-
-### 4.4 全域 `--plain`
-
-任何命令前都可以加：
-
-```bash
-drive-unix --plain ls work:/
-```
-
-`--plain` 會：
-
-- 關閉 ANSI 色彩。
-- 移除 emoji / decorative symbols。
-- 關閉動態 progress。
-- 提供較適合 CI、redirected log 與 screen reader 的文字輸出。
-
-例如：
-
-```bash
-drive-unix --plain sync source:/data backup:/data --dry-run
-```
-
-### 4.5 `NO_COLOR`
-
-若只想停用色彩，不想使用完整 plain mode：
-
-Linux / macOS：
-
-```bash
-NO_COLOR=1 drive-unix ls work:/
-```
-
-PowerShell：
-
-```powershell
-$env:NO_COLOR = '1'
-drive-unix ls work:/
-```
-
-非 TTY stdout 會自動停用 live progress，避免控制字元污染 log。
-
----
-
-[← 手冊目錄](README.md)
+本機瀏覽器 profile（SharePoint/ODB 的持久登入狀態）在 `~/.config/drive-unix/browser-profiles/`，每台 identity 獨立一份，權限 `0700`。可用 `DRIVE_UNIX_BROWSER_PROFILE_DIR` 改根目錄，設為 `0/false/off/no/none/disabled` 則停用。

@@ -1,186 +1,80 @@
 # 06 完整命令速查
 
-[← 手冊目錄](README.md) | [← 上一章](05-scheduling-and-automation.md) | [下一章 →](07-scenarios-and-troubleshooting.md)
+[← 上一章](05-scheduling-and-automation.md) | [手冊目錄](README.md) | [下一章 →](07-scenarios-and-troubleshooting.md)
 
-本章內容：
+> 速查表只列「預設行為與必備參數」。細節請點進對應章節，不要靠猜測用指令。
 
-- # 19. 完整命令速查
+## 6.1 全域
 
----
-
-## 19. 完整命令速查
-
-### Global
-
-```text
-drive-unix [--plain] COMMAND ...
+```bash
+drive-unix --plain <指令>            # 純文字：關色彩、emoji、live 進度
+NO_COLOR=1 drive-unix <指令>         # 只關色彩
 ```
 
-### Setup / Remote
+## 6.2 設定與 Remote
 
-```text
-drive-unix init
+| 指令 | 參數 | 說明 |
+|---|---|---|
+| `init` | — | 首次導引；有 Remote 列舉，無則開 wizard |
+| `remote add` | `[provider_or_name]` `--name/-n` `--type/-t` | 互動 wizard（建議入口） |
+| `remote list` | `--verbose/-v` | 不印 secret；`-v` 附 config 路徑 |
+| `remote remove` | `<name>` | 移除設定（不刪遠端檔） |
+| `remote rename` | `<old> <new>` | 改名並更新預設指向 |
+| `remote edit` | `<name>` `--base-url` `--site` `--email` `--password-env` `--password-prompt` `--clear-password` | 密碼三選一 |
+| `remote test` | `<name>` `--write` | 驗證可讀；`--write` 再驗可寫入並清理暫存目錄 |
 
-drive-unix remote add [PROVIDER] [--name NAME]
-drive-unix remote list [--verbose]
-drive-unix remote test NAME [--write]
-drive-unix remote edit NAME [OPTIONS]
-drive-unix remote rename OLD NEW
-drive-unix remote remove NAME
-```
+## 6.3 瀏覽與查詢
 
-`remote edit` options：
+| 指令 | 必填參數 | 常用選項 |
+|---|---|---|
+| `ls` | `<remote>:/<path>` | `--offset 0` `--limit/-n` `--json` |
+| `tree` | `<remote>:/<path>` | `--depth/-L` `--files-only` `--dirs-only/-d` `--max-items 1000` |
+| `find` | `<remote>:/<path>` | `--name/-n` `--fuzzy-threshold 70` `--type/-t file/folder` `--size-gt/lt` `--modified-after/before` `--max-depth` |
+| `search` | `<remote>:/<path>` `<query>` | 無選項（不支援的 Provider 報錯） |
+| `stat` | `<remote>:/<path>` | `--json` |
+| `mkdir` | `<remote>:/<path>` | `--parents/-p` |
+| `rm` | `<remote>:/<path>` | `--permanent/-p` `--force/-f`（Provider 語意見 [第三章](03-browse-and-manage-files.md)） |
+| `download-link` | `<remote>:/<path>` | 無 |
 
-```text
---base-url, -b TEXT
---site, -s TEXT
---email, -e TEXT
---password-env TEXT
---password-prompt
---clear-password
-```
+## 6.4 傳輸
 
-### Browse / Search
+| 指令 | 必填參數 | 常用選項 |
+|---|---|---|
+| `cp` | `<src> <dst>` | 無 |
+| `mv` | `<src> <dst>` | 無（跨 Remote 先複製成功才刪來源） |
+| `upload` | `<local> <dst>` | `--recursive/-r`（目錄必加） `--workers/-w 4` |
+| `download` | `<src> [local]` | `--workers/-w 4` `--force/-f` `--recursive/-r` |
 
-```text
-drive-unix ls PATH [--json]
+## 6.5 比對與同步
 
-drive-unix tree REMOTE_PATH
-  [--depth INTEGER | -L INTEGER]
-  [--files-only]
-  [--dirs-only | -d]
-  [--max-items INTEGER]
+| 指令 | 必填參數 | 常用選項 |
+|---|---|---|
+| `diff` | `<A> <B>` | `--show-same/-s` `--checksum` `--json` |
+| `sync` | `<A> <B>` | `--dry-run --full-plan --delete --include --exclude --conflict auto --checksum --workers/-w 4 --throttle --progress --yes/-y --json` |
+| `bisync` | `<A> <B>` | 同 `sync` 但沒有 `--delete`（硬固定雙向） |
+| `checksum` | `<remote>:/<path>` | `--algo sha256` `--mode auto/remote/download` |
 
-drive-unix find REMOTE_PATH
-  [--name TEXT | -n TEXT]
-  [--fuzzy-threshold INTEGER]
-  [--type file|folder | -t file|folder]
-  [--size-gt SIZE]
-  [--size-lt SIZE]
-  [--modified-after DATE]
-  [--modified-before DATE]
-  [--max-depth INTEGER]
+## 6.6 排程與環境
 
-drive-unix search REMOTE_PATH QUERY
+| 指令 | 必填參數 | 說明 |
+|---|---|---|
+| `schedule add` | `<name> '<cron>' '<cmd>'` | 5 欄 Cron |
+| `schedule list/remove/enable/disable` | `<name>` | 任務 CRUD |
+| `schedule start` | — | 前景常駐 |
+| `schedule service install/start/stop/status/uninstall` | — | OS 背景 service |
+| `env export` | `<backup.zip>` | `--include-secrets --include-auth-cache`（預設不含）|
+| `env import` | `<backup.zip>` | `--force/-f` 跳過覆寫確認 |
 
-drive-unix stat REMOTE_PATH [--json]
-```
+## 6.7 Upstash E2EE
 
-### File operations
+| 指令 | 參數 | 說明 |
+|---|---|---|
+| `upstash config` | `--url --token --token-env --sync-key --passphrase/-p --passphrase-env` | 互動式或參數式設定 |
+| `upstash test` | `--json` | 連線測試（ping / latency） |
+| `upstash status` | `--sync-key --json` | 云端 bundle 與本機對比 |
+| `upstash push` | `--passphrase/-p --passphrase-env --sync-key --include-auth-cache --include-tasks --yes --json` | 上傳加密 bundle |
+| `upstash pull` | `--passphrase/-p --passphrase-env --strategy merge --dry-run --yes --json` | `merge` / `replace` |
+| `upstash delete` | `--yes` | 永久刪除云端 bundle |
+| `upstash renew-tokens` | `--interval --leeway 30 --remote --passphrase/-p` | 單次或常駐換發（VPS 中心用） |
 
-```text
-drive-unix mkdir REMOTE_PATH [--parents | -p]
-
-drive-unix rm REMOTE_PATH
-  [--permanent | -p]
-  [--force | -f]
-
-drive-unix cp SOURCE DEST
-
-drive-unix mv SOURCE DEST
-```
-
-### Transfer
-
-```text
-drive-unix upload LOCAL_PATH REMOTE_PATH
-  [--recursive | -r]
-  [--workers INTEGER | -w INTEGER]
-
-drive-unix download REMOTE_PATH [LOCAL_PATH]
-  [--workers INTEGER | -w INTEGER]
-  [--force | -f]
-  [--recursive | -r]
-
-drive-unix download-link REMOTE_PATH
-```
-
-### Diff / Sync
-
-```text
-drive-unix diff SOURCE DEST
-  [--show-same | -s]
-  [--checksum]
-  [--json]
-
-drive-unix sync SOURCE DEST
-  [--dry-run]
-  [--one-way | --two-way]
-  [--delete]
-  [--exclude PATTERN]
-  [--include PATTERN]
-  [--conflict STRATEGY]
-  [--checksum]
-  [--progress]
-  [--workers INTEGER | -w INTEGER]
-  [--yes | -y]
-  [--throttle FLOAT]
-  [--full-plan]
-  [--json]
-
-drive-unix bisync SOURCE DEST
-  [--dry-run]
-  [--exclude PATTERN]
-  [--include PATTERN]
-  [--conflict STRATEGY]
-  [--checksum]
-  [--progress]
-  [--workers INTEGER | -w INTEGER]
-  [--yes | -y]
-  [--throttle FLOAT]
-  [--full-plan]
-  [--json]
-```
-
-Conflict strategy：
-
-```text
-auto | newer | rename | abort | prefer-source | prefer-destination
-```
-
-### Checksum
-
-```text
-drive-unix checksum REMOTE_PATH
-  [--algo md5|sha1|sha256|quickXorHash]
-  [--mode auto|remote|download]
-```
-
-Compatibility flags：
-
-```text
---remote
---download
-```
-
-### Schedule
-
-```text
-drive-unix schedule add NAME 'CRON' 'COMMAND'
-drive-unix schedule list
-drive-unix schedule enable NAME
-drive-unix schedule disable NAME
-drive-unix schedule remove NAME
-drive-unix schedule start
-
-drive-unix schedule service install
-drive-unix schedule service start
-drive-unix schedule service status
-drive-unix schedule service stop
-drive-unix schedule service uninstall
-```
-
-### Environment
-
-```text
-drive-unix env export OUTPUT.zip
-  [--include-auth-cache]
-  [--include-secrets]
-
-drive-unix env import INPUT.zip
-  [--force | -f]
-```
-
----
-
-[← 手冊目錄](README.md)
+舊版別名（`add-sp`、`add-odb`、`add-gdrive`、`list-nodes`、`cron-add`、`export-env` 等）仍可使用，但不會出現在 root help；新實作請用上表正式指令。
