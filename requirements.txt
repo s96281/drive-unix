@@ -1,12 +1,3 @@
-psutil
-redis
-flask
-chardet
-requests
-flask_caching
-Office365-REST-Python-Client
-pyinstrument
-markdown
-Pygments
-pymdown-extensions
-natsort
+# Compatibility shim. Dependency versions live exclusively in pyproject.toml.
+# Prefer: python -m pip install .
+.

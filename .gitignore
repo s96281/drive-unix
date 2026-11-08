@@ -1,8 +1,3 @@
 __pycache__
-.vscode
-cache
-env
-cookies
-*env
-.space
-data/*
+.agents/
+node_modules/

@@ -1,0 +1,27 @@
+[Unit]
+Description=drive-unix Upstash Token Renewal Center Daemon (憑證換發中心)
+Documentation=https://github.com/your-org/drive_unix
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 可依環境調整執行使用者 (建議建立專用 driveunix 帳號或 root)
+User=root
+# 設定工作目錄
+WorkingDirectory=/opt/drive_unix
+# 載入可選的環境變數檔案 (包含 UPSTASH_REDIS_REST_URL, UPSTASH_SYNC_PASSPHRASE 等)
+EnvironmentFile=-/etc/drive-unix/env
+Environment=PYTHONUNBUFFERED=1
+# 啟動命令：常駐巡檢，每 1800 秒 (30 分鐘) 巡檢一次，緩衝時間 60 分鐘
+ExecStart=/opt/drive_unix/.venv/bin/drive-unix upstash renew-tokens --interval 1800 --leeway 60
+
+Restart=always
+RestartSec=15
+
+# 安全防護設定 (可選)
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
