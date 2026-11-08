@@ -11,7 +11,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from playwright.sync_api import (
     Cookie,
@@ -263,7 +263,7 @@ def _try_reuse_persisted_session(
 ) -> Optional[List[Cookie]]:
     """Return cookies when the persisted profile is still signed in."""
     try:
-        cookies = context.cookies()
+        cookies: List[Cookie] = cast(List[Cookie], context.cookies())
     except Exception:
         return None
 
