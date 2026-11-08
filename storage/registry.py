@@ -160,6 +160,7 @@ def _build_sharepoint(
         from auth.providers.sharepoint_cookie import (
             DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
             SharePointCookieProvider,
+            get_identity_profile_dir,
         )
         from providers.sharepoint import SharePointStorage
     except ModuleNotFoundError as exc:
@@ -175,15 +176,16 @@ def _build_sharepoint(
         config_manager, remote.password_ref, env_name="SHAREPOINT_PASSWORD",
         remote_name=remote_name, label="SharePoint password",
     )
+    ident = get_canonical_auth_identity(remote_name, remote, config_manager)
+    ident_key = build_identity_cache_key(ident)
     base_provider = SharePointCookieProvider(
         base_url=remote.base_url,
         email=remote.email,
         password=password,
         headless=True,
+        profile_dir=get_identity_profile_dir(ident_key),
         metadata={"source_name": remote_name},
     )
-    ident = get_canonical_auth_identity(remote_name, remote, config_manager)
-    ident_key = build_identity_cache_key(ident)
     token_svc = _get_token_service(config_manager)
 
     cached = _cached_auth(
@@ -211,6 +213,7 @@ def _build_onedrive_business(
         from auth.providers.sharepoint_cookie import (
             DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
             SharePointCookieProvider,
+            get_identity_profile_dir,
         )
         from providers.onedrive_business import OneDriveBusinessStorage
     except ModuleNotFoundError as exc:
@@ -226,15 +229,16 @@ def _build_onedrive_business(
         config_manager, remote.password_ref, env_name="ONEDRIVE_BUSINESS_PASSWORD",
         remote_name=remote_name, label="OneDrive Business password",
     )
+    ident = get_canonical_auth_identity(remote_name, remote, config_manager)
+    ident_key = build_identity_cache_key(ident)
     base_provider = SharePointCookieProvider(
         base_url=remote.base_url,
         email=remote.email,
         password=password,
         headless=True,
+        profile_dir=get_identity_profile_dir(ident_key),
         metadata={"source_name": remote_name},
     )
-    ident = get_canonical_auth_identity(remote_name, remote, config_manager)
-    ident_key = build_identity_cache_key(ident)
     token_svc = _get_token_service(config_manager)
 
     cached = _cached_auth(

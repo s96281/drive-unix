@@ -35,6 +35,290 @@ DEFAULT_STAY_SIGNED_IN_TIMEOUT_MS = 5_000
 DEFAULT_AFTER_LOGIN_WAIT_SECONDS = 5
 DEFAULT_SHAREPOINT_EXPIRY_SECONDS = 1 * 24 * 3600  # 1 天 (86,400 秒)
 
+# Persistent browser profile (one directory per canonical auth identity).
+DEFAULT_BROWSER_PROFILE_ROOT = Path.home() / ".config" / "drive-unix" / "browser-profiles"
+DEFAULT_SESSION_PROBE_TIMEOUT_MS = 15_000
+
+_FALSY_ENV_VALUES = frozenset({"0", "false", "no", "off", "none", "disabled"})
+
+
+def resolve_browser_profile_root() -> Optional[Path]:
+    """Resolve the root directory holding per-identity browser profiles.
+
+    Environment variables:
+        DRIVE_UNIX_BROWSER_PROFILE_DIR:
+            Explicit root directory. A falsy value (0/false/off/no/none/disabled)
+            disables persistent profiles entirely.
+        DRIVE_UNIX_BROWSER_PROFILE_ENABLED:
+            Set to a falsy value to disable persistent profiles when
+            DRIVE_UNIX_BROWSER_PROFILE_DIR is not set.
+
+    Returns:
+        The profile root path, or None when persistent profiles are disabled.
+    """
+    raw = (os.getenv("DRIVE_UNIX_BROWSER_PROFILE_DIR") or "").strip()
+    if raw:
+        if raw.lower() in _FALSY_ENV_VALUES:
+            return None
+        return Path(raw).expanduser()
+
+    enabled = (os.getenv("DRIVE_UNIX_BROWSER_PROFILE_ENABLED") or "").strip().lower()
+    if enabled in _FALSY_ENV_VALUES:
+        return None
+
+    return DEFAULT_BROWSER_PROFILE_ROOT
+
+
+def get_identity_profile_dir(
+    identity_key: str,
+    *,
+    root: Optional[Path | str] = None,
+) -> Optional[Path]:
+    """Return the browser profile directory for a single canonical identity.
+
+    One identity == one profile directory. Never share a profile directory
+    between different identities: Microsoft login cookies (esctx/AADSSO/uaid)
+    are keyed by host+name only, so a shared profile lets one account overwrite
+    the single sign-on state of another.
+
+    Args:
+        identity_key:
+            Output of ``auth.identity.build_identity_cache_key``.
+        root:
+            Optional explicit profile root; defaults to
+            ``resolve_browser_profile_root()``.
+
+    Returns:
+        ``<root>/<identity_key>``, or None when profiles are disabled or the
+        identity key is empty.
+    """
+    key = (identity_key or "").strip()
+    if not key:
+        return None
+
+    resolved_root = Path(root).expanduser() if root is not None else resolve_browser_profile_root()
+    if resolved_root is None:
+        return None
+
+    return resolved_root / key
+
+
+def _prepare_profile_dir(profile_dir: Optional[Path | str]) -> Optional[Path]:
+    """Create the profile directory with owner-only permissions."""
+    if profile_dir is None:
+        return None
+
+    path = Path(profile_dir).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except OSError:
+        # Windows / restricted filesystems may not support chmod.
+        pass
+    return path
+
+
+def _browser_launch_error(
+    exc: Exception,
+    profile_dir: Optional[Path],
+) -> SharePointCookieAuthError:
+    hint = ""
+    if profile_dir is not None:
+        message = str(exc).lower()
+        if "singleton" in message or "already in use" in message or "user data directory" in message:
+            hint = (
+                f" (瀏覽器 profile 目錄可能正被其他行程使用: {profile_dir}。"
+                "同一 identity 的換發不可並行執行。)"
+            )
+    return SharePointBrowserLaunchError(f"Failed to launch Chromium browser: {exc}{hint}")
+
+
+def _is_profile_locked(exc: Exception) -> bool:
+    """Detect Chromium's user-data-dir process singleton lock error."""
+    message = str(exc).lower()
+    return (
+        "processsingleton" in message
+        or "singletonlock" in message
+        or "already in use" in message
+        or "user data directory" in message
+    )
+
+
+def _open_browser_context(
+    playwright: Any,
+    *,
+    profile_dir: Optional[Path],
+    headless: bool,
+    slow_mo: Optional[int],
+    auto_install_browser: bool,
+) -> tuple[Any, Any, bool]:
+    """Open a browser context, persistent when a profile directory is given.
+
+    Returns:
+        (browser, context, used_profile). ``browser`` is None for persistent
+        contexts because the context owns the browser process. ``used_profile``
+        is False when the persistent profile was locked by another process and
+        a temporary context was used instead.
+    """
+
+    def _launch() -> tuple[Any, Any, bool]:
+        if profile_dir is not None:
+            try:
+                context = playwright.chromium.launch_persistent_context(
+                    str(profile_dir),
+                    headless=headless,
+                    slow_mo=slow_mo,
+                )
+                return None, context, True
+            except Exception as exc:
+                if not _is_profile_locked(exc):
+                    raise
+                logger.warning(
+                    "瀏覽器 profile 正被其他行程使用，改用臨時 profile: %s",
+                    profile_dir,
+                )
+
+        browser = playwright.chromium.launch(headless=headless, slow_mo=slow_mo)
+        return browser, browser.new_context(), False
+
+    try:
+        return _launch()
+    except Exception as exc:
+        if auto_install_browser and "Executable doesn't exist" in str(exc):
+            subprocess.run(
+                ["playwright", "install", "chromium"],
+                check=True,
+            )
+            try:
+                return _launch()
+            except Exception as retry_exc:
+                raise _browser_launch_error(retry_exc, profile_dir) from retry_exc
+        raise _browser_launch_error(exc, profile_dir) from exc
+
+
+def _first_page(context: Any) -> Any:
+    """Return the existing page of a context, creating one when needed."""
+    try:
+        pages = list(context.pages)
+    except Exception:
+        pages = []
+    return pages[0] if pages else context.new_page()
+
+
+def _find_cookie_expiry(cookies: List[Cookie], name: str) -> Optional[float]:
+    """Return the absolute expiry timestamp of a cookie, or None for session cookies."""
+    for cookie in cookies:
+        if cookie.get("name") != name:
+            continue
+        try:
+            expires = float(cookie.get("expires", -1) or -1)
+        except (TypeError, ValueError):
+            return None
+        return expires if expires > 0 else None
+    return None
+
+
+def _probe_sharepoint_session(
+    context: Any,
+    sharepoint_base_url: str,
+    *,
+    timeout_ms: int = DEFAULT_SESSION_PROBE_TIMEOUT_MS,
+) -> bool:
+    """Check whether the cookies in ``context`` still authenticate against SharePoint.
+
+    Uses the SharePoint REST endpoint ``/_api/web/currentuser`` with the
+    context's cookie jar. A redirect back to the Microsoft login page or any
+    non-200 response is treated as an expired session.
+    """
+    base = (sharepoint_base_url or "").rstrip("/")
+    if not base:
+        return False
+
+    try:
+        response = context.request.get(
+            f"{base}/_api/web/currentuser",
+            headers={"Accept": "application/json;odata=nometadata"},
+            timeout=timeout_ms,
+            fail_on_status_code=False,
+        )
+    except Exception as exc:
+        logger.debug("探測既有 SharePoint session 失敗: %s", exc)
+        return False
+
+    if response.status != 200:
+        logger.debug("既有 SharePoint session 已失效 (HTTP %s)", response.status)
+        return False
+
+    final_url = (getattr(response, "url", "") or "").lower()
+    if "login.microsoftonline.com" in final_url or "login.live.com" in final_url:
+        logger.debug("既有 SharePoint session 被導向登入頁，視為失效")
+        return False
+
+    return True
+
+
+def _try_reuse_persisted_session(
+    context: Any,
+    sharepoint_base_url: str,
+) -> Optional[List[Cookie]]:
+    """Return cookies when the persisted profile is still signed in."""
+    try:
+        cookies = context.cookies()
+    except Exception:
+        return None
+
+    if not (_find_cookie_value(cookies, "rtFa") and _find_cookie_value(cookies, "FedAuth")):
+        return None
+
+    if not _probe_sharepoint_session(context, sharepoint_base_url):
+        return None
+
+    return cookies
+
+
+def _clear_auth_cookies(context: Any) -> int:
+    """Remove stale rtFa/FedAuth cookies before a fresh login.
+
+    A persisted profile may still carry an expired SharePoint session. If those
+    cookies are not removed, the browser keeps sending them and the newly issued
+    cookies can end up shadowed by the stale ones (host-only vs parent domain).
+
+    Returns:
+        Number of cookie entries that were removed.
+    """
+    try:
+        cookies = context.cookies()
+    except Exception:
+        return 0
+
+    removed = 0
+    for cookie in cookies:
+        name = cookie.get("name")
+        if name not in ("rtFa", "FedAuth"):
+            continue
+        try:
+            context.clear_cookies(
+                name=name,
+                domain=cookie.get("domain"),
+                path=cookie.get("path"),
+            )
+            removed += 1
+        except Exception:
+            logger.debug("無法清除過期的 %s cookie (domain=%s)", name, cookie.get("domain"))
+    return removed
+
+
+def _is_kmsi_prompt(page: Any) -> bool:
+    """Detect Microsoft's 'Stay signed in?' (KMSI) prompt."""
+    for selector in ('#kmsiTitle', 'input[id="idBtn_Back"]'):
+        try:
+            locator = page.locator(selector)
+            if locator.count() > 0 and locator.first.is_visible():
+                return True
+        except Exception:
+            continue
+    return False
+
 
 def _capture_failure_artifact(
     page: Any,
@@ -448,6 +732,8 @@ class SharePointCookieResult:
     FedAuth: str
     cookies: list[Cookie]
     created_at: float
+    cookie_expires_at: Optional[float] = None
+    profile_dir: Optional[str] = None
 
     def to_auth_context(
         self,
@@ -496,12 +782,27 @@ def get_cookie(
     after_login_wait_seconds: int = DEFAULT_AFTER_LOGIN_WAIT_SECONDS,
     auto_install_browser: bool = True,
     screenshot_dir: Optional[Path | str] = None,
+    profile_dir: Optional[Path | str] = None,
+    reuse_existing_session: bool = True,
+    force_login: bool = False,
 ) -> SharePointCookieResult:
     """
     Always login and fetch a fresh SharePoint cookie.
 
     This function does NOT read or write cache.
     Cache should be handled by auth.cache.CachedAuthProvider.
+
+    Args:
+        profile_dir:
+            Optional persistent browser profile directory. When provided,
+            Chromium runs with ``launch_persistent_context`` so cookies,
+            localStorage and IndexedDB survive across runs. Must be unique per
+            canonical auth identity.
+        reuse_existing_session:
+            When a persistent profile already holds a valid session, return its
+            cookies without running the login flow. Ignored without a profile.
+        force_login:
+            Skip session reuse and always run the full login flow.
 
     Returns:
         SharePointCookieResult containing:
@@ -521,33 +822,48 @@ def get_cookie(
     if not password:
         raise ValueError("password is required.")
 
+    profile_path = _prepare_profile_dir(profile_dir)
+
     with sync_playwright() as p:
         browser = None
+        context = None
 
         try:
-            try:
-                browser = p.chromium.launch(
-                    headless=headless,
-                    slow_mo=slow_mo,
-                )
-            except Exception as exc:
-                if auto_install_browser and "Executable doesn't exist" in str(exc):
-                    subprocess.run(
-                        ["playwright", "install", "chromium"],
-                        check=True,
-                    )
-                    browser = p.chromium.launch(
-                        headless=headless,
-                        slow_mo=slow_mo,
-                    )
-                else:
-                    raise SharePointBrowserLaunchError(
-                        f"Failed to launch Chromium browser: {exc}"
-                    ) from exc
+            browser, context, used_profile = _open_browser_context(
+                p,
+                profile_dir=profile_path,
+                headless=headless,
+                slow_mo=slow_mo,
+                auto_install_browser=auto_install_browser,
+            )
+            persist_session = profile_path is not None and used_profile
+            page = _first_page(context)
 
-            context = browser.new_context()
-            page = context.new_page()
+            if persist_session and reuse_existing_session and not force_login:
+                reused_cookies = _try_reuse_persisted_session(context, sharepoint_base_url)
+                if reused_cookies is not None:
+                    logger.info(
+                        "沿用已保存的瀏覽器登入狀態，跳過登入流程 (profile=%s)",
+                        profile_path,
+                    )
+                    return _build_cookie_result(
+                        reused_cookies,
+                        profile_dir=profile_path,
+                    )
+
+            if persist_session:
+                cleared = _clear_auth_cookies(context)
+                if cleared:
+                    logger.info("已清除 %d 個過期的 SharePoint 驗證 cookie，準備重新登入", cleared)
+
             recorder = SharePointLoginRecorder(base_dir=screenshot_dir)
+
+            # Cookies already in the jar before this login flow. A persisted profile
+            # may carry stale rtFa/FedAuth that must not be mistaken for success.
+            initial_cookie_values = {
+                name: _find_cookie_value(context.cookies(), name)
+                for name in ("rtFa", "FedAuth")
+            }
 
             try:
                 page.goto(
@@ -566,6 +882,22 @@ def get_cookie(
                     recorder=recorder,
                 )
                 if not email_ready:
+                    # The persistent profile may have signed in silently between
+                    # navigation and this check (e.g. KMSI + valid rtFa).
+                    if persist_session:
+                        reused_cookies = _try_reuse_persisted_session(
+                            context, sharepoint_base_url
+                        )
+                        if reused_cookies is not None:
+                            logger.info(
+                                "登入頁未出現，但既有 session 仍有效，直接沿用 (profile=%s)",
+                                profile_path,
+                            )
+                            recorder.cleanup_on_success()
+                            return _build_cookie_result(
+                                reused_cookies,
+                                profile_dir=profile_path,
+                            )
                     raise PlaywrightTimeoutError("等待微軟帳號輸入框 (loginfmt) 超時")
 
                 page.fill('input[type="email"]', email)
@@ -599,7 +931,14 @@ def get_cookie(
                         # 2. Check "Stay signed in?" prompt (No: idBtn_Back, Yes: idSIButton9)
                         btn_back = page.locator('input[id="idBtn_Back"]')
                         btn_yes = page.locator('input[id="idSIButton9"]')
-                        if btn_back.is_visible():
+                        if persist_session and _is_kmsi_prompt(page):
+                            # Keep the session on disk: choose "Yes" so Microsoft
+                            # issues a persistent rtFa instead of a session cookie.
+                            if btn_yes.is_visible():
+                                btn_yes.click()
+                            elif btn_back.is_visible():
+                                btn_back.click()
+                        elif btn_back.is_visible():
                             btn_back.click()
                         elif btn_yes.is_visible():
                             btn_yes.click()
@@ -607,7 +946,31 @@ def get_cookie(
                         pass
 
                     ck = context.cookies()
-                    return bool(_find_cookie_value(ck, "rtFa") and _find_cookie_value(ck, "FedAuth"))
+                    rtfa_value = _find_cookie_value(ck, "rtFa")
+                    fedauth_value = _find_cookie_value(ck, "FedAuth")
+                    if not rtfa_value or not fedauth_value:
+                        return False
+
+                    # A persisted profile may still hold stale rtFa/FedAuth cookies.
+                    # Only accept them once the browser has left the Microsoft login
+                    # page, i.e. SharePoint itself issued the session.
+                    try:
+                        current_url = (page.url or "").lower()
+                    except Exception:
+                        current_url = ""
+                    if "login.microsoftonline.com" in current_url or "login.live.com" in current_url:
+                        return False
+
+                    # Fresh cookies from this login are trusted directly. Cookies that
+                    # are identical to the pre-login snapshot must be verified against
+                    # SharePoint, otherwise a stale profile would look like a success.
+                    if (rtfa_value, fedauth_value) != (
+                        initial_cookie_values.get("rtFa"),
+                        initial_cookie_values.get("FedAuth"),
+                    ):
+                        return True
+
+                    return _probe_sharepoint_session(context, sharepoint_base_url)
 
                 wait_cookies_timeout_ms = max(
                     20_000,
@@ -685,19 +1048,51 @@ def get_cookie(
             # 登入成功：清除所有每秒錄製的暫存截圖
             recorder.cleanup_on_success()
 
-            cookie_header = f"rtFa={rtfa};FedAuth={fedauth}"
-
-            return SharePointCookieResult(
-                cookie_header=cookie_header,
-                rtFa=rtfa,
-                FedAuth=fedauth,
-                cookies=cookies,
-                created_at=time.time(),
+            return _build_cookie_result(
+                cookies,
+                profile_dir=profile_path if persist_session else None,
             )
 
         finally:
+            if context is not None:
+                try:
+                    context.close()
+                except Exception:
+                    pass
             if browser is not None:
-                browser.close()
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+
+
+def _build_cookie_result(
+    cookies: List[Cookie],
+    *,
+    profile_dir: Optional[Path] = None,
+) -> SharePointCookieResult:
+    """Build a SharePointCookieResult from a cookie jar."""
+    rtfa = _find_cookie_value(cookies, "rtFa")
+    fedauth = _find_cookie_value(cookies, "FedAuth")
+
+    if not rtfa or not fedauth:
+        found_cookie_names = sorted(
+            {str(cookie.get("name")) for cookie in cookies if cookie.get("name")}
+        )
+        raise SharePointCookieNotFoundError(
+            "Could not find required SharePoint cookies: rtFa and FedAuth. "
+            f"Found cookies: {found_cookie_names}."
+        )
+
+    return SharePointCookieResult(
+        cookie_header=f"rtFa={rtfa};FedAuth={fedauth}",
+        rtFa=rtfa,
+        FedAuth=fedauth,
+        cookies=cookies,
+        created_at=time.time(),
+        cookie_expires_at=_find_cookie_expiry(cookies, "rtFa"),
+        profile_dir=str(profile_dir) if profile_dir is not None else None,
+    )
 
 
 class SharePointCookieProvider(AuthProvider):
@@ -726,6 +1121,9 @@ class SharePointCookieProvider(AuthProvider):
         auto_install_browser: bool = True,
         expires_in_seconds: Optional[int] = DEFAULT_SHAREPOINT_EXPIRY_SECONDS,
         screenshot_dir: Optional[Path | str] = None,
+        profile_dir: Optional[Path | str] = None,
+        reuse_existing_session: bool = True,
+        force_login: bool = False,
         metadata: Optional[Dict[str, Any]] = None,
     ):
         """
@@ -755,6 +1153,17 @@ class SharePointCookieProvider(AuthProvider):
             screenshot_dir:
                 Optional directory to store failure screenshots.
 
+            profile_dir:
+                Optional persistent browser profile directory. One directory per
+                canonical auth identity; never share it between identities.
+
+            reuse_existing_session:
+                Reuse the persisted session instead of logging in again when it
+                is still valid. Requires ``profile_dir``.
+
+            force_login:
+                Always run the full login flow, ignoring the persisted session.
+
             metadata:
                 Additional non-sensitive metadata.
         """
@@ -780,6 +1189,9 @@ class SharePointCookieProvider(AuthProvider):
             expires_in_seconds if expires_in_seconds is not None else DEFAULT_SHAREPOINT_EXPIRY_SECONDS
         )
         self.screenshot_dir = screenshot_dir
+        self.profile_dir = Path(profile_dir).expanduser() if profile_dir else None
+        self.reuse_existing_session = reuse_existing_session
+        self.force_login = force_login
         self.metadata = dict(metadata or {})
 
     def get_auth_context(self) -> AuthContext:
@@ -790,6 +1202,21 @@ class SharePointCookieProvider(AuthProvider):
         wrap this provider with auth.cache.CachedAuthProvider.
         """
         return self.refresh()
+
+    def reset_profile(self) -> bool:
+        """Delete the persisted browser profile of this identity.
+
+        Returns True when a profile directory was removed. Call this after a
+        password change or when the stored session is known to be corrupt.
+        """
+        if self.profile_dir is None:
+            return False
+        if not self.profile_dir.exists():
+            return False
+
+        shutil.rmtree(self.profile_dir, ignore_errors=True)
+        logger.warning("已刪除瀏覽器 profile: %s", self.profile_dir)
+        return not self.profile_dir.exists()
 
     def refresh(self) -> AuthContext:
         """
@@ -806,11 +1233,17 @@ class SharePointCookieProvider(AuthProvider):
             after_login_wait_seconds=self.after_login_wait_seconds,
             auto_install_browser=self.auto_install_browser,
             screenshot_dir=self.screenshot_dir,
+            profile_dir=self.profile_dir,
+            reuse_existing_session=self.reuse_existing_session,
+            force_login=self.force_login,
         )
 
         expires_at = None
         if self.expires_in_seconds is not None:
             expires_at = result.created_at + self.expires_in_seconds
+            # Never advertise a lifetime longer than the real rtFa cookie.
+            if result.cookie_expires_at and result.cookie_expires_at > result.created_at:
+                expires_at = min(expires_at, result.cookie_expires_at)
 
         return result.to_auth_context(
             provider_name=self.provider_name,

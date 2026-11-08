@@ -441,6 +441,30 @@ sudo -u driveunix bash -c '
 sudo .venv/bin/playwright install-deps chromium
 ```
 
+#### 2.3.2.1 瀏覽器登入狀態保存（Persistent Browser Profile）
+
+SharePoint / OneDrive 商務版的換發流程預設會把登入狀態保存在磁碟上的瀏覽器 profile 中，
+讓「每天一次」的換發多數時候直接沿用既有 session，而不必重新輸入帳密。
+
+- **一個 canonical identity 一個目錄**，目錄名稱是 `auth.identity.build_identity_cache_key()`
+  產生的 64 字元 SHA-256。**不同帳號絕不可共用同一個 profile 目錄**：
+  `login.microsoftonline.com` 的 `esctx` / `AADSSO` / `uaid` / `MUID` cookie 只以
+  host + name 為鍵，共用會讓後登入的帳號覆蓋前一個帳號的 SSO 狀態。
+- 預設位置：`~/.config/drive-unix/browser-profiles/<identity_key>/`
+  （可用 `DRIVE_UNIX_BROWSER_PROFILE_DIR` 覆寫，或設為 `off` 停用）。
+- 目錄權限為 `0700`，內容等同憑證（含 `FedAuth` / `rtFa`），請納入備份與存取管制範圍。
+- 啟用後，Microsoft「Stay signed in?」提示會自動選擇 **Yes**，以取得具到期時間的
+  `rtFa`（session cookie 不會寫入磁碟，關閉後即失效）。
+- 若密碼變更、管理員撤銷 session 或 profile 損毀，直接刪除該 identity 的目錄即可，
+  下次換發會自動重新登入：
+
+```bash
+rm -rf ~/.config/drive-unix/browser-profiles/<identity_key>
+```
+
+- 同一 identity 的換發**不可並行**：Chromium 對 user-data-dir 有 process singleton 鎖，
+  第二個行程會啟動失敗。
+
 #### 2.3.3 Systemd 服務單元檔配置 (`deploy/systemd/drive-unix.service`)
 
 專案已內建完整的生產級 Systemd 單元定義檔：
