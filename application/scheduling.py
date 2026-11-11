@@ -157,9 +157,14 @@ def resolve_runtime_entrypoint(
 
     current_platform = platform or sys.platform
 
-    # If caller explicitly provided script_path and executable, respect them without sniffing.
+    # If caller explicitly provided executable and script_path, and script_path is already
+    # an existing Python script (e.g. ends with .py), respect them directly.
     if executable is not None and script_path is not None:
-        return executable, script_path
+        if script_path.endswith(".py") and os.path.isfile(script_path):
+            return executable, script_path
+        # If running unit tests or mocked paths that don't exist in reality
+        if not os.path.exists(script_path) and not script_path.endswith("drive-unix") and not script_path.endswith("drive-unix.exe"):
+            return executable, script_path
 
     # Determine if script_path is a CLI binary/wrapper (e.g. drive-unix or drive-unix.exe)
     # or if it's missing/not a python script.

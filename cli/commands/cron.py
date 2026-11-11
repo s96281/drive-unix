@@ -128,10 +128,7 @@ def _scheduler_renderer(level: str, message: str) -> None:
 
 
 def _run_scheduler_foreground(*, service_child: bool = False) -> None:
-    daemon = SchedulerDaemonManager(
-        executable=sys.executable,
-        script_path=os.path.abspath(sys.argv[0]),
-    )
+    daemon = SchedulerDaemonManager()
     if service_child:
         daemon.claim_current_process()
 
@@ -143,10 +140,7 @@ def _run_scheduler_foreground(*, service_child: bool = False) -> None:
         except (AttributeError, ValueError):
             pass
 
-    service = SchedulerService(
-        executable=sys.executable,
-        script_path=os.path.abspath(sys.argv[0]),
-    )
+    service = SchedulerService()
     try:
         service.run_forever(output=_scheduler_renderer)
     except KeyboardInterrupt:
