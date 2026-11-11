@@ -6,7 +6,7 @@ import os
 
 import typer
 
-from cli.commands import cron, environment, files, nodes, sync, transfer, upstash
+from cli.commands import cron, environment, files, nodes, setup_cmd, sync, transfer, upgrade, upstash
 from cli.presentation import configure_presentation
 
 
@@ -49,5 +49,7 @@ def create_app() -> typer.Typer:
     nodes.register(app)
     environment.register(app)
     cron.register(app)
+    upgrade.register(app)
+    setup_cmd.register(app)
 
     return app

@@ -29,16 +29,19 @@ class UpstashConfigResponse(BaseModel):
     sync_key: str = "drive-unix:sync:default"
     auto_sync_tokens: bool = True
     auto_push_tokens: bool = True
+    auto_pull_topology: bool = True
     renew_leeway_minutes: int = 30
 
 
 class UpstashConfigUpdateRequest(BaseModel):
     rest_url: str = Field(..., description="Upstash REST URL (例如 https://...upstash.io)")
     rest_token: str | None = Field(None, description="Upstash REST Token (留空則保留原設定)")
-    sync_key: str = Field("drive-unix:sync:default", description="同步金鑰識別名稱")
+    sync_key: str | None = Field(None, description="同步金鑰識別名稱")
+    user: str | None = Field(None, description="使用者名稱 (將自動格式化為 drive-unix:sync:<user>)")
     passphrase: str | None = Field(None, description="E2EE 主密碼 (留空則保留原設定)")
     auto_sync_tokens: bool | None = Field(None, description="過期時是否自動查詢獲取雲端憑證")
     auto_push_tokens: bool | None = Field(None, description="換發後是否自動推送雲端憑證")
+    auto_pull_topology: bool | None = Field(None, description="換發中心是否自動偵測雲端拓撲版本並熱重載新端點")
     renew_leeway_minutes: int | None = Field(None, description="巡檢換發緩衝分鐘數")
 
 
@@ -50,6 +53,7 @@ class UpstashRenewTokensRequest(BaseModel):
 class UpstashPushRequest(BaseModel):
     passphrase: str = Field(..., min_length=1, description="E2EE 加密主密碼")
     sync_key: str | None = None
+    user: str | None = None
     include_auth_cache: bool = False
     include_tasks: bool = True
 
@@ -57,6 +61,7 @@ class UpstashPushRequest(BaseModel):
 class UpstashPullRequest(BaseModel):
     passphrase: str = Field(..., min_length=1, description="E2EE 解密主密碼")
     sync_key: str | None = None
+    user: str | None = None
     strategy: str = Field("merge", description="合併策略: merge 或 replace")
     overwrite: bool = Field(False, description="同名節點是否直接覆蓋")
     dry_run: bool = Field(False, description="是否僅預覽差異而不寫入")
@@ -77,6 +82,7 @@ def get_upstash_config(
         sync_key=key,
         auto_sync_tokens=cfg.auto_sync_tokens if cfg else True,
         auto_push_tokens=cfg.auto_push_tokens if cfg else True,
+        auto_pull_topology=cfg.auto_pull_topology if cfg else True,
         renew_leeway_minutes=cfg.renew_leeway_minutes if cfg else 30,
     )
 
@@ -88,13 +94,17 @@ def update_upstash_config(
 ) -> UpstashConfigResponse:
     """更新 Upstash REST 連線設定 (Token 與 Passphrase 將安全加密寫入 SecretStore)。"""
     try:
+        raw_key = req.sync_key or req.user or "drive-unix:sync:default"
+        effective_key = UpstashSyncService.format_sync_key(raw_key)
+
         config_mgr.set_upstash_config(
             rest_url=req.rest_url.strip(),
             rest_token=req.rest_token.strip() if req.rest_token else None,
-            sync_key=req.sync_key.strip() or "drive-unix:sync:default",
+            sync_key=effective_key,
             passphrase=req.passphrase.strip() if req.passphrase else None,
             auto_sync_tokens=req.auto_sync_tokens,
             auto_push_tokens=req.auto_push_tokens,
+            auto_pull_topology=req.auto_pull_topology,
             renew_leeway_minutes=req.renew_leeway_minutes,
         )
     except Exception as exc:
@@ -135,15 +145,31 @@ def test_upstash_connection(
         ) from exc
 
 
+@router.get("/users", response_model=list[dict[str, Any]])
+def list_upstash_users(
+    config_mgr: ConfigManager = Depends(get_config_manager),
+) -> list[dict[str, Any]]:
+    """列出此 Redis 實例中所有使用者/群組的雲端同步封包清單。"""
+    service = UpstashSyncService(config_mgr)
+    try:
+        return service.list_users()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"無法列出 Redis 使用者清單: {exc}",
+        ) from exc
+
+
 @router.get("/status")
 def get_upstash_status(
     sync_key: str | None = Query(None, description="自訂同步金鑰"),
+    user: str | None = Query(None, description="指定使用者名稱 (將自動格式化為 drive-unix:sync:<user>)"),
     config_mgr: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """檢視 Upstash 雲端備份的中繼資料與節點數量。"""
     service = UpstashSyncService(config_mgr)
     try:
-        return service.fetch_status(sync_key=sync_key)
+        return service.fetch_status(sync_key=sync_key, user=user)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -162,6 +188,7 @@ def push_to_upstash(
         return service.push(
             req.passphrase,
             sync_key=req.sync_key,
+            user=req.user,
             include_auth_cache=req.include_auth_cache,
             include_tasks=req.include_tasks,
         )
@@ -183,6 +210,7 @@ def pull_from_upstash(
         res = service.pull(
             req.passphrase,
             sync_key=req.sync_key,
+            user=req.user,
             strategy=req.strategy,
             overwrite=req.overwrite,
             dry_run=req.dry_run,
@@ -205,12 +233,13 @@ def pull_from_upstash(
 @router.delete("")
 def delete_upstash_bundle(
     sync_key: str | None = Query(None, description="自訂同步金鑰"),
+    user: str | None = Query(None, description="指定使用者名稱"),
     config_mgr: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """從 Upstash 雲端清除備份資料。"""
     service = UpstashSyncService(config_mgr)
     try:
-        deleted = service.delete_bundle(sync_key=sync_key)
+        deleted = service.delete_bundle(sync_key=sync_key, user=user)
         return {"status": "ok", "deleted": deleted}
     except Exception as exc:
         raise HTTPException(
@@ -240,8 +269,8 @@ def list_upstash_tokens(
     results: list[dict[str, Any]] = []
     for ident, remotes in identity_to_remotes.items():
         ident_key = build_identity_cache_key(ident)
-        token_key = f"drive-unix:token:{ident_key}"
-        lock_key = f"drive-unix:lock:{ident_key}"
+        token_key = service._token_key(ident_key)
+        lock_key = service._lock_key(ident_key)
 
         cloud_meta: dict[str, Any] = {}
         locked_by: str | None = None
@@ -287,7 +316,7 @@ def delete_upstash_token(
     if not client:
         raise HTTPException(status_code=400, detail="未設定 Upstash 連線。")
 
-    token_key = f"drive-unix:token:{identity_key}"
+    token_key = service._token_key(identity_key)
     client.delete(token_key)
     return {"status": "ok", "deleted": token_key}
 
@@ -305,7 +334,7 @@ def release_upstash_lock(
     if not client:
         raise HTTPException(status_code=400, detail="未設定 Upstash 連線。")
 
-    lock_key = f"drive-unix:lock:{identity_key}"
+    lock_key = service._lock_key(identity_key)
     client.delete(lock_key)
     return {"status": "ok", "released": lock_key}
 

@@ -27,6 +27,14 @@ flowchart TB
     Token -->|100k iterations| Upstash
 ```
 
+### 7.1.1 多使用者隔離（Multi-User / Multi-Tenant）
+
+同一個 Upstash / Redis 資料庫可同時支援多個使用者隔離使用：
+- **設定 Bundle 鍵值**：`drive-unix:sync:<user>`（預設使用者為 `default`，即 `drive-unix:sync:default`；其他使用者如 `drive-unix:sync:user1`）。
+- **Token 鍵值**：`drive-unix:token:<user>:<identity>`（預設使用者保持向下相容之 `drive-unix:token:<identity>`）。
+- **分散式鎖鍵值**：`drive-unix:lock:<user>:<identity>`（預設使用者保持 `drive-unix:lock:<identity>`）。
+- **清單探索**：藉由 `UpstashClient.keys("drive-unix:sync:*")` 可列出 Redis 雲端現有的全部使用者與備份包中繼資料（`list_users`）。
+
 ## 7.2 設定 Bundle：push / pull
 
 `application/upstash_sync_service.py::UpstashSyncService`：

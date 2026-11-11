@@ -64,12 +64,101 @@ class UpstashSyncService:
         self._client = UpstashClient(url, token)
         return self._client
 
-    def get_sync_key(self, override_key: str | None = None) -> str:
-        """Resolve the effective sync key."""
-        if override_key and override_key.strip():
-            return override_key.strip()
+    @staticmethod
+    def format_sync_key(key_or_user: str | None) -> str:
+        """Convert a user name or raw sync key into canonical sync key format.
+
+        Examples:
+            'default' -> 'drive-unix:sync:default'
+            'user1' -> 'drive-unix:sync:user1'
+            'drive-unix:sync:user1' -> 'drive-unix:sync:user1'
+            'mycustom:prefix' -> 'mycustom:prefix'
+        """
+        if not key_or_user or not key_or_user.strip():
+            return "drive-unix:sync:default"
+        clean = key_or_user.strip()
+        if ":" not in clean:
+            return f"drive-unix:sync:{clean}"
+        return clean
+
+    @staticmethod
+    def extract_username(sync_key: str) -> str:
+        """Extract user identifier from sync key if it follows the pattern drive-unix:sync:<user>."""
+        if sync_key.startswith("drive-unix:sync:"):
+            return sync_key[len("drive-unix:sync:"):]
+        parts = sync_key.split(":")
+        return parts[-1] if len(parts) > 1 else sync_key
+
+    def get_sync_key(
+        self,
+        override_key: str | None = None,
+        sync_key: str | None = None,
+        user: str | None = None,
+    ) -> str:
+        """Resolve the effective sync key from override_key, sync_key, user, or config."""
+        if user and user.strip():
+            return f"drive-unix:sync:{user.strip()}"
+        key = sync_key if sync_key is not None else override_key
+        if key and key.strip():
+            return key.strip()
         _, _, default_key = self.config_manager.get_upstash_config()
         return default_key or "drive-unix:sync:default"
+
+    def list_users(self) -> list[dict[str, Any]]:
+        """Discover and list all user bundles stored in the shared Redis instance."""
+        client = self.get_client()
+        keys = set(client.keys("drive-unix:sync:*"))
+        if not keys:
+            all_keys = client.keys("*:sync:*")
+            keys = set(all_keys)
+
+        current_key = self.get_sync_key()
+        results: list[dict[str, Any]] = []
+
+        sorted_keys = sorted(keys)
+        raw_values = client.mget(sorted_keys) if sorted_keys else []
+
+        for k, raw in zip(sorted_keys, raw_values):
+            user = self.extract_username(k)
+            info: dict[str, Any] = {
+                "user": user,
+                "sync_key": k,
+                "is_current": (k == current_key),
+                "created_at": None,
+                "device_name": None,
+                "algorithm": None,
+                "remotes_count": 0,
+                "remote_names": [],
+                "size_bytes": len(raw.encode("utf-8")) if raw else 0,
+            }
+            if raw:
+                try:
+                    payload = json.loads(raw)
+                    metadata = payload.get("metadata", {})
+                    info["created_at"] = metadata.get("created_at")
+                    info["device_name"] = metadata.get("device_name")
+                    info["algorithm"] = metadata.get("algorithm", "AES-256-GCM")
+                    info["remotes_count"] = metadata.get("remotes_count", 0)
+                    info["remote_names"] = metadata.get("remote_names", [])
+                except Exception:
+                    pass
+            results.append(info)
+
+        # If current_key is not in results yet (e.g. not pushed yet), add placeholder
+        if not any(r["sync_key"] == current_key for r in results):
+            results.insert(0, {
+                "user": self.extract_username(current_key),
+                "sync_key": current_key,
+                "is_current": True,
+                "created_at": None,
+                "device_name": None,
+                "algorithm": None,
+                "remotes_count": len(self.config_manager.config.remotes),
+                "remote_names": sorted(self.config_manager.config.remotes.keys()),
+                "size_bytes": 0,
+            })
+
+        return results
 
     def collect_sync_bundle(
         self,
@@ -142,13 +231,14 @@ class UpstashSyncService:
         passphrase: str,
         *,
         sync_key: str | None = None,
+        user: str | None = None,
         include_auth_cache: bool = False,
         include_tasks: bool = True,
         iterations: int = 600_000,
     ) -> dict[str, Any]:
         """Encrypt local bundle and upload to Upstash."""
         client = self.get_client()
-        target_key = self.get_sync_key(sync_key)
+        target_key = self.get_sync_key(sync_key=sync_key, user=user)
 
         bundle = self.collect_sync_bundle(
             include_auth_cache=include_auth_cache,
@@ -175,6 +265,10 @@ class UpstashSyncService:
         payload_json = json.dumps(encrypted_payload, ensure_ascii=False)
         client.set(target_key, payload_json)
 
+        if self.config_manager.config.upstash:
+            self.config_manager.config.upstash.last_synced_topology_at = bundle["created_at"]
+        self.config_manager.save()
+
         return {
             "status": "ok",
             "sync_key": target_key,
@@ -184,10 +278,14 @@ class UpstashSyncService:
             "payload_size_bytes": len(payload_json.encode("utf-8")),
         }
 
-    def fetch_status(self, sync_key: str | None = None) -> dict[str, Any]:
+    def fetch_status(
+        self,
+        sync_key: str | None = None,
+        user: str | None = None,
+    ) -> dict[str, Any]:
         """Inspect remote sync bundle status from Upstash without decrypting secrets."""
         client = self.get_client()
-        target_key = self.get_sync_key(sync_key)
+        target_key = self.get_sync_key(sync_key=sync_key, user=user)
 
         raw = client.get(target_key)
         if raw is None:
@@ -224,6 +322,7 @@ class UpstashSyncService:
         passphrase: str,
         *,
         sync_key: str | None = None,
+        user: str | None = None,
         strategy: str = "merge",
         overwrite: bool = False,
         dry_run: bool = False,
@@ -233,7 +332,7 @@ class UpstashSyncService:
             raise ValueError(f"不支援的合併策略 '{strategy}'，可選: merge, replace")
 
         client = self.get_client()
-        target_key = self.get_sync_key(sync_key)
+        target_key = self.get_sync_key(sync_key=sync_key, user=user)
 
         raw = client.get(target_key)
         if raw is None:
@@ -352,6 +451,8 @@ class UpstashSyncService:
                 _chmod_best_effort(target_cache_file, 0o600)
                 cache_restored += 1
 
+        if self.config_manager.config.upstash:
+            self.config_manager.config.upstash.last_synced_topology_at = bundle.get("created_at")
         self.config_manager.save()
 
         return {
@@ -368,9 +469,13 @@ class UpstashSyncService:
             "device_name": bundle.get("device_name"),
         }
 
-    def delete_bundle(self, sync_key: str | None = None) -> bool:
+    def delete_bundle(
+        self,
+        sync_key: str | None = None,
+        user: str | None = None,
+    ) -> bool:
         """Delete sync bundle from Upstash."""
         client = self.get_client()
-        target_key = self.get_sync_key(sync_key)
+        target_key = self.get_sync_key(sync_key=sync_key, user=user)
         deleted = client.delete(target_key)
         return deleted > 0

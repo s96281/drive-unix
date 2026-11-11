@@ -39,11 +39,22 @@ class UpstashClient:
             raise ValueError("Upstash REST URL cannot be empty.")
         if not clean_url.startswith("https://") and not clean_url.startswith("http://"):
             raise ValueError(f"Upstash REST URL 必須以 https:// 開頭: {clean_url}")
-        if not rest_token.strip():
+        
+        token = rest_token.strip()
+        if not token:
             raise ValueError("Upstash REST Token cannot be empty.")
+        
+        # 驗證 Token 是否包含非法非 ASCII / 非 latin-1 字元
+        try:
+            token.encode("latin-1")
+        except UnicodeEncodeError as exc:
+            raise ValueError(
+                f"Upstash REST Token 包含無效字元（位置 {exc.start}-{exc.end}）："
+                "Token 只能包含 ASCII 英數字元。請檢查複製時是否夾帶了中文、全形空白，或誤將主密碼 (Passphrase) 輸入至 Token 欄位。"
+            ) from exc
 
         self.rest_url = clean_url
-        self.rest_token = rest_token.strip()
+        self.rest_token = token
         self.timeout = timeout
         self.session = session or requests.Session()
 
@@ -115,6 +126,22 @@ class UpstashClient:
         """Check if key exists in Upstash Redis."""
         res = self._execute(["EXISTS", key])
         return bool(res == 1 or res is True)
+
+    def keys(self, pattern: str = "*") -> list[str]:
+        """Query Redis KEYS command matching pattern."""
+        res = self._execute(["KEYS", pattern])
+        if isinstance(res, list):
+            return [str(k) for k in res]
+        return []
+
+    def mget(self, keys: list[str]) -> list[str | None]:
+        """Batch fetch multiple string values from Upstash Redis."""
+        if not keys:
+            return []
+        res = self._execute(["MGET", *keys])
+        if isinstance(res, list):
+            return [str(v) if v is not None else None for v in res]
+        return [None] * len(keys)
 
     def acquire_lock(self, lock_key: str, owner_id: str, ttl_seconds: int = 15) -> bool:
         """Acquire an atomic distributed lock via Redis SET NX EX.

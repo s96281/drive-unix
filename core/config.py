@@ -136,6 +136,8 @@ class UpstashSyncConfig(BaseModel):
     sync_key: str = "drive-unix:sync:default"
     auto_sync_tokens: bool = True
     auto_push_tokens: bool = True
+    auto_pull_topology: bool = True
+    last_synced_topology_at: str | None = None
     renew_leeway_minutes: int = 30
 
 class AppConfig(BaseModel):
@@ -174,6 +176,12 @@ class ConfigManager:
         self.config: AppConfig = self._load()
         if self._legacy_secrets_migrated:
             self.save()
+
+    def reload(self) -> AppConfig:
+        """Reload configuration from disk and re-validate if file exists."""
+        if self.config_path.exists():
+            self.config = self._load()
+        return self.config
 
     def _load(self) -> AppConfig:
         if not self.config_path.exists():
@@ -296,6 +304,7 @@ class ConfigManager:
         passphrase: str | None = None,
         auto_sync_tokens: bool | None = None,
         auto_push_tokens: bool | None = None,
+        auto_pull_topology: bool | None = None,
         renew_leeway_minutes: int | None = None,
     ) -> None:
         """Persist Upstash REST configuration and securely store the token/passphrase."""
@@ -314,6 +323,8 @@ class ConfigManager:
         cur = self.config.upstash
         effective_auto_sync = auto_sync_tokens if auto_sync_tokens is not None else (cur.auto_sync_tokens if cur else True)
         effective_auto_push = auto_push_tokens if auto_push_tokens is not None else (cur.auto_push_tokens if cur else True)
+        effective_auto_pull = auto_pull_topology if auto_pull_topology is not None else (cur.auto_pull_topology if cur else True)
+        last_synced = cur.last_synced_topology_at if cur else None
         effective_leeway = renew_leeway_minutes if renew_leeway_minutes is not None else (cur.renew_leeway_minutes if cur else 30)
 
         self.config.upstash = UpstashSyncConfig(
@@ -323,6 +334,8 @@ class ConfigManager:
             sync_key=sync_key,
             auto_sync_tokens=effective_auto_sync,
             auto_push_tokens=effective_auto_push,
+            auto_pull_topology=effective_auto_pull,
+            last_synced_topology_at=last_synced,
             renew_leeway_minutes=effective_leeway,
         )
         self.save()

@@ -29,6 +29,7 @@
 ### 核心優勢
 - **避免重複登入**：個人電腦或自動化腳本不再因 OAuth Token 或 SharePoint Cookie 過期中斷。
 - **防止 Token 輪轉失效**：微軟與 Google 的 Refresh Token 具有嚴格輪轉或單一有效性，VPS 透過 Upstash 分散式鎖 (`drive-unix:lock:<identity>`) 保證全網僅由單一節點換發。
+- **雲端拓撲自動感應與熱重載 (Hot-Reload)**：其他電腦新增端點並 push 至 Upstash 後，VPS 換發守護行程每輪巡檢前會自動偵測雲端拓撲版本更新，免重啟守護行程即可自動拉取解密、熱重載設定並立即納管換發。
 - **端對端加密 (E2EE)**：所有憑證在離機前均以 AES-256-GCM (搭配 PBKDF2 600,000 次雜湊衍生金鑰) 加密，Upstash 雲端無法讀取任何明文。
 - **Headless 支援**：整合 Playwright Chromium，即便 SharePoint 需要瀏覽器 Cookie 亦可在無 GUI 的 Linux VPS 背景無縫自動換發。
 

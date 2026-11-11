@@ -11,7 +11,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-if [ -f "${SCRIPT_DIR}/scripts/deploy.sh" ]; then
+if [ -f "${SCRIPT_DIR}/setup.sh" ]; then
+  exec "${SCRIPT_DIR}/setup.sh" --role vps "$@"
+elif [ -f "${SCRIPT_DIR}/scripts/deploy.sh" ]; then
   exec "${SCRIPT_DIR}/scripts/deploy.sh" setup-vps "$@"
 else
   echo "❌ 找不到核心腳本 ${SCRIPT_DIR}/scripts/deploy.sh" >&2

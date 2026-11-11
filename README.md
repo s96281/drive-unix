@@ -15,6 +15,31 @@
 
 對機制有興趣者請直接讀 **[docs/mechanisms/](docs/mechanisms/README.md)**，每章皆附 Mermaid 流程圖。
 
+## 🚀 一鍵全自動架設與初始化 (Unified Setup)
+
+`drive-unix` 提供跨平台單一腳本入口，自動完成系統套件、Python 3.12 工具鏈 (`uv`)、相依套件、Playwright Chromium 瀏覽器核心、Upstash E2EE 跨端同步以及 Systemd 常駐守護行程之從頭架設：
+
+```bash
+# Windows 個人電腦 / 工作站 (雙擊或在 CMD / PowerShell 執行)
+setup.bat            # 或 .\setup.ps1
+
+# Linux 雲端 VPS 伺服器 / macOS (具備執行權限)
+./setup.sh           # 或 sudo ./setup.sh
+
+# 任何已安裝環境隨時重新進入設定精靈
+drive-unix setup     # 或 python scripts/setup.py
+```
+
+精靈功能一覽：
+1. **角色客製化**：
+   - **個人電腦 (PC)**：Web 控制台預設監聽 `127.0.0.1:8000`，自動開啟瀏覽器，提供快速捷徑。
+   - **雲端伺服器 (VPS)**：Web 介面監聽 `0.0.0.0:8000`，支援 Nginx/Caddy 反向代理，自動配置並啟動 Systemd 守護行程 (`drive-unix.target`)。
+2. **Upstash E2EE 跨端同步整合**：
+   - 即時驗證 REST URL 與 REST Token 連線健康狀態 (`PING/PONG`)。
+   - 安全配置 AES-256-GCM 主密碼 (Passphrase)。
+   - **智慧同步偵測**：若雲端已存在既有備份，提示一鍵還原 (Pull) 節點與憑證至本機；若為初次設定且本機有節點，提示一鍵加密備份 (Push) 至 Upstash。
+3. **無痛維運**：完整相容既有 `./scripts/deploy.sh setup-vps` 與 `deploy/setup_vps.sh` 轉接。
+
 ## 快速開始
 
 ```bash
@@ -93,6 +118,22 @@ drive-unix upstash pull -p 'MySecretPassphrase'
 drive-unix upstash renew-tokens --interval 1800 --leeway 60
 ```
 
+### 軟體檢查與一鍵升級
+
+```bash
+# 檢查是否有新版本
+drive-unix upgrade --check
+
+# 一鍵升級至最新版本（自動備份組態快照）
+drive-unix upgrade
+
+# 模擬升級預檢
+drive-unix upgrade --dry-run
+
+# 升級完成後發送訊號自動重新載入背景服務
+drive-unix upgrade --restart
+```
+
 ## 主要功能
 
 - **多 Provider**：Local、FTP/FTPS、SFTP、WebDAV、SharePoint、OneDrive、OneDrive Business、Google Drive、Google Photos、PikPak（AList 類型保留、尚未實作）。
@@ -103,6 +144,7 @@ drive-unix upstash renew-tokens --interval 1800 --leeway 60
 - **排程**：內建 5 欄 Cron、missed-run 補執行、OS 級背景 service（systemd／launchd／Task Scheduler）、missed-run 上限 7 天。
 - **Upstash 多端同步**：設定 Bundle E2EE 同步（`merge`／`replace`）、per-identity Token 細粒度同步、分散式鎖避免多機換發競態、VPS 換發中心。
 - **Web 介面**：FastAPI + SPA，含目錄瀏覽、連線池、兩級目錄快取、傳輸／同步背景任務、SSE 即時進度、遠端管理、排程與 Upstash 管理。
+- **軟體平滑升級**：支援 CLI 指令 (`drive-unix upgrade`) 與網頁端即時終端日誌流 (SSE)，支援 Git／Pip 安裝模式自動拉取編譯、升級前自動備份環境組態與背景服務重載訊號。
 - **自動化**：`--json`、`--plain`／`NO_COLOR`、exit code 語意、受控確認（實際 sync 的 `--json` 須搭配 `--yes`）。
 
 ### Web 介面

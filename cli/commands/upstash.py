@@ -8,6 +8,8 @@ import time
 from typing import Any
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from application.upstash_sync_service import UpstashSyncService
 from cli.context import CLIContext
@@ -52,10 +54,12 @@ def upstash_config(
     token: str | None = typer.Option(None, "--token", help="Upstash REST Token"),
     token_env: str | None = typer.Option(None, "--token-env", help="從指定環境變數讀取 REST Token"),
     sync_key: str | None = typer.Option(None, "--sync-key", help="自訂同步金鑰 (預設: drive-unix:sync:default)"),
+    user: str | None = typer.Option(None, "--user", "-u", help="使用者名稱 (例如 user1，將自動對應 drive-unix:sync:user1)"),
     passphrase: str | None = typer.Option(None, "--passphrase", "-p", help="預先設定 E2EE 主密碼 (加密儲存於 SecretStore)"),
     passphrase_env: str | None = typer.Option(None, "--passphrase-env", help="從指定環境變數讀取主密碼"),
     auto_sync_tokens: bool | None = typer.Option(None, "--auto-sync-tokens/--no-auto-sync-tokens", help="過期時是否自動由 Upstash 查詢獲取其他機器換發的憑證"),
     auto_push_tokens: bool | None = typer.Option(None, "--auto-push-tokens/--no-auto-push-tokens", help="換發憑證後是否自動加密推送至 Upstash"),
+    auto_pull_topology: bool | None = typer.Option(None, "--auto-pull-topology/--no-auto-pull-topology", help="換發中心是否自動偵測雲端拓撲版本並熱重載新端點"),
     renew_leeway: int | None = typer.Option(None, "--renew-leeway", help="巡檢換發緩衝分鐘數 (預設: 30)"),
 ) -> None:
     """設定 Upstash 雲端連線參數與金鑰 (Token 將加密存入 SecretStore)。"""
@@ -82,8 +86,13 @@ def upstash_config(
     else:
         resolved_token = typer.prompt("Upstash REST Token", hide_input=True, default="")
 
-    effective_key = sync_key or cur_key or "drive-unix:sync:default"
-    if not sync_key and not cur_key:
+    if user:
+        effective_key = f"drive-unix:sync:{user.strip()}"
+    elif sync_key:
+        effective_key = sync_key.strip()
+    elif cur_key:
+        effective_key = cur_key
+    else:
         effective_key = typer.prompt("同步金鑰 (Sync Key)", default="drive-unix:sync:default")
 
     resolved_pass: str | None = None
@@ -102,6 +111,7 @@ def upstash_config(
             passphrase=resolved_pass,
             auto_sync_tokens=auto_sync_tokens,
             auto_push_tokens=auto_push_tokens,
+            auto_pull_topology=auto_pull_topology,
             renew_leeway_minutes=renew_leeway,
         )
         secho("✅ Upstash 同步設定已更新！(Token 與 Passphrase 已安全加密保存於 SecretStore)", fg=typer.colors.GREEN)
@@ -171,6 +181,7 @@ def upstash_test(
 
 def upstash_status(
     sync_key: str | None = typer.Option(None, "--sync-key", help="自訂同步金鑰"),
+    user: str | None = typer.Option(None, "--user", "-u", help="使用者名稱 (自動對應 drive-unix:sync:<user>)"),
     json_output: bool = typer.Option(False, "--json", help="以 JSON 格式輸出狀態"),
 ) -> None:
     """檢視 Upstash 雲端同步中繼資料與本機節點比對。"""
@@ -178,7 +189,7 @@ def upstash_status(
     service = UpstashSyncService(ctx.config)
 
     try:
-        info = service.fetch_status(sync_key=sync_key)
+        info = service.fetch_status(sync_key=sync_key, user=user)
         if json_output:
             echo(json.dumps(info, ensure_ascii=False))
             return
@@ -211,6 +222,7 @@ def upstash_push(
     passphrase: str | None = typer.Option(None, "--passphrase", "-p", help="E2EE 加密主密碼"),
     passphrase_env: str | None = typer.Option(None, "--passphrase-env", help="從環境變數讀取主密碼"),
     sync_key: str | None = typer.Option(None, "--sync-key", help="自訂同步金鑰"),
+    user: str | None = typer.Option(None, "--user", "-u", help="使用者名稱 (自動對應 drive-unix:sync:<user>)"),
     include_auth_cache: bool = typer.Option(False, "--include-auth-cache", help="同時備份登入 Session/Token 快取 (包含敏感 Token)"),
     include_tasks: bool = typer.Option(True, "--include-tasks/--no-tasks", help="同時備份排程任務"),
     yes: bool = typer.Option(False, "--yes", "-y", help="跳過上傳確認提示"),
@@ -226,8 +238,9 @@ def upstash_push(
         if not typer.confirm("仍要繼續上傳空白節點設定嗎？"):
             raise typer.Abort()
 
+    target_key = service.get_sync_key(sync_key=sync_key, user=user)
     if not yes and not json_output:
-        echo(f"即將備份 {remotes_count} 個遠端節點與相關機密認證資訊至 Upstash。")
+        echo(f"即將備份 {remotes_count} 個遠端節點至 Upstash (目標金鑰: {target_key})。")
         if not typer.confirm("確定要繼續嗎？"):
             raise typer.Abort()
 
@@ -242,6 +255,7 @@ def upstash_push(
         res = service.push(
             pw,
             sync_key=sync_key,
+            user=user,
             include_auth_cache=include_auth_cache,
             include_tasks=include_tasks,
         )
@@ -278,6 +292,7 @@ def upstash_pull(
     passphrase: str | None = typer.Option(None, "--passphrase", "-p", help="E2EE 解密主密碼"),
     passphrase_env: str | None = typer.Option(None, "--passphrase-env", help="從環境變數讀取主密碼"),
     sync_key: str | None = typer.Option(None, "--sync-key", help="自訂同步金鑰"),
+    user: str | None = typer.Option(None, "--user", "-u", help="使用者名稱 (自動對應 drive-unix:sync:<user>)"),
     strategy: str = typer.Option("merge", "--strategy", help="合併策略: merge (合併新節點) 或 replace (完全取代本機節點)"),
     overwrite: bool = typer.Option(False, "--overwrite", help="當節點名稱重複時，強制以雲端版本覆蓋"),
     dry_run: bool = typer.Option(False, "--dry-run", help="僅預覽差異，不修改本機設定與密碼"),
@@ -292,7 +307,7 @@ def upstash_pull(
         pw = _resolve_passphrase(passphrase, passphrase_env, prompt_text="請輸入 E2EE 解密主密碼")
 
         if dry_run:
-            res = service.pull(pw, sync_key=sync_key, strategy=strategy, overwrite=overwrite, dry_run=True)
+            res = service.pull(pw, sync_key=sync_key, user=user, strategy=strategy, overwrite=overwrite, dry_run=True)
             if json_output:
                 echo(json.dumps(res, ensure_ascii=False))
                 return
@@ -313,7 +328,7 @@ def upstash_pull(
             if not typer.confirm("確定要繼續嗎？"):
                 raise typer.Abort()
 
-        res = service.pull(pw, sync_key=sync_key, strategy=strategy, overwrite=overwrite, dry_run=False)
+        res = service.pull(pw, sync_key=sync_key, user=user, strategy=strategy, overwrite=overwrite, dry_run=False)
 
         if json_output:
             echo(json.dumps(res, ensure_ascii=False))
@@ -360,12 +375,13 @@ def upstash_pull(
 
 def upstash_delete(
     sync_key: str | None = typer.Option(None, "--sync-key", help="自訂同步金鑰"),
+    user: str | None = typer.Option(None, "--user", "-u", help="使用者名稱 (自動對應 drive-unix:sync:<user>)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="跳過確認提示"),
 ) -> None:
     """從 Upstash 雲端永久清除同步封包。"""
     ctx = CLIContext.create()
     service = UpstashSyncService(ctx.config)
-    target_key = service.get_sync_key(sync_key)
+    target_key = service.get_sync_key(sync_key=sync_key, user=user)
 
     if not yes:
         secho(f"⚠️  警告：即將永久刪除 Upstash 上的同步資料 (Key: {target_key})！", fg=typer.colors.YELLOW)
@@ -373,7 +389,7 @@ def upstash_delete(
             raise typer.Abort()
 
     try:
-        deleted = service.delete_bundle(sync_key=target_key)
+        deleted = service.delete_bundle(sync_key=sync_key, user=user)
         if deleted:
             secho(f"✅ 已成功自 Upstash 刪除金鑰 '{target_key}' 之資料。", fg=typer.colors.GREEN)
         else:
@@ -389,11 +405,15 @@ def upstash_renew_tokens(
     interval: int | None = typer.Option(None, "--interval", "-i", help="常駐背景巡檢間隔秒數 (若未指定則僅執行單次巡檢)"),
     passphrase: str | None = typer.Option(None, "--passphrase", "-p", help="E2EE 主密碼 (若未預先設定至 SecretStore，可由此指定)"),
     passphrase_env: str | None = typer.Option(None, "--passphrase-env", help="從指定環境變數讀取主密碼"),
-    json_output: bool = typer.Option(False, "--json", help="以 JSON 格式輸出換發結果"),
+    auto_pull: bool | None = typer.Option(None, "--auto-pull/--no-auto-pull", help="巡檢前是否自動檢查雲端拓撲版本並熱重載新端點 (預設啟用)"),
+    json_output: bool = typer.Option(False, "--json", help="以 JSON格式輸出換發結果"),
 ) -> None:
     """[憑證換發中心] 定時或單次巡檢本機節點憑證，即將過期自動換發並回寫 Upstash。"""
     ctx = CLIContext.create()
     from application.upstash_token_service import UpstashTokenService
+
+    if auto_pull is not None and ctx.config.config.upstash:
+        ctx.config.config.upstash.auto_pull_topology = auto_pull
 
     resolved_pass: str | None = None
     if passphrase_env:
@@ -411,7 +431,24 @@ def upstash_renew_tokens(
 
     def _cli_progress(data: dict[str, Any]) -> None:
         evt = data.get("event")
-        if evt == "start":
+        if evt == "topology_sync_start":
+            cloud_at = data.get("cloud_created_at")
+            dev_name = data.get("device_name")
+            secho(f"🔄 偵測到雲端拓撲更新 (雲端時間: {cloud_at}, 來源設備: {dev_name})，正在自動拉取合併並熱重載...", fg=typer.colors.CYAN)
+
+        elif evt == "topology_sync_done":
+            new_r = data.get("restored_remotes", [])
+            tot = data.get("total_local_remotes", 0)
+            if new_r:
+                secho(f"   🎉 成功熱重載並載入新端點: {', '.join(new_r)} (目前共 {tot} 個端點)", fg=typer.colors.GREEN)
+            else:
+                secho(f"   ✅ 雲端拓撲已同步更新 (目前共 {tot} 個端點)", fg=typer.colors.GREEN)
+
+        elif evt == "topology_sync_error":
+            err = data.get("error")
+            secho(f"   ⚠️  自動同步雲端拓撲失敗 (非致命): {err}", fg=typer.colors.YELLOW)
+
+        elif evt == "start":
             total = data["total_remotes"]
             uc = data["unique_count"]
             cloud_on = data["cloud_enabled"]
@@ -487,6 +524,10 @@ def upstash_renew_tokens(
                     echo(json.dumps(res, ensure_ascii=False))
                 else:
                     ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                    top_synced = res.get("topology_synced", False)
+                    top_new = res.get("topology_new_remotes", [])
+                    if top_synced and top_new:
+                        secho(f"[{ts}] 🔄 偵測到雲端拓撲更新！已熱重載新端點: {', '.join(top_new)}", fg=typer.colors.CYAN)
                     renewed = res.get("renewed_remotes", [])
                     pushed = res.get("pushed_remotes", [])
                     picked = res.get("picked_remotes", [])
@@ -517,6 +558,12 @@ def upstash_renew_tokens(
 
         echo("\n" + "=" * 55)
         echo("🛡️  憑證換發中心巡檢結果摘要:")
+        if res.get("topology_synced"):
+            new_r = res.get("topology_new_remotes", [])
+            if new_r:
+                secho(f"   雲端拓撲熱重載:   已同步新增端點: {', '.join(new_r)}", fg=typer.colors.CYAN)
+            else:
+                secho("   雲端拓撲熱重載:   已同步雲端最新版本", fg=typer.colors.CYAN)
         echo(f"   獨立帳號識別數:   {res.get('unique_identities_count', 0)}")
         renewed = res.get("renewed_remotes", [])
         skipped = res.get("skipped_remotes", [])
@@ -573,6 +620,49 @@ def upstash_renew_tokens(
                 os.environ["UPSTASH_SYNC_PASSPHRASE"] = orig_env_pass
 
 
+def upstash_list_users(
+    json_output: bool = typer.Option(False, "--json", help="以 JSON 格式輸出清單"),
+) -> None:
+    """列出此 Upstash Redis 實例中所有使用者/金鑰的雲端同步封包清單。"""
+    ctx = CLIContext.create()
+    service = UpstashSyncService(ctx.config)
+
+    try:
+        users = service.list_users()
+        if json_output:
+            echo(json.dumps(users, ensure_ascii=False, indent=2))
+            return
+
+        console = Console()
+        table = Table(title="☁️  Upstash Redis 雲端多使用者同步清單", box=None)
+        table.add_column("使用者 (User)", style="bold cyan")
+        table.add_column("同步金鑰 (Sync Key)", style="white")
+        table.add_column("節點數", justify="right")
+        table.add_column("最後同步時間", style="dim")
+        table.add_column("來源設備", style="dim")
+        table.add_column("當前使用中", justify="center")
+
+        for u in users:
+            curr = "✅ [bold green]YES[/]" if u["is_current"] else ""
+            table.add_row(
+                u["user"],
+                u["sync_key"],
+                str(u["remotes_count"]),
+                u["created_at"] or "尚未同步",
+                u["device_name"] or "-",
+                curr,
+            )
+
+        console.print(table)
+        echo(f"\n共發現 {len(users)} 個使用者設定。可使用 `drive-unix upstash pull --user <名稱>` 直接拉取。")
+    except Exception as exc:
+        if json_output:
+            echo(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+        else:
+            render_error("列出 Redis 使用者清單失敗。", cause=exc, next_steps=("確認網路與 Token 連線設定正常。",))
+        raise typer.Exit(code=1) from exc
+
+
 def register_upstash(app: typer.Typer) -> None:
     """Register upstash command handlers."""
     app.command("config")(upstash_config)
@@ -582,3 +672,6 @@ def register_upstash(app: typer.Typer) -> None:
     app.command("pull")(upstash_pull)
     app.command("delete")(upstash_delete)
     app.command("renew-tokens")(upstash_renew_tokens)
+    app.command("list-users", help="列出 Redis 實例中所有使用者/金鑰的同步封包")(upstash_list_users)
+    app.command("users", help="列出使用者 (list-users 別名)", hidden=True)(upstash_list_users)
+    app.command("bundles", help="列出封包 (list-users 別名)", hidden=True)(upstash_list_users)

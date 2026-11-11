@@ -22,6 +22,9 @@ def test_upstash_client_init_validation():
     with pytest.raises(ValueError, match="Token cannot be empty"):
         UpstashClient("https://upstash.io", "   ")
 
+    with pytest.raises(ValueError, match="包含無效字元"):
+        UpstashClient("https://upstash.io", "token_with_中文_and_全形　空白")
+
 
 @patch("requests.Session.post")
 def test_upstash_client_ping_success(mock_post):

@@ -65,16 +65,29 @@ NO_COLOR=1 drive-unix <指令>         # 只關色彩
 | `env export` | `<backup.zip>` | `--include-secrets --include-auth-cache`（預設不含）|
 | `env import` | `<backup.zip>` | `--force/-f` 跳過覆寫確認 |
 
-## 6.7 Upstash E2EE
+## 6.7 Upstash E2EE 與多使用者
 
 | 指令 | 參數 | 說明 |
 |---|---|---|
-| `upstash config` | `--url --token --token-env --sync-key --passphrase/-p --passphrase-env` | 互動式或參數式設定 |
+| `upstash config` | `--url --token --token-env --user/-u --sync-key --passphrase/-p --passphrase-env` | 互動式或參數式設定（支援 `--user` 隔離） |
 | `upstash test` | `--json` | 連線測試（ping / latency） |
-| `upstash status` | `--sync-key --json` | 云端 bundle 與本機對比 |
-| `upstash push` | `--passphrase/-p --passphrase-env --sync-key --include-auth-cache --include-tasks --yes --json` | 上傳加密 bundle |
-| `upstash pull` | `--passphrase/-p --passphrase-env --strategy merge --dry-run --yes --json` | `merge` / `replace` |
-| `upstash delete` | `--yes` | 永久刪除云端 bundle |
+| `upstash status` | `--user/-u --sync-key --json` | 雲端 bundle 與本機對比 |
+| `upstash push` | `--user/-u --passphrase/-p --passphrase-env --sync-key --include-auth-cache --include-tasks --yes --json` | 上傳加密 bundle 到指定使用者命名空間 |
+| `upstash pull` | `--user/-u --passphrase/-p --passphrase-env --strategy merge --dry-run --yes --json` | 從指定使用者命名空間下載 bundle（`merge` / `replace`） |
+| `upstash delete` | `--user/-u --yes` | 永久刪除雲端指定使用者之 bundle |
+| `upstash list-users` | `--json` | 列出 Redis 雲端上所有使用者與備份狀態 |
 | `upstash renew-tokens` | `--interval --leeway 30 --remote --passphrase/-p` | 單次或常駐換發（VPS 中心用） |
+
+## 6.8 系統升級與維護
+
+| 指令 | 參數 | 說明 |
+|---|---|---|
+| `upgrade`（別名 `update`） | `--check` | 檢查是否有新版本可供升級 |
+| `upgrade` | `--dry-run` | 模擬升級程序不更動本機環境 |
+| `upgrade` | `--version <tag>` | 指定安裝特定版本或標籤 |
+| `upgrade` | `--channel stable/beta/nightly` | 指定版本發布頻道（預設 stable） |
+| `upgrade` | `--no-backup` | 升級前略過建立安全備份包 |
+| `upgrade` | `--no-restart` | 升級成功後略過自動重啟背景服務與程序 |
+| `upgrade` | `--force/-f` | 強制執行升級（無視目前版本相同） |
 
 舊版別名（`add-sp`、`add-odb`、`add-gdrive`、`list-nodes`、`cron-add`、`export-env` 等）仍可使用，但不會出現在 root help；新實作請用上表正式指令。

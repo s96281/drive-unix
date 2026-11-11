@@ -21,6 +21,8 @@ from web.routers.schedule import router as schedule_router
 from web.routers.settings import router as settings_router
 from web.routers.sync import router as sync_router
 from web.routers.upstash import router as upstash_router
+from web.routers.upgrade import router as upgrade_router
+from core.version import get_version
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -78,11 +80,12 @@ def create_app() -> FastAPI:
     app.include_router(schedule_router)
     app.include_router(settings_router)
     app.include_router(upstash_router)
+    app.include_router(upgrade_router)
 
     # Health check endpoint
     @app.get("/api/health")
     def health_check():
-        return {"status": "ok", "app": "drive-unix", "version": "0.1.0"}
+        return {"status": "ok", "app": "drive-unix", "version": get_version()}
 
     # Mount static assets if static folder exists
     if STATIC_DIR.is_dir():

@@ -211,6 +211,18 @@ export interface UpstashTokenItem {
   locked_by?: string | null;
 }
 
+export interface UpstashUserItem {
+  user: string;
+  sync_key: string;
+  is_current: boolean;
+  created_at: string | null;
+  device_name: string | null;
+  algorithm: string | null;
+  remotes_count: number;
+  remote_names: string[];
+  size_bytes: number;
+}
+
 export interface ActivityEvent {
   id: string;
   type: 'task.update' | 'task.log' | 'log' | 'system' | 'heartbeat' | 'hello' | 'resync';
@@ -269,6 +281,30 @@ export interface IndexConfig {
   ignore_paths: string[];
   max_depth: number;
   last_updated_at?: number;
+}
+
+export interface UpgradeStatusResponse {
+  current_version: string;
+  git_commit: string | null;
+  latest_version: string;
+  has_update: boolean;
+  release_date: string | null;
+  release_notes: string | null;
+  release_url: string | null;
+  install_mode: 'git' | 'pip' | 'docker' | string;
+  last_checked_at: number | null;
+  is_upgrading: boolean;
+  logs?: string[];
+  current_step?: string;
+  percent?: number;
+}
+
+export interface UpgradeExecutePayload {
+  target_version?: string | null;
+  channel?: 'stable' | 'main' | string;
+  backup_config?: boolean;
+  force?: boolean;
+  restart_after?: boolean;
 }
 
 

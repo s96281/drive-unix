@@ -495,8 +495,37 @@ class MockRouter {
     }
 
     if (routePath === '/upstash/config' && method === 'POST') {
-      this.db.upstashConfig = { ...this.db.upstashConfig, ...body };
+      const syncKey = body?.sync_key || (body?.user ? `drive-unix:sync:${body.user}` : this.db.upstashConfig.sync_key);
+      this.db.upstashConfig = { ...this.db.upstashConfig, ...body, sync_key: syncKey };
       return this.db.upstashConfig as T;
+    }
+
+    if (routePath === '/upstash/users' && method === 'GET') {
+      const curKey = this.db.upstashConfig.sync_key;
+      return [
+        {
+          user: 'default',
+          sync_key: 'drive-unix:sync:default',
+          is_current: curKey === 'drive-unix:sync:default',
+          created_at: '2026-11-08T12:00:00Z',
+          device_name: 'prod-vps-01',
+          algorithm: 'AES-256-GCM',
+          remotes_count: 5,
+          remote_names: ['gdrive', 'onedrive', 'sharepoint', 'pikpak', 'local'],
+          size_bytes: 4096,
+        },
+        {
+          user: 'user1',
+          sync_key: 'drive-unix:sync:user1',
+          is_current: curKey === 'drive-unix:sync:user1',
+          created_at: '2026-11-11T14:20:00Z',
+          device_name: 'laptop-work',
+          algorithm: 'AES-256-GCM',
+          remotes_count: 2,
+          remote_names: ['gdrive', 'local'],
+          size_bytes: 2048,
+        },
+      ] as T;
     }
 
     if (routePath === '/upstash/tokens' && method === 'GET') {
@@ -540,6 +569,48 @@ class MockRouter {
         cloud_synced: ['sharepoint'],
         errors: {},
       } as T;
+    }
+
+    // --- Upgrade Mock Endpoints ---
+    if (routePath === '/upgrade/status' && method === 'GET') {
+      return {
+        current_version: '0.1.0',
+        git_commit: 'a73a469',
+        latest_version: '0.2.0',
+        has_update: true,
+        release_date: '2026-11-10T14:30:00Z',
+        release_notes: '### drive-unix v0.2.0 更新摘要\n\n- ✨ 新增 CLI 升級指令 (`drive-unix upgrade`)\n- 🌐 新增網頁端即時終端升級介面與日誌串流 (SSE)\n- 🛡️ 升級前自動建立系統設定安全快照\n- 🔄 支援遠端背景服務重新載入訊號\n- ⚡ 強化傳輸佇列併發處理能力',
+        release_url: 'https://github.com/s96281/drive-unix/releases/tag/v0.2.0',
+        install_mode: 'git',
+        last_checked_at: Math.floor(Date.now() / 1000),
+        is_upgrading: false,
+        logs: ['[系統準備] 待命中'],
+        current_step: 'idle',
+        percent: 0,
+      } as T;
+    }
+
+    if (routePath === '/upgrade/check' && method === 'POST') {
+      return {
+        current_version: '0.1.0',
+        git_commit: 'a73a469',
+        latest_version: '0.2.0',
+        has_update: true,
+        release_date: '2026-11-10T14:30:00Z',
+        release_notes: '### drive-unix v0.2.0 更新摘要\n\n- ✨ 新增 CLI 升級指令 (`drive-unix upgrade`)\n- 🌐 新增網頁端即時終端升級介面與日誌串流 (SSE)\n- 🛡️ 升級前自動建立系統設定安全快照\n- 🔄 支援遠端背景服務重新載入訊號\n- ⚡ 強化傳輸佇列併發處理能力',
+        release_url: 'https://github.com/s96281/drive-unix/releases/tag/v0.2.0',
+        install_mode: 'git',
+        last_checked_at: Math.floor(Date.now() / 1000),
+        is_upgrading: false,
+      } as T;
+    }
+
+    if (routePath === '/upgrade/execute' && method === 'POST') {
+      return { status: 'started', message: '升級程序已在背景啟動', target_version: body?.target_version } as T;
+    }
+
+    if (routePath === '/upgrade/restart' && method === 'POST') {
+      return { status: 'restarting', message: '已成功發送重新載入訊號，服務將於數秒後重啟。' } as T;
     }
 
     throw new ApiError(404, `Mock 端點未找到: ${method} ${routePath}`);

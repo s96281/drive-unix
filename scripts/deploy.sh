@@ -491,8 +491,15 @@ do_logs() {
   esac
 }
 
-# [Subcommand: setup-vps]
+# [Subcommand: setup-vps / setup]
 do_setup_vps() {
+  if [ -f "${SCRIPT_DIR}/setup.sh" ]; then
+    exec "${SCRIPT_DIR}/setup.sh" --role vps "$@"
+  elif [ -f "${SCRIPT_DIR}/scripts/setup.py" ]; then
+    local py_exec
+    py_exec="$(get_venv_python)"
+    exec "${py_exec}" "${SCRIPT_DIR}/scripts/setup.py" --role vps "$@"
+  fi
   local actual_user="${SUDO_USER:-${USER:-$(id -un 2>/dev/null || whoami 2>/dev/null || echo "driveunix")}}"
   local actual_home
   if [ "${actual_user}" = "root" ]; then

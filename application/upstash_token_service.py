@@ -65,11 +65,28 @@ class UpstashTokenService:
             return self._client
         return None
 
+    def _get_namespace(self) -> str:
+        """Derive user namespace from sync_key (e.g. drive-unix:sync:user1 -> user1)."""
+        _, _, sync_key = self.config_manager.get_upstash_config()
+        if sync_key:
+            if sync_key.startswith("drive-unix:sync:"):
+                return sync_key[len("drive-unix:sync:"):].strip() or "default"
+            parts = sync_key.split(":")
+            if len(parts) > 1:
+                return parts[-1].strip() or "default"
+        return "default"
+
     def _token_key(self, identity_key: str) -> str:
-        return f"drive-unix:token:{identity_key}"
+        ns = self._get_namespace()
+        if ns == "default":
+            return f"drive-unix:token:{identity_key}"
+        return f"drive-unix:token:{ns}:{identity_key}"
 
     def _lock_key(self, identity_key: str) -> str:
-        return f"drive-unix:lock:{identity_key}"
+        ns = self._get_namespace()
+        if ns == "default":
+            return f"drive-unix:lock:{identity_key}"
+        return f"drive-unix:lock:{ns}:{identity_key}"
 
     def try_get_token(
         self,
@@ -91,6 +108,8 @@ class UpstashTokenService:
 
         try:
             raw_str = client.get(self._token_key(identity_key))
+            if not raw_str and self._get_namespace() == "default":
+                raw_str = client.get(f"drive-unix:token:default:{identity_key}")
             if not raw_str:
                 return None
 
@@ -257,6 +276,90 @@ class UpstashTokenService:
                 self._synced_identities.add(identity_key)
             return auth_context
 
+    def sync_topology_if_updated(
+        self,
+        *,
+        passphrase: str | None = None,
+        progress_cb: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any] | None:
+        """Check if cloud topology on Upstash has a newer version, pull/merge and hot-reload."""
+        cfg = self.config_manager.config.upstash
+        if cfg is not None and not cfg.auto_pull_topology:
+            return None
+
+        client = self.get_client()
+        if not client:
+            return None
+
+        pw = passphrase or self.config_manager.get_upstash_passphrase()
+        if not pw:
+            logger.debug("無法自動拉取拓撲：未設定 Passphrase")
+            return None
+
+        from application.upstash_sync_service import UpstashSyncService
+
+        sync_service = UpstashSyncService(self.config_manager, client=client)
+
+        try:
+            status = sync_service.fetch_status()
+            if not status.get("exists"):
+                return None
+
+            cloud_created_at = status.get("created_at")
+            if not cloud_created_at:
+                return None
+
+            last_synced = cfg.last_synced_topology_at if cfg else None
+            cloud_remotes = set(status.get("remote_names", []))
+            local_remotes = set(self.config_manager.config.remotes.keys())
+            has_new_remotes = not cloud_remotes.issubset(local_remotes)
+
+            # If timestamp matches and no missing remotes, we are already up to date
+            if last_synced and last_synced == cloud_created_at and not has_new_remotes:
+                return None
+
+            logger.info(
+                "偵測到 Upstash 雲端拓撲更新 (雲端時間: %s, 來源設備: %s)，開始自動拉取合併...",
+                cloud_created_at,
+                status.get("device_name"),
+            )
+            if progress_cb:
+                progress_cb({
+                    "event": "topology_sync_start",
+                    "cloud_created_at": cloud_created_at,
+                    "device_name": status.get("device_name"),
+                    "incoming_remotes": status.get("remote_names", []),
+                })
+
+            res = sync_service.pull(
+                pw,
+                strategy="merge",
+                overwrite=False,
+                dry_run=False,
+            )
+
+            # Hot-reload ConfigManager
+            self.config_manager.reload()
+
+            logger.info("拓撲熱重載完成！新增端點: %s", res.get("restored_remotes"))
+            if progress_cb:
+                progress_cb({
+                    "event": "topology_sync_done",
+                    "restored_remotes": res.get("restored_remotes", []),
+                    "overwritten_remotes": res.get("overwritten_remotes", []),
+                    "total_local_remotes": len(self.config_manager.config.remotes),
+                })
+            return res
+
+        except Exception as exc:
+            logger.warning("自動同步雲端拓撲時發生非致命例外: %s", exc)
+            if progress_cb:
+                progress_cb({
+                    "event": "topology_sync_error",
+                    "error": str(exc),
+                })
+            return None
+
     def renew_all_tokens(
         self,
         leeway_minutes: int = 30,
@@ -265,6 +368,17 @@ class UpstashTokenService:
     ) -> dict[str, Any]:
         """Proactively inspect and renew expiring tokens across deduplicated accounts."""
         from storage.registry import DEFAULT_PROVIDER_REGISTRY
+
+        # Ensure latest configuration from disk is loaded
+        try:
+            self.config_manager.reload()
+        except Exception:
+            pass
+
+        # Check and auto-sync newer topology from cloud if enabled
+        topology_sync_res = None
+        if not remote_filter:
+            topology_sync_res = self.sync_topology_if_updated(progress_cb=progress_cb)
 
         # Ensure the provider registry uses this token service instance
         self.config_manager._upstash_token_service = self
@@ -418,6 +532,8 @@ class UpstashTokenService:
             "picked_remotes": sorted(set(picked_remotes)),
             "skipped_remotes": sorted(set(skipped)),
             "cloud_synced_remotes": sorted(set(cloud_synced)),
+            "topology_synced": bool(topology_sync_res),
+            "topology_new_remotes": topology_sync_res.get("restored_remotes", []) if topology_sync_res else [],
             "errors": errors,
         }
 

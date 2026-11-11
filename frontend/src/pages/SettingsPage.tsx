@@ -22,6 +22,11 @@ import {
   Layers,
   FileText,
   SlidersHorizontal,
+  Rocket,
+  Users,
+  Trash2,
+  Check,
+  Plus,
 } from 'lucide-react';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -30,7 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useUIStore } from '@/stores/ui-store';
 import { toast } from 'sonner';
-import type { SettingsResponse, UpstashConfigResponse } from '@/api/types';
+import type { SettingsResponse, UpstashConfigResponse, UpstashUserItem } from '@/api/types';
 
 export function SettingsPage() {
   const { tab } = useParams<{ tab?: string }>();
@@ -85,6 +90,15 @@ export function SettingsPage() {
   const [testingUpstash, setTestingUpstash] = useState(false);
   const [upstashStatus, setUpstashStatus] = useState<string | null>(null);
 
+  // Upgrade settings
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState(true);
+  const [updateChannel, setUpdateChannel] = useState<'stable' | 'main'>('stable');
+
+  // Multi-User Upstash Redis
+  const [redisUsers, setRedisUsers] = useState<UpstashUserItem[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+
   // Load Settings
   const loadSettings = async () => {
     setLoading(true);
@@ -125,11 +139,16 @@ export function SettingsPage() {
 
       // Other & Token
       if (extra.token) setApiToken(String(extra.token));
+      if (extra.auto_check_update !== undefined) setAutoCheckUpdate(Boolean(extra.auto_check_update));
+      if (extra.update_channel) setUpdateChannel(extra.update_channel as 'stable' | 'main');
 
       // Load Upstash config
       try {
         const u = await api.request<UpstashConfigResponse>('GET', '/upstash/config');
-        if (u.rest_url) setUpstashUrl(u.rest_url);
+        if (u.rest_url) {
+          setUpstashUrl(u.rest_url);
+          loadRedisUsers();
+        }
         if (u.sync_key) setSyncKey(u.sync_key);
       } catch {
         // optional
@@ -138,6 +157,48 @@ export function SettingsPage() {
       toast.error(`載入系統設定失敗: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRedisUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const users = await api.request<UpstashUserItem[]>('GET', '/upstash/users');
+      setRedisUsers(users);
+    } catch {
+      // optional
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleSelectUser = (userKey: string) => {
+    setSyncKey(userKey);
+    toast.info(`已切換同步金鑰為：${userKey}，請點擊「儲存設定」以持久化。`);
+  };
+
+  const handleCreateUser = () => {
+    const trimmed = newUserName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!trimmed) {
+      toast.error('請輸入有效的使用者名稱 (英數或底線)');
+      return;
+    }
+    const formattedKey = `drive-unix:sync:${trimmed}`;
+    setSyncKey(formattedKey);
+    setNewUserName('');
+    toast.success(`已設定新使用者金鑰：${formattedKey}，請記得儲存設定。`);
+  };
+
+  const handleDeleteUserBundle = async (targetKey: string, targetUser: string) => {
+    if (!confirm(`確定要永久刪除使用者 '${targetUser}' 於 Redis 上的同步封包嗎？`)) {
+      return;
+    }
+    try {
+      await api.request('DELETE', `/upstash?sync_key=${encodeURIComponent(targetKey)}`);
+      toast.success(`已刪除使用者 '${targetUser}' 之雲端封包`);
+      loadRedisUsers();
+    } catch (err: any) {
+      toast.error(`刪除失敗: ${err.message}`);
     }
   };
 
@@ -190,6 +251,8 @@ export function SettingsPage() {
           audio_autoplay: audioAutoplay,
           video_autoplay: videoAutoplay,
           token: apiToken,
+          auto_check_update: autoCheckUpdate,
+          update_channel: updateChannel,
         },
       };
 
@@ -707,12 +770,52 @@ export function SettingsPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="font-semibold text-foreground">同步金鑰識別 (Sync Key)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-foreground">同步金鑰識別 (Sync Key / User)</label>
+                    <span className="text-[10px] text-muted-foreground">多使用者共用同一 Redis 實例</span>
+                  </div>
                   <Input
                     value={syncKey}
                     onChange={(e) => setSyncKey(e.target.value)}
+                    placeholder="drive-unix:sync:default 或 drive-unix:sync:user1"
                     className="h-8 text-xs font-mono"
                   />
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-muted-foreground">快速切換:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSyncKey('drive-unix:sync:default')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                        syncKey === 'drive-unix:sync:default'
+                          ? 'bg-primary text-primary-foreground border-primary font-bold'
+                          : 'bg-muted/40 hover:bg-muted text-muted-foreground border-border'
+                      }`}
+                    >
+                      default
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSyncKey('drive-unix:sync:user1')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                        syncKey === 'drive-unix:sync:user1'
+                          ? 'bg-primary text-primary-foreground border-primary font-bold'
+                          : 'bg-muted/40 hover:bg-muted text-muted-foreground border-border'
+                      }`}
+                    >
+                      user1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSyncKey('drive-unix:sync:user2')}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors ${
+                        syncKey === 'drive-unix:sync:user2'
+                          ? 'bg-primary text-primary-foreground border-primary font-bold'
+                          : 'bg-muted/40 hover:bg-muted text-muted-foreground border-border'
+                      }`}
+                    >
+                      user2
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
@@ -742,6 +845,166 @@ export function SettingsPage() {
                 {upstashStatus && (
                   <span className="text-xs font-medium text-emerald-500">{upstashStatus}</span>
                 )}
+              </div>
+
+              {/* Multi-User Redis Namespaces Table */}
+              <div className="pt-3 border-t border-border/60 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span className="font-semibold text-foreground text-xs">Redis 雲端多使用者同步庫清單</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {redisUsers.length} 位使用者
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={newUserName}
+                        onChange={(e) => setNewUserName(e.target.value)}
+                        placeholder="新增使用者 (如 user3)"
+                        className="h-7 text-xs w-36"
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleCreateUser())}
+                      />
+                      <Button type="button" size="sm" variant="outline" onClick={handleCreateUser} className="h-7 text-xs px-2 gap-1">
+                        <Plus className="h-3 w-3" /> 新增
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={loadRedisUsers}
+                      disabled={loadingUsers || !upstashUrl.trim()}
+                      className="h-7 text-xs px-2 gap-1 text-muted-foreground"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${loadingUsers ? 'animate-spin' : ''}`} />
+                      <span>重新整理</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {/* List */}
+                {redisUsers.length > 0 ? (
+                  <div className="rounded-lg border border-border/80 overflow-hidden bg-background">
+                    <div className="divide-y divide-border/60">
+                      {redisUsers.map((u) => {
+                        const isSelected = syncKey.trim() === u.sync_key;
+                        return (
+                          <div
+                            key={u.sync_key}
+                            className={`p-3 flex items-center justify-between gap-3 text-xs transition-colors ${
+                              isSelected ? 'bg-primary/5' : 'hover:bg-muted/30'
+                            }`}
+                          >
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-foreground">{u.user}</span>
+                                <span className="font-mono text-[11px] text-muted-foreground">({u.sync_key})</span>
+                                {isSelected ? (
+                                  <Badge className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px]">
+                                    當前選定
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                                <span>節點數: {u.remotes_count}</span>
+                                <span>最後同步: {u.created_at ? new Date(u.created_at).toLocaleString() : '尚未同步'}</span>
+                                {u.device_name && <span>主機: {u.device_name}</span>}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {!isSelected ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSelectUser(u.sync_key)}
+                                  className="h-7 text-xs px-2.5"
+                                >
+                                  切換至此使用者
+                                </Button>
+                              ) : (
+                                <div className="flex items-center text-emerald-500 text-xs gap-1 font-medium px-2">
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>使用中</span>
+                                </div>
+                              )}
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteUserBundle(u.sync_key, u.user)}
+                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                title="從 Redis 刪除此使用者封包"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 text-center rounded-lg border border-dashed border-border/70 text-xs text-muted-foreground">
+                    {loadingUsers ? '正在查詢 Redis 使用者封包...' : '尚未在此 Redis 找到同步封包。輸入使用者名稱並保存即可開始多使用者同步。'}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Software Upgrade & Update Policy */}
+            <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+              <h2 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Rocket className="h-4 w-4 text-primary" />
+                  <span>軟體升級與更新策略 (Software Upgrade & Policy)</span>
+                </div>
+                <Badge variant="outline" className="text-[10px]">Zero-Downtime Reload</Badge>
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/60">
+                  <div className="space-y-0.5">
+                    <span className="font-semibold text-foreground">自動檢查最新版本</span>
+                    <p className="text-[11px] text-muted-foreground">在後台定期檢查 GitHub 最新發布</p>
+                  </div>
+                  <Switch
+                    checked={autoCheckUpdate}
+                    onCheckedChange={setAutoCheckUpdate}
+                  />
+                </div>
+
+                <div className="space-y-1.5 p-3 rounded-lg bg-muted/30 border border-border/60">
+                  <label className="font-semibold text-foreground">更新來源頻道 (Channel)</label>
+                  <select
+                    value={updateChannel}
+                    onChange={(e) => setUpdateChannel(e.target.value as 'stable' | 'main')}
+                    className="w-full h-8 text-xs rounded-md border border-input bg-background px-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="stable">穩定釋出版本 (Stable Release)</option>
+                    <option value="main">主幹開發分支 (Main Branch)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 text-xs">
+                <p className="text-muted-foreground">
+                  若欲手動比對版本或檢視更新歷程日誌，可隨時前往「關於系統」操作。
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate('/@manage/about')}
+                  className="text-xs gap-1.5 shrink-0"
+                >
+                  <Rocket className="h-3.5 w-3.5 text-primary" />
+                  <span>前往升級管理精靈</span>
+                </Button>
               </div>
             </div>
           </div>

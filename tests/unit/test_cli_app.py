@@ -11,6 +11,7 @@ EXPECTED_COMMANDS = {
     "add-webdav", "add-onedrive", "add-pikpak", "list-nodes", "remove-node",
     "rename-node", "edit-node", "export-env", "import-env",
     "cron-add", "cron-ls", "cron-rm", "cron-toggle", "cron-start",
+    "upgrade", "update", "setup",
 }
 
 
