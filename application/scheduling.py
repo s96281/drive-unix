@@ -134,3 +134,122 @@ def next_cron_occurrence(
         cursor += timedelta(minutes=1)
 
     return None
+
+
+def resolve_runtime_entrypoint(
+    executable: str | None = None,
+    script_path: str | None = None,
+    *,
+    platform: str | None = None,
+) -> tuple[str, str]:
+    """Sniff and resolve the optimal Python executable and main.py script path.
+
+    This detects project environments where the scheduler may be invoked via an
+    entrypoint binary (like `drive-unix` or `.venv/Scripts/drive-unix`), resolving
+    back to the correct Python interpreter and `main.py` entrypoint.
+    If explicit executable and script_path are passed and script_path is already
+    a python script (ends with .py) or executable is explicitly provided without
+    requiring auto-sniffing, those explicit values are respected.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    current_platform = platform or sys.platform
+
+    # If caller explicitly provided script_path and executable, respect them without sniffing.
+    if executable is not None and script_path is not None:
+        return executable, script_path
+
+    # Determine if script_path is a CLI binary/wrapper (e.g. drive-unix or drive-unix.exe)
+    # or if it's missing/not a python script.
+    search_dirs: list[Path] = []
+
+    # 1. From explicit or argv script_path
+    for sp in (script_path, sys.argv[0] if sys.argv and sys.argv[0] else None):
+        if sp:
+            try:
+                p = Path(sp)
+                cur = p if p.is_dir() else p.parent
+                search_dirs.append(cur)
+                # Traverse up to 4 parent levels (e.g. .venv/Scripts -> .venv -> root)
+                for _ in range(3):
+                    cur = cur.parent
+                    search_dirs.append(cur)
+            except Exception:
+                pass
+
+    # 2. From cwd
+    try:
+        search_dirs.append(Path.cwd())
+    except Exception:
+        pass
+
+    # 3. From executable
+    for exe in (executable, sys.executable):
+        if exe:
+            try:
+                pe = Path(exe)
+                cur = pe if pe.is_dir() else pe.parent
+                search_dirs.append(cur)
+                for _ in range(3):
+                    cur = cur.parent
+                    search_dirs.append(cur)
+            except Exception:
+                pass
+
+    # Find main.py
+    main_py_path: Path | None = None
+    for directory in search_dirs:
+        try:
+            cand = (directory / "main.py").resolve()
+            if cand.is_file():
+                main_py_path = cand
+                break
+        except Exception:
+            continue
+
+    project_root = main_py_path.parent if main_py_path else Path.cwd()
+
+    # Sniff python executable
+    python_candidates: list[Path] = []
+
+    # If an explicit executable was provided, consider it
+    if executable is not None:
+        python_candidates.append(Path(executable))
+
+    # Next: Virtualenv python next to project root / main.py
+    if current_platform == "win32":
+        python_candidates.append(project_root / ".venv" / "Scripts" / "python.exe")
+        python_candidates.append(project_root / "venv" / "Scripts" / "python.exe")
+    else:
+        python_candidates.append(project_root / ".venv" / "bin" / "python")
+        python_candidates.append(project_root / "venv" / "bin" / "python")
+
+    # Fallback to sys.executable
+    python_candidates.append(Path(sys.executable))
+
+    resolved_py: Path | None = None
+    for cand in python_candidates:
+        try:
+            if cand.is_file():
+                resolved_py = cand.resolve()
+                break
+        except Exception:
+            continue
+
+    final_executable = str(resolved_py) if resolved_py else (executable or sys.executable)
+    final_script = (
+        str(main_py_path)
+        if main_py_path
+        else (script_path or os.path.abspath(sys.argv[0]))
+    )
+
+    # If caller provided explicit values and no main.py was found, keep caller's script_path
+    if script_path is not None and not main_py_path:
+        final_script = script_path
+    if executable is not None and not resolved_py:
+        final_executable = executable
+
+    return final_executable, final_script
+

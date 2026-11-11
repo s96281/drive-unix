@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
-from application.scheduling import has_missed_run, is_cron_match
+from application.scheduling import has_missed_run, is_cron_match, resolve_runtime_entrypoint
 from core.config import ConfigManager, CronTask
 from core.logging import get_logger
 
@@ -32,8 +32,12 @@ class SchedulerService:
         script_path: str | None = None,
     ) -> None:
         self.config_manager_factory = config_manager_factory
-        self.executable = executable or sys.executable
-        self.script_path = script_path or os.path.abspath(sys.argv[0])
+        resolved_exe, resolved_script = resolve_runtime_entrypoint(
+            executable=executable,
+            script_path=script_path,
+        )
+        self.executable = resolved_exe
+        self.script_path = resolved_script
         self._running_tasks: set[str] = set()
         self._lock = threading.Lock()
         self._config_lock = threading.Lock()

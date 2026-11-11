@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -118,3 +119,28 @@ def test_scheduler_normalizes_installed_cli_prefix() -> None:
     assert SchedulerService._normalize_command(
         "uv run drive-unix sync source:/ destination:/ --yes"
     ) == ["sync", "source:/", "destination:/", "--yes"]
+
+
+def test_resolve_runtime_entrypoint_sniffs_python_and_main(tmp_path: Path) -> None:
+    from application.scheduling import resolve_runtime_entrypoint
+
+    # Create dummy project structure
+    project_dir = tmp_path / "my_project"
+    project_dir.mkdir()
+    main_py = project_dir / "main.py"
+    main_py.write_text("print('hello')", encoding="utf-8")
+
+    venv_scripts = project_dir / ".venv" / "Scripts"
+    venv_scripts.mkdir(parents=True)
+    fake_python = venv_scripts / "python.exe"
+    fake_python.write_text("", encoding="utf-8")
+    fake_cli = venv_scripts / "drive-unix"  # wrapper without extension
+
+    with patch("sys.argv", [str(fake_cli), "schedule", "start"]):
+        # When invoked without explicit executable/script_path (default scheduler behavior)
+        exe, script = resolve_runtime_entrypoint(
+            platform="win32",
+        )
+        assert Path(exe).resolve() == fake_python.resolve()
+        assert Path(script).resolve() == main_py.resolve()
+

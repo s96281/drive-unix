@@ -12,6 +12,7 @@ import sys
 import time
 from collections.abc import Callable
 
+from application.scheduling import resolve_runtime_entrypoint
 from core.config import DEFAULT_CONFIG_DIR
 
 
@@ -59,9 +60,14 @@ class SchedulerDaemonManager:
         self.runtime_dir = self.config_dir / "scheduler"
         self.pid_path = self.runtime_dir / "scheduler.pid"
         self.log_path = self.runtime_dir / "scheduler.log"
-        self.executable = executable or sys.executable
-        self.script_path = script_path or os.path.abspath(sys.argv[0])
         self.platform = platform or sys.platform
+        resolved_exe, resolved_script = resolve_runtime_entrypoint(
+            executable=executable,
+            script_path=script_path,
+            platform=self.platform,
+        )
+        self.executable = resolved_exe
+        self.script_path = resolved_script
         self._run = run_command
         self._popen = popen_command
 

@@ -87,3 +87,64 @@ def test_cli_setup_help(runner: CliRunner) -> None:
     assert "--role" in result.output
     assert "--upstash-url" in result.output
     assert "--non-interactive" in result.output
+
+
+def test_handle_smart_sync_detects_cloud_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    args = argparse.Namespace(
+        role="pc",
+        host="127.0.0.1",
+        port=8080,
+        upstash_url="https://mock.upstash.io",
+        upstash_token="mock_token",
+        sync_key="drive-unix:sync:default",
+        passphrase="mock_passphrase",
+        skip_upstash=False,
+        skip_playwright=True,
+        skip_service=True,
+        start=False,
+        non_interactive=True,
+    )
+    orchestrator = SetupOrchestrator(args)
+
+    class MockClient:
+        def __init__(self, *a: Any, **kw: Any) -> None:
+            pass
+
+        def keys(self, pattern: str = "*") -> list[str]:
+            if "sync" in pattern:
+                return ["drive-unix:sync:default"]
+            if "token" in pattern:
+                return ["drive-unix:token:default:sp"]
+            return []
+
+        def ping(self) -> bool:
+            return True
+
+    class MockSyncService:
+        def __init__(self, *a: Any, **kw: Any) -> None:
+            pass
+
+        def inspect_remote_bundle(self, sync_key: str | None = None) -> dict[str, Any]:
+            return {
+                "exists": True,
+                "remotes_count": 2,
+                "remote_names": ["gdrive", "onedrive"],
+                "device_name": "Test-PC",
+                "created_at": "2026-11-12T00:00:00Z",
+            }
+
+        def pull(self, *a: Any, **kw: Any) -> dict[str, Any]:
+            return {"restored_remotes": ["gdrive", "onedrive"]}
+
+    monkeypatch.setattr("infrastructure.upstash_client.UpstashClient", MockClient)
+    monkeypatch.setattr("application.upstash_sync_service.UpstashSyncService", MockSyncService)
+
+    # Calling handle_smart_sync in non_interactive mode should auto pull and restore
+    orchestrator.handle_smart_sync(
+        url="https://mock.upstash.io",
+        token="mock_token",
+        sync_key="drive-unix:sync:default",
+        passphrase="mock_passphrase",
+    )
+

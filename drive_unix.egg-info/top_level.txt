@@ -6,5 +6,6 @@ domain
 infrastructure
 main
 providers
+scripts
 storage
 web

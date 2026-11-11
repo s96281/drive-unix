@@ -34,8 +34,10 @@ cli/commands/cron.py
 cli/commands/environment.py
 cli/commands/files.py
 cli/commands/nodes.py
+cli/commands/setup_cmd.py
 cli/commands/sync.py
 cli/commands/transfer.py
+cli/commands/upgrade.py
 cli/commands/upstash.py
 core/__init__.py
 core/config.py
@@ -47,6 +49,8 @@ core/logging.py
 core/paths.py
 core/secrets.py
 core/storage.py
+core/upgrade.py
+core/version.py
 domain/__init__.py
 domain/errors.py
 domain/models.py
@@ -81,6 +85,8 @@ providers/google/__init__.py
 providers/google/photos.py
 providers/microsoft365/__init__.py
 providers/microsoft365/client.py
+scripts/__init__.py
+scripts/setup.py
 storage/__init__.py
 storage/base.py
 storage/registry.py
@@ -93,6 +99,7 @@ web/dependencies.py
 web/events.py
 web/log_bridge.py
 web/settings.py
+web/storage_pool.py
 web/transfer_jobs.py
 web/routers/__init__.py
 web/routers/events.py
@@ -101,4 +108,5 @@ web/routers/remotes.py
 web/routers/schedule.py
 web/routers/settings.py
 web/routers/sync.py
+web/routers/upgrade.py
 web/routers/upstash.py

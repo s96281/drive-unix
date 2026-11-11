@@ -671,48 +671,146 @@ class SetupOrchestrator:
         update_or_create_env_file(self.env_file, env_upstash, self.env_example)
         log_success("已同步更新 .env 檔案中之 Upstash 生產環境設定。")
 
-        # Smart Cloud Push / Pull Check
-        if test_ok and passphrase:
+        # Smart Cloud Push / Pull Check & Full Data Inspection
+        if test_ok:
             self.handle_smart_sync(url, token, sync_key, passphrase)
 
     def handle_smart_sync(self, url: str, token: str, sync_key: str, passphrase: str) -> None:
-        """Inspect cloud bundle and offer smart pull or push."""
+        """Inspect cloud bundle, tokens, and multi-user data on Upstash, offering smart pull/push."""
         try:
             from application.upstash_sync_service import UpstashSyncService
             from core.config import ConfigManager
             from infrastructure.upstash_client import UpstashClient
 
-            client = UpstashClient(url, token)
+            client = UpstashClient(url, token, timeout=5.0)
             service = UpstashSyncService(client=client)
-            status = service.inspect_remote_bundle(sync_key=sync_key)
 
-            if status.get("exists"):
-                count = status.get("remotes_count", 0)
-                names = ", ".join(status.get("remote_names", [])) or "無"
-                dev = status.get("device_name", "未知主機")
-                t_str = status.get("created_at", "未知時間")
+            log_info("正在對 Upstash 雲端資料庫進行完整盤點掃描...")
 
-                print("\n" + green(f"✨ 偵測到雲端存在既有備份！ (來源: {dev}, 時間: {t_str})"))
-                print(f"   雲端包含 {bold(str(count))} 個節點: {cyan(names)}")
+            # 1. 掃描所有備份槽與憑證
+            all_sync_keys = set(client.keys("drive-unix:sync:*"))
+            if not all_sync_keys:
+                all_sync_keys = set(client.keys("*:sync:*"))
 
+            all_token_keys = client.keys("drive-unix:token:*")
+            token_count = len(all_token_keys)
+
+            target_status = service.inspect_remote_bundle(sync_key=sync_key)
+            target_exists = target_status.get("exists", False)
+
+            # 2. 顯示盤點摘要
+            border_line = "─" * 68
+            print("\n" + cyan(f"┌{border_line}┐"))
+            print(cyan(f"│ {bold('☁️  Upstash 雲端資料庫既有資料盤點報告')} {' ' * 31}│"))
+            print(cyan(f"└{border_line}┘"))
+            print(f" • 目標同步金鑰 (Sync Key): {bold(cyan(sync_key))}")
+
+            if target_exists:
+                count = target_status.get("remotes_count", 0)
+                names = ", ".join(target_status.get("remote_names", [])) or "無"
+                dev = target_status.get("device_name", "未知主機")
+                t_str = target_status.get("created_at", "未知時間")
+                print(f" • 目標備份狀態:           {bold(green('✔ 已發現既有備份資料'))}")
+                print(f"   - 來源主機:             {green(dev)}")
+                print(f"   - 備份時間:             {green(t_str)}")
+                print(f"   - 包含節點 ({count} 個):       {bold(cyan(names))}")
+            else:
+                print(f" • 目標備份狀態:           {yellow('⚪ 目前此金鑰尚無備份資料')}")
+
+            if all_sync_keys and (len(all_sync_keys) > 1 or not target_exists):
+                other_keys = sorted([k for k in all_sync_keys if k != sync_key])
+                if other_keys:
+                    print(f" • 雲端其他備份金鑰:       {yellow(', '.join(other_keys))}")
+
+            if token_count > 0:
+                print(f" • 雲端集中換發憑證庫:     {bold(green(f'✔ 包含 {token_count} 組已同步之 Token / Cookie'))}")
+            else:
+                print(f" • 雲端集中換發憑證庫:     {dim('暫無獨立 Token 條目')}")
+
+            print(cyan(f"└{border_line}┘\n"))
+
+            # 3. 處理還原 (Pull) 或上傳 (Push)
+            effective_passphrase = passphrase
+
+            # 情境 A: 目標金鑰上有備份資料
+            if target_exists:
+                count = target_status.get("remotes_count", 0)
+                names = ", ".join(target_status.get("remote_names", [])) or "無"
+                print(green(f"✨ 偵測到雲端存在已備份的 {bold(str(count))} 個節點 ({cyan(names)}) 與憑證！"))
                 do_pull = True
                 if not self.args.non_interactive:
                     do_pull = prompt_confirm(
-                        "是否立即從 Upstash 下載並解密還原這些節點至本機？ (建議新機器選 Y)",
+                        "是否立即從 Upstash 下載並解密還原 (Pull) 這些節點至本機？ (建議新機器選 Y)",
                         default=True,
                     )
 
                 if do_pull:
-                    log_info("正在下載並還原雲端節點與憑證...")
-                    res = service.pull(passphrase=passphrase, sync_key=sync_key, merge=True)
-                    restored = ", ".join(res.get("restored_remotes", [])) or "無"
-                    log_success(f"節點還原完成！已成功恢復節點: {green(restored)}")
+                    if not effective_passphrase and not self.args.non_interactive:
+                        effective_passphrase = prompt_input(
+                            "請輸入 E2EE 主密碼 (Passphrase) 以解密還原資料",
+                            hide_input=True,
+                            required=True,
+                        )
+
+                    if effective_passphrase:
+                        log_info("正在下載並解密還原雲端節點與憑證...")
+                        try:
+                            res = service.pull(passphrase=effective_passphrase, sync_key=sync_key, merge=True)
+                            restored = ", ".join(res.get("restored_remotes", [])) or "無"
+                            log_success(f"節點還原完成！已成功恢復節點: {bold(green(restored))}")
+                        except Exception as exc:
+                            log_error(f"解密還原失敗 (可能是主密碼 Passphrase 不正確): {exc}")
+                    else:
+                        log_warn("未提供主密碼，略過還原。稍後可執行 `drive-unix upstash pull` 手動還原。")
+
+            # 情境 B: 目標金鑰無備份，但雲端有其他備份金鑰
+            elif all_sync_keys and not self.args.non_interactive:
+                available_keys = sorted(list(all_sync_keys))
+                print(yellow(f"💡 目標金鑰 '{sync_key}' 為空，但雲端偵測到其他備份槽：{', '.join(available_keys)}"))
+                switch_choice = prompt_confirm("是否選擇切換至已存在的雲端備份槽進行還原？", default=True)
+                if switch_choice:
+                    selected_key = available_keys[0]
+                    if len(available_keys) > 1:
+                        print("可用備份槽清單：")
+                        for idx, k in enumerate(available_keys, 1):
+                            print(f"  [{idx}] {k}")
+                        sel_idx = prompt_input(f"請選擇要還原的金鑰編號 (1-{len(available_keys)})", default="1")
+                        try:
+                            selected_key = available_keys[int(sel_idx) - 1]
+                        except Exception:
+                            selected_key = available_keys[0]
+
+                    if not effective_passphrase:
+                        effective_passphrase = prompt_input(
+                            f"請輸入解密金鑰 '{selected_key}' 之主密碼 (Passphrase)",
+                            hide_input=True,
+                            required=True,
+                        )
+
+                    if effective_passphrase:
+                        log_info(f"正在從 '{selected_key}' 下載並還原雲端節點...")
+                        try:
+                            res = service.pull(passphrase=effective_passphrase, sync_key=selected_key, merge=True)
+                            restored = ", ".join(res.get("restored_remotes", [])) or "無"
+                            log_success(f"節點還原完成！已成功恢復節點: {bold(green(restored))}")
+                            # Update config to use this sync key
+                            cfg_mgr = ConfigManager()
+                            cfg_mgr.set_upstash_config(
+                                rest_url=url,
+                                rest_token=token,
+                                sync_key=selected_key,
+                                passphrase=effective_passphrase,
+                            )
+                        except Exception as exc:
+                            log_error(f"解密還原失敗: {exc}")
+
+            # 情境 C: 雲端完全為空
             else:
                 cfg = ConfigManager()
                 local_count = len(cfg.config.remotes)
                 if local_count > 0:
                     names = ", ".join(cfg.config.remotes.keys())
-                    print(f"\n雲端槽尚無備份，但本機已配置 {bold(str(local_count))} 個節點 ({cyan(names)})。")
+                    print(f"\n雲端槽目前尚無備份，但本機已配置 {bold(str(local_count))} 個節點 ({cyan(names)})。")
                     do_push = True
                     if not self.args.non_interactive:
                         do_push = prompt_confirm(
@@ -720,11 +818,21 @@ class SetupOrchestrator:
                             default=True,
                         )
                     if do_push:
-                        log_info("正在加密上傳本機配置至 Upstash...")
-                        service.push(passphrase=passphrase, sync_key=sync_key)
-                        log_success("已成功加密備份至雲端！其他節點或 VPS 現在皆可同步使用。")
+                        if not effective_passphrase and not self.args.non_interactive:
+                            effective_passphrase = prompt_input(
+                                "請輸入 E2EE 主密碼 (Passphrase) 以加密備份資料",
+                                hide_input=True,
+                                required=True,
+                            )
+                        if effective_passphrase:
+                            log_info("正在加密上傳本機配置至 Upstash...")
+                            service.push(passphrase=effective_passphrase, sync_key=sync_key)
+                            log_success("已成功加密備份至雲端！其他節點或 VPS 現在皆可一鍵同步。")
+                        else:
+                            log_warn("未提供主密碼，略過備份上傳。")
                 else:
-                    log_info("雲端與本機目前皆為初始空白狀態，稍後可透過 Web 控制台或 CLI 新增 Remote。")
+                    log_info("雲端與本機目前皆為初始空白狀態。")
+                    log_info("💡 提示：若此為主機/VPS 部署，建議先在個人電腦上設定節點並執行 `drive-unix upstash push`，再於此處執行 `drive-unix upstash pull`。")
         except Exception as exc:
             log_warn(f"雲端智慧同步檢查略過: {exc}")
 
