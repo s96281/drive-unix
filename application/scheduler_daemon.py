@@ -443,6 +443,19 @@ class SchedulerDaemonManager:
 
     @staticmethod
     def _pid_alive(pid: int) -> bool:
+        if sys.platform == "win32":
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            success = kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            kernel32.CloseHandle(handle)
+            return bool(success and exit_code.value == STILL_ACTIVE)
+
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -455,6 +468,21 @@ class SchedulerDaemonManager:
 
     @staticmethod
     def _terminate_pid(pid: int, *, timeout: float) -> None:
+        if sys.platform == "win32":
+            import ctypes
+            PROCESS_TERMINATE = 0x0001
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+            if handle:
+                kernel32.TerminateProcess(handle, 1)
+                kernel32.CloseHandle(handle)
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if not SchedulerDaemonManager._pid_alive(pid):
+                    return
+                time.sleep(0.05)
+            return
+
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:

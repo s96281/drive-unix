@@ -163,7 +163,10 @@ def resolve_runtime_entrypoint(
         if script_path.endswith(".py") and os.path.isfile(script_path):
             return executable, script_path
         # If running unit tests or mocked paths that don't exist in reality
-        if not os.path.exists(script_path) and not script_path.endswith("drive-unix") and not script_path.endswith("drive-unix.exe"):
+        if not os.path.exists(script_path) and not os.path.isabs(script_path):
+            return executable, script_path
+        # When explicit script_path and executable are supplied for a platform different from win32 or mocked
+        if current_platform != "win32" or not os.path.exists(script_path):
             return executable, script_path
 
     # Determine if script_path is a CLI binary/wrapper (e.g. drive-unix or drive-unix.exe)
