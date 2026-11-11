@@ -81,6 +81,7 @@ include = [
     "domain*",
     "infrastructure*",
     "providers*",
+    "scripts*",
     "storage*",
     "web*",
 ]

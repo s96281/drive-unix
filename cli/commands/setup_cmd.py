@@ -7,8 +7,6 @@ from typing import Optional
 
 import typer
 
-from scripts.setup import SetupOrchestrator
-
 
 def setup_command(
     role: Optional[str] = typer.Option(
@@ -74,6 +72,29 @@ def setup_command(
     ),
 ) -> None:
     """啟動 drive-unix 統一安裝與初始化導引精靈 (PC / VPS / Upstash)。"""
+    import sys
+    from pathlib import Path
+
+    project_root = Path(__file__).resolve().parent.parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    try:
+        from scripts.setup import SetupOrchestrator
+    except ImportError:
+        import importlib.util
+        setup_script = project_root / "scripts" / "setup.py"
+        if setup_script.exists():
+            spec = importlib.util.spec_from_file_location("setup_module", setup_script)
+            if spec and spec.loader:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                SetupOrchestrator = getattr(mod, "SetupOrchestrator")
+            else:
+                raise
+        else:
+            raise
+
     args = argparse.Namespace(
         role=role,
         host=host,
