@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Archive,
   Download,
@@ -17,8 +17,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { api } from '@/api';
-import type { SettingsResponse, RemoteListResponse, TaskItemResponse } from '@/api/types';
+import type { SettingsResponse, RemoteListResponse, TaskItemResponse, UpstashConfigResponse } from '@/api/types';
 import { toast } from 'sonner';
 
 interface LogEntry {
@@ -33,6 +34,8 @@ export function BackupRestorePage() {
   const [cloudLoading, setCloudLoading] = useState(false);
   const [overrideExisting, setOverrideExisting] = useState(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [upstashConfig, setUpstashConfig] = useState<UpstashConfigResponse | null>(null);
+  const [cloudPassphrase, setCloudPassphrase] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       type: 'info',
@@ -40,6 +43,14 @@ export function BackupRestorePage() {
       time: new Date().toLocaleTimeString('zh-TW'),
     },
   ]);
+
+  useEffect(() => {
+    api.request<UpstashConfigResponse>('GET', '/upstash/config')
+      .then((cfg) => setUpstashConfig(cfg))
+      .catch((err) => {
+        addLog('warn', `[ ~ ] 無法取得 Upstash 設定狀態: ${err.message}`);
+      });
+  }, []);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     setLogs((prev) => [
@@ -209,11 +220,23 @@ export function BackupRestorePage() {
   };
 
   const handleCloudPush = async () => {
+    const pw = cloudPassphrase.trim();
+    if (!pw && !upstashConfig?.has_passphrase) {
+      toast.error('尚未設定 E2EE 主密碼，請在下方輸入或至「設定 > 其他」配置');
+      addLog('error', '[ ! ] 雲端推送中止: 尚未提供或設定 E2EE 主密碼 (Passphrase)');
+      return;
+    }
+
     setCloudLoading(true);
     addLog('info', '[ ... ] 正在將當前憑證與節點推送至 Upstash E2EE 雲端加密庫...');
     try {
-      await api.request('POST', '/upstash/push', { body: {} });
-      addLog('success', '[ + ] 雲端加密推送完成！憑證已安全同步至分散式金鑰庫。');
+      const resp: any = await api.request('POST', '/upstash/push', {
+        body: {
+          passphrase: pw || undefined,
+        },
+      });
+      const countInfo = resp?.remotes_count !== undefined ? ` (共 ${resp.remotes_count} 個節點)` : '';
+      addLog('success', `[ + ] 雲端加密推送完成！憑證已安全同步至分散式金鑰庫${countInfo}。`);
       toast.success('雲端加密備份推送成功！');
     } catch (err: any) {
       addLog('error', `[ ! ] 雲端推送失敗: ${err.message}`);
@@ -224,11 +247,24 @@ export function BackupRestorePage() {
   };
 
   const handleCloudPull = async () => {
+    const pw = cloudPassphrase.trim();
+    if (!pw && !upstashConfig?.has_passphrase) {
+      toast.error('尚未設定 E2EE 主密碼，請在下方輸入或至「設定 > 其他」配置');
+      addLog('error', '[ ! ] 雲端拉取中止: 尚未提供或設定 E2EE 主密碼 (Passphrase)');
+      return;
+    }
+
     setCloudLoading(true);
     addLog('info', '[ ... ] 正在從 Upstash E2EE 雲端金鑰庫拉取憑證與節點...');
     try {
-      await api.request('POST', '/upstash/pull', { body: {} });
-      addLog('success', '[ + ] 雲端拉取並解密成功！憑證已即時套用。');
+      const resp: any = await api.request('POST', '/upstash/pull', {
+        body: {
+          passphrase: pw || undefined,
+          overwrite: overrideExisting,
+        },
+      });
+      const countInfo = resp?.merged_remotes !== undefined ? ` (已合併 ${resp.merged_remotes} 個節點)` : '';
+      addLog('success', `[ + ] 雲端拉取並解密成功！憑證與節點已即時套用${countInfo}。`);
       toast.success('雲端還原完成！');
     } catch (err: any) {
       addLog('error', `[ ! ] 雲端拉取失敗: ${err.message}`);
@@ -318,19 +354,63 @@ export function BackupRestorePage() {
         </div>
 
         {/* Card 3: Upstash Cloud E2EE Sync */}
-        <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 shadow-xs space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="md:col-span-2 rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Lock className="h-4 w-4 text-amber-500" />
               <span>Upstash E2EE 雲端加密金鑰庫同步</span>
             </h2>
-            <Badge variant="outline" className="text-[10px]">
-              AES-256-GCM
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {upstashConfig?.rest_url && upstashConfig?.has_token ? (
+                <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30">
+                  雲端連線就緒 ({upstashConfig.sync_key})
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] text-amber-500 border-amber-500/30">
+                  未配置 Upstash 端點
+                </Badge>
+              )}
+              {upstashConfig?.has_passphrase ? (
+                <Badge variant="outline" className="text-[10px] text-blue-500 border-blue-500/30">
+                  已儲存主密碼
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[10px] text-muted-foreground border-border">
+                  未儲存主密碼
+                </Badge>
+              )}
+              <Badge variant="outline" className="text-[10px]">
+                AES-256-GCM
+              </Badge>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
+
+          <p className="text-xs text-muted-foreground leading-relaxed">
             若已在「設定 &gt; 其他」中配置 Upstash Redis REST 端點與密碼短語，可將多雲存取權杖加密推播至全域雲端，實現多台 drive-unix 節點自動輪替免重新認證。
+            若系統未儲存密碼或需使用臨時解密金鑰，可在下方直接輸入主密碼。
           </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground flex items-center justify-between">
+                <span>E2EE 主密碼 (Passphrase)</span>
+                {upstashConfig?.has_passphrase && (
+                  <span className="text-[10px] text-muted-foreground">已儲存，留空將自動帶入</span>
+                )}
+              </label>
+              <Input
+                type="password"
+                value={cloudPassphrase}
+                onChange={(e) => setCloudPassphrase(e.target.value)}
+                placeholder={
+                  upstashConfig?.has_passphrase
+                    ? '留空即套用系統已儲存主密碼'
+                    : '請輸入用於端到端加密/解密之主密碼'
+                }
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center gap-3 pt-1">
             <Button

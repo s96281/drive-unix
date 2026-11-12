@@ -51,7 +51,7 @@ class UpstashRenewTokensRequest(BaseModel):
 
 
 class UpstashPushRequest(BaseModel):
-    passphrase: str = Field(..., min_length=1, description="E2EE 加密主密碼")
+    passphrase: str | None = Field(None, description="E2EE 加密主密碼 (若留空則使用系統已儲存之密碼)")
     sync_key: str | None = None
     user: str | None = None
     include_auth_cache: bool = False
@@ -59,7 +59,7 @@ class UpstashPushRequest(BaseModel):
 
 
 class UpstashPullRequest(BaseModel):
-    passphrase: str = Field(..., min_length=1, description="E2EE 解密主密碼")
+    passphrase: str | None = Field(None, description="E2EE 解密主密碼 (若留空則使用系統已儲存之密碼)")
     sync_key: str | None = None
     user: str | None = None
     strategy: str = Field("merge", description="合併策略: merge 或 replace")
@@ -179,14 +179,20 @@ def get_upstash_status(
 
 @router.post("/push")
 def push_to_upstash(
-    req: UpstashPushRequest,
+    req: UpstashPushRequest = UpstashPushRequest(),
     config_mgr: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """將本機節點與機密加密上傳至 Upstash。"""
+    passphrase = (req.passphrase.strip() if req.passphrase else None) or config_mgr.get_upstash_passphrase()
+    if not passphrase:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="尚未設定 E2EE 主密碼 (Passphrase)。請先至「設定 > 其他」配置，或於操作時輸入密碼。",
+        )
     service = UpstashSyncService(config_mgr)
     try:
         return service.push(
-            req.passphrase,
+            passphrase,
             sync_key=req.sync_key,
             user=req.user,
             include_auth_cache=req.include_auth_cache,
@@ -201,14 +207,20 @@ def push_to_upstash(
 
 @router.post("/pull")
 def pull_from_upstash(
-    req: UpstashPullRequest,
+    req: UpstashPullRequest = UpstashPullRequest(),
     config_mgr: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """從 Upstash 下載、解密並合併至本機節點與 SecretStore。"""
+    passphrase = (req.passphrase.strip() if req.passphrase else None) or config_mgr.get_upstash_passphrase()
+    if not passphrase:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="尚未設定 E2EE 主密碼 (Passphrase)。請先至「設定 > 其他」配置，或於操作時輸入密碼。",
+        )
     service = UpstashSyncService(config_mgr)
     try:
         res = service.pull(
-            req.passphrase,
+            passphrase,
             sync_key=req.sync_key,
             user=req.user,
             strategy=req.strategy,

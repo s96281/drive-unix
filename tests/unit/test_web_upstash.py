@@ -116,6 +116,22 @@ def test_web_upstash_push_and_pull(client: TestClient):
         assert res_pull.status_code == 200
         assert res_pull.json()["status"] == "ok"
 
+        # Pull without passphrase when not saved -> 400 Bad Request
+        res_no_pw = client.post("/api/upstash/pull", json={})
+        assert res_no_pw.status_code == 400
+        assert "尚未設定 E2EE 主密碼" in res_no_pw.json()["detail"]
+
+        # Configure passphrase in settings
+        client.post(
+            "/api/upstash/config",
+            json={"rest_url": "https://test.upstash.io", "passphrase": "my-secret-pw"},
+        )
+
+        # Pull without passphrase in body should now succeed using saved passphrase!
+        res_saved_pw = client.post("/api/upstash/pull", json={})
+        assert res_saved_pw.status_code == 200
+        assert res_saved_pw.json()["status"] == "ok"
+
 
 def test_web_upstash_extended_config_and_renew_tokens(client: TestClient):
     # 1. Update config with passphrase and token sync switches
