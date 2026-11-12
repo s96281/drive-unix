@@ -170,6 +170,7 @@ function FileBrowserPane({
   // Modals & Context Menu state
   const [previewItem, setPreviewItem] = useState<FsItem | null>(null);
   const [opsType, setOpsType] = useState<FileOpType | null>(null);
+  const [isMoveOp, setIsMoveOp] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: FsItem } | null>(null);
 
   // Sync with URL query changes on primary pane
@@ -1250,6 +1251,7 @@ function FileBrowserPane({
             onClick={() => {
               setSelectedPaths(new Set([contextMenu.item.path]));
               setContextMenu(null);
+              setIsMoveOp(false);
               setOpsType('transfer');
             }}
             className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-[var(--alist-hover)] text-foreground cursor-pointer"
@@ -1292,8 +1294,14 @@ function FileBrowserPane({
             selectedCount={selectedPaths.size}
             canRename={selectedPaths.size === 1}
             onRename={() => setOpsType('rename')}
-            onMove={() => setOpsType('transfer')}
-            onCopy={() => setOpsType('transfer')}
+            onMove={() => {
+              setIsMoveOp(true);
+              setOpsType('transfer');
+            }}
+            onCopy={() => {
+              setIsMoveOp(false);
+              setOpsType('transfer');
+            }}
             onDelete={() => setOpsType('delete_batch')}
             onCopyLink={() => handleCopyLinks(selectedItems)}
             onDownload={() => handleDownloadItems(selectedItems)}
@@ -1331,6 +1339,7 @@ function FileBrowserPane({
             currentPath={currentPath}
             items={selectedItems.length > 0 ? selectedItems : items.slice(0, 1)}
             availableRemotes={availableRemotes}
+            initialIsMove={isMoveOp}
           />
         </>
       )}

@@ -27,11 +27,16 @@ router = APIRouter(prefix="/api/sync", tags=["Sync"])
 
 
 class PlanRequest(BaseModel):
-    source_uri: str = Field(..., description="來源遠端路徑 (例如 local:/data)")
-    dest_uri: str = Field(..., description="目的遠端路徑 (例如 backup:/data)")
+    source_uri: str | None = Field(None, description="來源遠端路徑 (例如 local:/data)")
+    dest_uri: str | None = Field(None, description="目的遠端路徑 (例如 backup:/data)")
+    source: str | None = Field(None, description="來源遠端路徑別名 (例如 local:/data)")
+    destination: str | None = Field(None, description="目的遠端路徑別名 (例如 backup:/data)")
     two_way: bool = Field(False, description="是否為雙向同步")
+    mode: str | None = Field(None, description="同步模式: copy, sync, mirror, two_way")
     conflict: str = Field("auto", description="衝突解決策略 (auto, newer, rename, abort, prefer-source, prefer-destination)")
+    conflict_resolution: str | None = Field(None, description="衝突解決策略別名")
     delete: bool = Field(False, description="是否鏡像刪除目的端多餘項目")
+    delete_extra: bool | None = Field(None, description="是否刪除目的端多餘項目別名")
     checksum: bool = Field(False, description="是否啟用校驗碼對比")
 
 
@@ -46,6 +51,14 @@ class SyncActionDto(BaseModel):
 class SyncPlanResponse(BaseModel):
     source_uri: str
     dest_uri: str
+    source: str | None = None
+    destination: str | None = None
+    mode: str | None = None
+    to_add: int = 0
+    to_update: int = 0
+    to_delete: int = 0
+    bytes_to_transfer: int = 0
+    items: list[dict[str, Any]] = []
     total_actions: int
     has_destructive: bool
     permanent_delete_count: int
@@ -213,8 +226,15 @@ def _build_plan_internal(
     req: PlanRequest,
     config_manager: ConfigManager,
 ) -> tuple[SyncPlan, Any, Any, str, str, str, str]:
-    src_remote, src_path = parse_uri(req.source_uri, config_manager.config.default_remote)
-    dst_remote, dst_path = parse_uri(req.dest_uri, config_manager.config.default_remote)
+    src_raw = req.source_uri or req.source
+    dst_raw = req.dest_uri or req.destination
+    if not src_raw or not src_raw.strip():
+        raise HTTPException(status_code=400, detail="缺少來源遠端路徑 (source_uri 或 source)")
+    if not dst_raw or not dst_raw.strip():
+        raise HTTPException(status_code=400, detail="缺少目的遠端路徑 (dest_uri 或 destination)")
+
+    src_remote, src_path = parse_uri(src_raw.strip(), config_manager.config.default_remote)
+    dst_remote, dst_path = parse_uri(dst_raw.strip(), config_manager.config.default_remote)
 
     if src_remote not in config_manager.config.remotes:
         raise HTTPException(status_code=404, detail=f"找不到來源節點 '{src_remote}'")
@@ -224,10 +244,14 @@ def _build_plan_internal(
     src_storage = resolve_storage(src_remote, config_manager, use_pool=False)
     dst_storage = resolve_storage(dst_remote, config_manager, use_pool=False)
 
+    is_two_way = req.two_way or (req.mode == "two_way")
+    is_delete = req.delete or (req.delete_extra is True) or (req.mode == "mirror")
+    conflict_val = req.conflict_resolution or req.conflict
+
     options = SyncOptions(
-        one_way=not req.two_way,
-        delete=req.delete,
-        conflict=req.conflict,  # type: ignore[arg-type]
+        one_way=not is_two_way,
+        delete=is_delete,
+        conflict=conflict_val,  # type: ignore[arg-type]
         checksum=req.checksum,
     )
     try:
@@ -270,17 +294,50 @@ def create_sync_plan(
     dest_perm_only = dst_storage.delete_capability.value == "permanent_only"
     src_perm_only = src_storage.delete_capability.value == "permanent_only"
 
+    to_add = 0
+    to_update = 0
+    to_delete = 0
+    bytes_to_transfer = 0
+    items_dto: list[dict[str, Any]] = []
+
     actions_dto: list[SyncActionDto] = []
     for action in plan.actions:
+        action_type_str = action.action_type.value
+        act_size = action.item.size if action.item else 0
+        act_is_dir = action.item.is_dir if action.item else False
+
         actions_dto.append(
             SyncActionDto(
-                type=action.action_type.value,
+                type=action_type_str,
                 target=action.target_path,
                 reason=action.reason,
-                bytes=action.item.size if action.item else 0,
-                is_dir=action.item.is_dir if action.item else False,
+                bytes=act_size,
+                is_dir=act_is_dir,
             )
         )
+
+        item_action = "identical"
+        if "DELETE" in action_type_str:
+            item_action = "delete"
+            to_delete += 1
+        elif "COPY" in action_type_str or "CREATE" in action_type_str:
+            item_action = "add"
+            to_add += 1
+            if not act_is_dir:
+                bytes_to_transfer += act_size
+        elif "UPDATE" in action_type_str or "OVERWRITE" in action_type_str:
+            item_action = "update"
+            to_update += 1
+            if not act_is_dir:
+                bytes_to_transfer += act_size
+
+        items_dto.append({
+            "action": item_action,
+            "path": action.target_path,
+            "size": act_size,
+            "reason": action.reason,
+        })
+
         if action.action_type == SyncActionType.DELETE_DEST:
             if dest_perm_only:
                 permanent_deletes += 1
@@ -294,9 +351,22 @@ def create_sync_plan(
 
     batches_info = [{"name": b.name, "count": b.count} for b in plan.batches]
 
+    src_uri = req.source_uri or req.source or ""
+    dst_uri = req.dest_uri or req.destination or ""
+    is_two_way = req.two_way or (req.mode == "two_way")
+    is_delete = req.delete or (req.delete_extra is True) or (req.mode == "mirror")
+
     return SyncPlanResponse(
-        source_uri=req.source_uri,
-        dest_uri=req.dest_uri,
+        source_uri=src_uri,
+        dest_uri=dst_uri,
+        source=src_uri,
+        destination=dst_uri,
+        mode=req.mode or ("mirror" if is_delete else ("two_way" if is_two_way else "sync")),
+        to_add=to_add,
+        to_update=to_update,
+        to_delete=to_delete,
+        bytes_to_transfer=bytes_to_transfer,
+        items=items_dto,
         total_actions=plan.count,
         has_destructive=(permanent_deletes > 0 or trash_deletes > 0),
         permanent_delete_count=permanent_deletes,
@@ -382,19 +452,25 @@ def list_sync_tasks(
     return [r.to_dict() for r in records]
 
 
+@router.post("/start", status_code=status.HTTP_202_ACCEPTED)
 @router.post("/execute", status_code=status.HTTP_202_ACCEPTED)
 def execute_sync(
     req: SyncExecuteRequest,
     config_manager: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """啟動非同步同步工作，回傳 task_id 可供 SSE 訂閱。"""
+    src_uri = req.source_uri or req.source or ""
+    dst_uri = req.dest_uri or req.destination or ""
+    req.source_uri = src_uri
+    req.dest_uri = dst_uri
+
     task_id = str(uuid.uuid4())
     task_event_manager.register_task(
         task_id,
         kind="sync",
-        title=f"同步: {req.source_uri} -> {req.dest_uri}",
-        source_uri=req.source_uri,
-        dest_uri=req.dest_uri,
+        title=f"同步: {src_uri} -> {dst_uri}",
+        source_uri=src_uri,
+        dest_uri=dst_uri,
         request_payload=req.model_dump(),
     )
 

@@ -67,6 +67,27 @@ def test_sync_plan_creation(client: TestClient) -> None:
     assert "COPY_TO_DEST" in action_types
     assert "capabilities" in plan_data
     assert plan_data["has_destructive"] is False
+    assert len(plan_data["items"]) >= 2
+    assert plan_data["to_add"] >= 2
+
+
+def test_sync_plan_frontend_payload(client: TestClient) -> None:
+    # Test with frontend field names: source, destination, mode, conflict_resolution, delete_extra
+    req = {
+        "source": "src_node:/",
+        "destination": "dst_node:/",
+        "mode": "sync",
+        "conflict_resolution": "newer",
+        "delete_extra": False,
+        "checksum": True,
+    }
+    resp = client.post("/api/sync/plan", json=req)
+    assert resp.status_code == 200
+    plan_data = resp.json()
+    assert plan_data["total_actions"] >= 2
+    assert plan_data["source"] == "src_node:/"
+    assert plan_data["destination"] == "dst_node:/"
+    assert plan_data["to_add"] >= 2
 
 
 def test_sync_execution_and_events(

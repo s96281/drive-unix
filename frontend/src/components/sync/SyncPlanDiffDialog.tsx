@@ -29,7 +29,22 @@ export function SyncPlanDiffDialog({
 }: SyncPlanDiffDialogProps) {
   if (!plan) return null;
 
-  const items = plan.items || [];
+  const items = plan.items && plan.items.length > 0
+    ? plan.items
+    : (plan.actions || []).map((a) => {
+        let action: 'add' | 'update' | 'delete' | 'identical' = 'identical';
+        const t = a.type.toLowerCase();
+        if (t.includes('delete')) action = 'delete';
+        else if (t.includes('update') || t.includes('overwrite')) action = 'update';
+        else if (t.includes('copy') || t.includes('create') || t.includes('add')) action = 'add';
+        return {
+          action,
+          path: a.target,
+          size: a.bytes,
+          reason: a.reason,
+        };
+      });
+
   const toAdd = items.filter((i) => i.action === 'add');
   const toUpdate = items.filter((i) => i.action === 'update');
   const toDelete = items.filter((i) => i.action === 'delete');
@@ -37,7 +52,7 @@ export function SyncPlanDiffDialog({
   const toAddCount = plan.to_add ?? toAdd.length;
   const toUpdateCount = plan.to_update ?? toUpdate.length;
   const toDeleteCount = plan.to_delete ?? toDelete.length;
-  const bytesToTransfer = plan.bytes_to_transfer ?? 0;
+  const bytesToTransfer = plan.bytes_to_transfer ?? items.reduce((acc, it) => acc + (it.action !== 'delete' && it.action !== 'identical' ? it.size : 0), 0);
   const sourceText = plan.source || plan.source_uri;
   const destText = plan.destination || plan.dest_uri;
   const modeText = plan.mode || 'sync';

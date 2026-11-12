@@ -296,7 +296,7 @@ class SchedulerDaemonManager:
                 "stdout": log_file,
                 "stderr": subprocess.STDOUT,
                 "close_fds": True,
-                "env": {**os.environ, "PYTHONIOENCODING": "utf-8"},
+                "env": {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"},
             }
             if self.platform == "win32":
                 kwargs["creationflags"] = (
@@ -384,13 +384,22 @@ class SchedulerDaemonManager:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         existing = self._read_pid()
         current = os.getpid()
-        if existing is not None and existing != current and self._pid_alive(existing):
+        if (
+            existing is not None
+            and existing != current
+            and not self._is_ancestor_process(existing, current)
+            and self._pid_alive(existing)
+        ):
             raise RuntimeError(f"Scheduler 已在執行中 (PID {existing})。")
         self._write_pid(current)
 
     def release_current_process(self) -> None:
         pid = self._read_pid()
-        if pid is None or pid == os.getpid():
+        if (
+            pid is None
+            or pid == os.getpid()
+            or self._is_ancestor_process(pid, os.getpid())
+        ):
             self._remove_pidfile()
 
     def _managed_backend_running(self) -> bool:
@@ -467,8 +476,101 @@ class SchedulerDaemonManager:
         return True
 
     @staticmethod
+    def _is_ancestor_process(ancestor_pid: int, child_pid: int) -> bool:
+        if ancestor_pid <= 0 or child_pid <= 0:
+            return False
+        if ancestor_pid == child_pid:
+            return True
+        if child_pid == os.getpid() and hasattr(os, "getppid") and os.getppid() == ancestor_pid:
+            return True
+
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                TH32CS_SNAPPROCESS = 0x00000002
+
+                class PROCESSENTRY32(ctypes.Structure):
+                    _fields_ = [
+                        ("dwSize", wintypes.DWORD),
+                        ("cntUsage", wintypes.DWORD),
+                        ("th32ProcessID", wintypes.DWORD),
+                        ("th32DefaultHeapID", ctypes.c_void_p),
+                        ("th32ModuleID", wintypes.DWORD),
+                        ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD),
+                        ("pcPriClassBase", wintypes.LONG),
+                        ("dwFlags", wintypes.DWORD),
+                        ("szExeFile", ctypes.c_char * 260),
+                    ]
+
+                h_snapshot = ctypes.windll.kernel32.CreateToolhelp32Snapshot(
+                    TH32CS_SNAPPROCESS, 0
+                )
+                if h_snapshot == -1 or not h_snapshot:
+                    return False
+                try:
+                    pe = PROCESSENTRY32()
+                    pe.dwSize = ctypes.sizeof(PROCESSENTRY32)
+                    parent_map: dict[int, int] = {}
+                    if ctypes.windll.kernel32.Process32First(
+                        h_snapshot, ctypes.byref(pe)
+                    ):
+                        while True:
+                            parent_map[pe.th32ProcessID] = pe.th32ParentProcessID
+                            if not ctypes.windll.kernel32.Process32Next(
+                                h_snapshot, ctypes.byref(pe)
+                            ):
+                                break
+                    curr = child_pid
+                    visited: set[int] = set()
+                    while curr and curr not in visited:
+                        visited.add(curr)
+                        parent = parent_map.get(curr)
+                        if parent == ancestor_pid:
+                            return True
+                        if not parent or parent == curr:
+                            break
+                        curr = parent
+                    return False
+                finally:
+                    ctypes.windll.kernel32.CloseHandle(h_snapshot)
+            except Exception:
+                return False
+
+        # POSIX systems with /proc
+        curr = child_pid
+        visited_posix: set[int] = set()
+        while curr and curr not in visited_posix:
+            visited_posix.add(curr)
+            parent_pid: int | None = None
+            stat_path = Path(f"/proc/{curr}/stat")
+            if stat_path.exists():
+                try:
+                    text = stat_path.read_text(encoding="ascii", errors="replace")
+                    parts = text.split(")")[-1].split()
+                    parent_pid = int(parts[1])
+                except Exception:
+                    pass
+            if parent_pid is None or parent_pid == curr:
+                break
+            if parent_pid == ancestor_pid:
+                return True
+            curr = parent_pid
+        return False
+
+    @staticmethod
     def _terminate_pid(pid: int, *, timeout: float) -> None:
         if sys.platform == "win32":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True,
+                    check=False,
+                )
+            except Exception:
+                pass
             import ctypes
             PROCESS_TERMINATE = 0x0001
             kernel32 = ctypes.windll.kernel32

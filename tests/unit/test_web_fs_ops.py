@@ -109,3 +109,32 @@ def test_fs_cross_remote_transfer(fs_env: tuple[TestClient, Path, Path]):
     assert (dst_root / "file_a.txt").exists()
     assert (dst_root / "file_a.txt").read_text(encoding="utf-8") == "Cross transfer file A"
     assert file_a.exists()  # mode was copy
+
+
+def test_fs_transfer_component_payload(fs_env: tuple[TestClient, Path, Path]):
+    client, src_root, dst_root = fs_env
+    file_b = src_root / "file_b.txt"
+    file_b.write_text("Component payload copy", encoding="utf-8")
+
+    resp = client.post(
+        "/api/fs/transfer",
+        json={
+            "src_remote": "node_a",
+            "sources": ["/file_b.txt"],
+            "dest_remote": "node_b",
+            "dest_path": "/",
+            "is_move": False,
+        },
+    )
+    assert resp.status_code == 202
+    task_id = resp.json()["task_id"]
+
+    for _ in range(30):
+        st = task_event_manager.get_status(task_id)
+        if st and st.get("status") in ("completed", "failed"):
+            break
+        time.sleep(0.1)
+
+    assert (dst_root / "file_b.txt").exists()
+    assert (dst_root / "file_b.txt").read_text(encoding="utf-8") == "Component payload copy"
+    assert file_b.exists()

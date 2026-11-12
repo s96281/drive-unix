@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import shlex
+import shutil
 import subprocess
+import threading
 from datetime import datetime
 from typing import Any
 
@@ -11,10 +14,32 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from application.scheduler_daemon import SchedulerDaemonManager
-from application.scheduling import next_cron_occurrence, validate_cron_expression
+from application.scheduler_service import SchedulerService
+from application.scheduling import next_cron_occurrence, resolve_runtime_entrypoint, validate_cron_expression
 from core.config import ConfigManager, CronTask
 from web.dependencies import get_config_manager
 from web.events import broadcaster
+
+DRIVE_UNIX_SUBCOMMANDS = {
+    "sync", "copy", "move", "ls", "mkdir", "rm", "cat",
+    "remote", "schedule", "cron", "env", "upstash", "upgrade", "setup",
+}
+
+
+def resolve_task_command(command_str: str) -> list[str]:
+    """Resolve raw task command into executable arguments for subprocess."""
+    try:
+        args = SchedulerService._normalize_command(command_str)
+    except Exception:
+        args = shlex.split(command_str)
+        if not args:
+            raise ValueError("排程指令不可為空。")
+
+    resolved_exe, resolved_script = resolve_runtime_entrypoint()
+    first = args[0]
+    if first in DRIVE_UNIX_SUBCOMMANDS or not shutil.which(first):
+        return [resolved_exe, resolved_script, "--plain", *args]
+    return args
 
 router = APIRouter(prefix="/api/schedule", tags=["Schedule"])
 
@@ -22,6 +47,7 @@ router = APIRouter(prefix="/api/schedule", tags=["Schedule"])
 class TaskItemResponse(BaseModel):
     name: str
     schedule: str
+    cron: str | None = None
     command: str
     enabled: bool
     last_run: str | None
@@ -33,13 +59,15 @@ class TaskItemResponse(BaseModel):
 
 class TaskCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=64, description="任務名稱")
-    schedule: str = Field(..., description="Cron 表達式 (例如 0 * * * *)")
+    schedule: str | None = Field(None, description="Cron 表達式 (例如 0 * * * *)")
+    cron: str | None = Field(None, description="Cron 表達式別名")
     command: str = Field(..., description="執行命令 (例如 drive-unix sync local:/data remote:/backup)")
     enabled: bool = True
 
 
 class TaskUpdateRequest(BaseModel):
     schedule: str | None = Field(None, description="新 Cron 表達式")
+    cron: str | None = Field(None, description="新 Cron 表達式別名")
     command: str | None = Field(None, description="新執行命令")
     enabled: bool | None = Field(None, description="是否啟用")
 
@@ -142,6 +170,7 @@ def list_tasks(
             TaskItemResponse(
                 name=name,
                 schedule=t.schedule,
+                cron=t.schedule,
                 command=t.command,
                 enabled=t.enabled,
                 last_run=t.last_run,
@@ -164,14 +193,19 @@ def create_task(
     if name in config_manager.config.tasks:
         raise HTTPException(status_code=409, detail=f"任務 '{name}' 已經存在。")
 
+    raw_schedule = req.schedule or req.cron
+    if not raw_schedule or not raw_schedule.strip():
+        raise HTTPException(status_code=400, detail="缺少 Cron 排程表達式 (schedule 或 cron)")
+
+    schedule_str = raw_schedule.strip()
     try:
-        validate_cron_expression(req.schedule)
+        validate_cron_expression(schedule_str)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"無效的 Cron 表達式: {exc}") from exc
 
     task = CronTask(
         name=name,
-        schedule=req.schedule.strip(),
+        schedule=schedule_str,
         command=req.command.strip(),
         enabled=req.enabled,
     )
@@ -181,6 +215,7 @@ def create_task(
     return TaskItemResponse(
         name=name,
         schedule=task.schedule,
+        cron=task.schedule,
         command=task.command,
         enabled=task.enabled,
         last_run=task.last_run,
@@ -203,10 +238,11 @@ def update_task(
 
     task = config_manager.config.tasks[name]
 
-    if req.schedule is not None:
+    effective_schedule = req.schedule or req.cron
+    if effective_schedule is not None:
         try:
-            validate_cron_expression(req.schedule)
-            task.schedule = req.schedule.strip()
+            validate_cron_expression(effective_schedule)
+            task.schedule = effective_schedule.strip()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=f"無效的 Cron 表達式: {exc}") from exc
 
@@ -222,6 +258,7 @@ def update_task(
     return TaskItemResponse(
         name=name,
         schedule=task.schedule,
+        cron=task.schedule,
         command=task.command,
         enabled=task.enabled,
         last_run=task.last_run,
@@ -263,6 +300,7 @@ def toggle_task(
     return TaskItemResponse(
         name=name,
         schedule=task.schedule,
+        cron=task.schedule,
         command=task.command,
         enabled=task.enabled,
         last_run=task.last_run,
@@ -286,21 +324,65 @@ def run_task_now(
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     config_manager.update_task_attempt(name, now_str)
 
-    # 非阻塞執行命令
     try:
-        args = shlex.split(task.command)
-        proc = subprocess.Popen(
-            args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        broadcaster.publish("system", {"topic": "schedule", "action": "triggered", "name": name, "pid": proc.pid})
-        return {
-            "status": "triggered",
-            "name": name,
-            "pid": proc.pid,
-            "attempted_at": now_str,
-        }
+        full_cmd = resolve_task_command(task.command)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"無法啟動命令進程: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"無效排程指令: {exc}") from exc
+
+    daemon_mgr = SchedulerDaemonManager()
+    log_path = daemon_mgr.log_path
+
+    def _worker(proc_cmd: list[str], task_name: str, start_time: str) -> None:
+        exit_code = -1
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as lf:
+                lf.write(f"\n[{start_time}] [手動觸發] 啟動任務: {task_name}\n")
+                lf.flush()
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"
+                env["PYTHONUNBUFFERED"] = "1"
+                proc = subprocess.run(
+                    proc_cmd,
+                    stdout=lf,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    text=True,
+                    check=False,
+                )
+                exit_code = proc.returncode
+                lf.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [手動觸發] 任務 {task_name} 完成 (Exit code: {exit_code})\n")
+                lf.flush()
+        except Exception:
+            try:
+                with log_path.open("a", encoding="utf-8") as lf:
+                    lf.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [手動觸發] 任務 {task_name} 異常失敗\n")
+            except Exception:
+                pass
+        finally:
+            completed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                cm = ConfigManager()
+                cm.update_task_result(task_name, completed_at=completed_at, exit_code=exit_code)
+            except Exception:
+                pass
+            broadcaster.publish("system", {
+                "topic": "schedule",
+                "action": "completed",
+                "name": task_name,
+                "exit_code": exit_code,
+            })
+
+    thread = threading.Thread(
+        target=_worker,
+        args=(full_cmd, name, now_str),
+        daemon=True,
+        name=f"manual-run-{name}",
+    )
+    thread.start()
+    broadcaster.publish("system", {"topic": "schedule", "action": "triggered", "name": name})
+    return {
+        "status": "triggered",
+        "name": name,
+        "attempted_at": now_str,
+    }

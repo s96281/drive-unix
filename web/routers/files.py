@@ -90,9 +90,13 @@ class MoveCopyRequest(BaseModel):
 
 
 class TransferRequest(BaseModel):
-    sources: list[str] = Field(..., min_length=1, description="來源 URI 清單 (如 remote:/path)")
-    dest_dir: str = Field(..., min_length=1, description="目的目錄 URI (如 remote:/target_dir)")
+    sources: list[str] = Field(..., min_length=1, description="來源 URI 清單 (如 remote:/path 或路徑清單)")
+    dest_dir: str | None = Field(None, description="目的目錄 URI (如 remote:/target_dir)")
+    dest_remote: str | None = Field(None, description="目的節點名稱")
+    dest_path: str | None = Field(None, description="目的目錄路徑")
+    src_remote: str | None = Field(None, description="來源節點名稱 (當 sources 未帶 remote: 前綴時自動使用)")
     mode: Literal["copy", "move"] = Field("copy", description="傳輸模式: copy 或 move")
+    is_move: bool | None = Field(None, description="是否為移動模式 (若為 True 則等同 mode='move')")
 
 
 logger = logging.getLogger(__name__)
@@ -715,18 +719,46 @@ def transfer_files(
     config_manager: ConfigManager = Depends(get_config_manager),
 ) -> dict[str, Any]:
     """跨儲存節點批次傳輸 (複製或移動)。回傳 task_id 以供 SSE 即時監控。"""
+    effective_mode: Literal["copy", "move"] = "move" if req.is_move is True else req.mode
+
+    # Resolve destination directory URI
+    if req.dest_dir and req.dest_dir.strip():
+        effective_dest_dir = req.dest_dir.strip()
+    elif req.dest_remote and req.dest_path is not None:
+        effective_dest_dir = f"{req.dest_remote.strip()}:{req.dest_path.strip()}"
+    elif req.dest_path is not None:
+        effective_dest_dir = req.dest_path.strip()
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="缺少目的目錄設定 (請提供 dest_dir 或 dest_remote + dest_path)",
+        )
+
+    # Resolve source URIs
+    effective_sources: list[str] = []
+    for s in req.sources:
+        s_clean = s.strip()
+        if ":" not in s_clean and req.src_remote:
+            effective_sources.append(f"{req.src_remote.strip()}:{s_clean}")
+        else:
+            effective_sources.append(s_clean)
+
     task_id = str(uuid.uuid4())
     task_event_manager.register_task(
         task_id,
         kind="transfer",
-        title=f"傳輸 ({req.mode}): {len(req.sources)} 個項目 -> {req.dest_dir}",
-        source_uri=req.sources[0] if len(req.sources) == 1 else f"{len(req.sources)} 個來源",
-        dest_uri=req.dest_dir,
-        request_payload=req.model_dump(),
+        title=f"傳輸 ({effective_mode}): {len(effective_sources)} 個項目 -> {effective_dest_dir}",
+        source_uri=effective_sources[0] if len(effective_sources) == 1 else f"{len(effective_sources)} 個來源",
+        dest_uri=effective_dest_dir,
+        request_payload={
+            "sources": effective_sources,
+            "dest_dir": effective_dest_dir,
+            "mode": effective_mode,
+        },
     )
     t = threading.Thread(
         target=run_transfer_job,
-        args=(task_id, req.sources, req.dest_dir, req.mode, config_manager),
+        args=(task_id, effective_sources, effective_dest_dir, effective_mode, config_manager),
         daemon=True,
     )
     t.start()

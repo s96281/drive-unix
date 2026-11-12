@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
 import {
@@ -27,6 +27,7 @@ interface FileOpsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialIsMove?: boolean;
 }
 
 export function FileOpsDialog({
@@ -38,20 +39,24 @@ export function FileOpsDialog({
   open,
   onOpenChange,
   onSuccess,
+  initialIsMove = false,
 }: FileOpsDialogProps) {
   const queryClient = useQueryClient();
   const [folderName, setFolderName] = useState('');
   const [newName, setNewName] = useState(items[0]?.name || '');
   const [destRemote, setDestRemote] = useState(availableRemotes[0]?.name || remote);
   const [destPath, setDestPath] = useState(currentPath);
-  const [isMove, setIsMove] = useState(false);
+  const [isMove, setIsMove] = useState(initialIsMove);
 
-  // Sync newName when single item changes
-  useState(() => {
-    if (items[0]) {
-      setNewName(items[0].name);
+  useEffect(() => {
+    if (open) {
+      setFolderName('');
+      setNewName(items[0]?.name || '');
+      setDestRemote(availableRemotes.find((r) => r.name === remote)?.name || availableRemotes[0]?.name || remote);
+      setDestPath(currentPath || '/');
+      setIsMove(Boolean(initialIsMove));
     }
-  });
+  }, [open, items, remote, currentPath, availableRemotes, initialIsMove]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -71,10 +76,15 @@ export function FileOpsDialog({
       }
 
       if (type === 'transfer') {
+        const effectiveMode = isMove ? 'move' : 'copy';
+        const formattedSources = items.map((i) => (i.path.includes(':') ? i.path : `${remote}:${i.path}`));
+        const formattedDestDir = destPath.includes(':') ? destPath : `${destRemote}:${destPath}`;
         return api.request('POST', '/fs/transfer', {
           body: {
+            sources: formattedSources,
+            dest_dir: formattedDestDir,
+            mode: effectiveMode,
             src_remote: remote,
-            sources: items.map((i) => i.path),
             dest_remote: destRemote,
             dest_path: destPath,
             is_move: isMove,
@@ -129,13 +139,13 @@ export function FileOpsDialog({
               <DialogTitle>
                 {type === 'mkdir' && '新增子資料夾'}
                 {type === 'rename' && '重新命名項目'}
-                {type === 'transfer' && '複製 / 移動至遠端或路徑'}
+                {type === 'transfer' && (isMove ? '移動至遠端或路徑 (Move)' : '複製至遠端或路徑 (Copy)')}
                 {type === 'delete_batch' && '確認批次刪除'}
               </DialogTitle>
               <DialogDescription>
                 {type === 'mkdir' && `在目前路徑 [${currentPath}] 建立新資料夾`}
                 {type === 'rename' && `變更 [${items[0]?.name}] 的名稱`}
-                {type === 'transfer' && `將 ${items.length} 個選取項目傳輸至目標節點`}
+                {type === 'transfer' && `將 ${items.length} 個選取項目${isMove ? '移動' : '複製'}至目標節點`}
                 {type === 'delete_batch' && `此操作將刪除 ${items.length} 個選取的檔案或目錄`}
               </DialogDescription>
             </div>
@@ -237,7 +247,13 @@ export function FileOpsDialog({
               (type === 'rename' && !newName.trim())
             }
           >
-            {mutation.isPending ? '處理中...' : '確認執行'}
+            {mutation.isPending
+              ? '處理中...'
+              : type === 'transfer'
+                ? isMove
+                  ? '確認移動'
+                  : '確認複製'
+                : '確認執行'}
           </Button>
         </DialogFooter>
       </DialogContent>

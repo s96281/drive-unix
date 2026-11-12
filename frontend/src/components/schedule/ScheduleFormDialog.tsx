@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api';
 import {
@@ -46,13 +46,24 @@ export function ScheduleFormDialog({
   const [command, setCommand] = useState(initialData?.command || 'sync gdrive:/Backups onedrive:/Backups --mirror');
   const [enabled, setEnabled] = useState(initialData ? initialData.enabled : true);
 
+  useEffect(() => {
+    if (open) {
+      setName(initialData?.name || '');
+      setCron(initialData?.cron || initialData?.schedule || '0 2 * * *');
+      setCommand(initialData?.command || 'sync gdrive:/Backups onedrive:/Backups --mirror');
+      setEnabled(initialData ? initialData.enabled : true);
+    }
+  }, [open, initialData]);
+
   const naturalDesc = formatCron(cron);
 
   const saveMutation = useMutation({
     mutationFn: () => {
+      const trimmedCron = cron.trim();
       const payload = {
         name: name.trim(),
-        cron: cron.trim(),
+        schedule: trimmedCron,
+        cron: trimmedCron,
         command: command.trim(),
         enabled,
       };

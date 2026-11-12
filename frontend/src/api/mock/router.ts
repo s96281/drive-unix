@@ -253,12 +253,15 @@ class MockRouter {
 
     if (routePath === '/fs/transfer' && method === 'POST') {
       const taskId = `mock-transfer-${Date.now().toString(36)}`;
+      const destDir = body.dest_dir || (body.dest_remote && body.dest_path ? `${body.dest_remote}:${body.dest_path}` : 'remote:/');
+      const sources = body.sources || [];
+      const mode = body.is_move ? 'move' : (body.mode || 'copy');
       const taskRecord: any = {
         id: taskId,
         kind: 'transfer',
-        title: `傳輸: ${body.sources?.length || 1} 個項目 -> ${body.dest_dir}`,
-        source_uri: body.sources?.[0] || 'remote:/',
-        dest_uri: body.dest_dir,
+        title: `傳輸 (${mode}): ${sources.length || 1} 個項目 -> ${destDir}`,
+        source_uri: sources[0] || 'remote:/',
+        dest_uri: destDir,
         status: 'running',
         created_at: Date.now() / 1000,
         bytes_done: 0,
@@ -395,9 +398,11 @@ class MockRouter {
       if (!name) throw new ApiError(400, '任務名稱不可為空');
       if (this.db.schedules[name]) throw new ApiError(409, `任務 '${name}' 已經存在`);
 
+      const scheduleStr = body.schedule || body.cron || '0 2 * * *';
       const newTask = {
         name,
-        schedule: body.schedule,
+        schedule: scheduleStr,
+        cron: scheduleStr,
         command: body.command,
         enabled: body.enabled !== false,
         last_run: null,
@@ -420,7 +425,11 @@ class MockRouter {
       if (method === 'PUT') {
         const item = this.db.schedules[name];
         if (!item) throw new ApiError(404, '找不到指定之排程');
-        if (body.schedule) item.schedule = body.schedule;
+        const scheduleUpdate = body.schedule || body.cron;
+        if (scheduleUpdate) {
+          item.schedule = scheduleUpdate;
+          item.cron = scheduleUpdate;
+        }
         if (body.command) item.command = body.command;
         if (body.enabled != null) item.enabled = body.enabled;
         return item as T;

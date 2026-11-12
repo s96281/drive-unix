@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Play,
@@ -58,6 +58,18 @@ export function SyncPage() {
 
   const remotes = remotesData?.remotes || [];
 
+  // Auto-select valid remotes when available
+  useEffect(() => {
+    if (remotes.length > 0) {
+      if (!remotes.some((r) => r.name === sourceRemote)) {
+        setSourceRemote(remotes[0].name);
+      }
+      if (!remotes.some((r) => r.name === destRemote)) {
+        setDestRemote(remotes[1]?.name || remotes[0].name);
+      }
+    }
+  }, [remotes]);
+
   // Fetch tasks
   const { data: tasksData, refetch: refetchTasks } = useQuery<TaskRecord[]>({
     queryKey: ['tasks'],
@@ -71,17 +83,27 @@ export function SyncPage() {
 
   // Mutations
   const planMutation = useMutation({
-    mutationFn: () =>
-      api.request<SyncPlanResponse>('POST', '/sync/plan', {
+    mutationFn: () => {
+      const srcUri = `${sourceRemote}:${sourcePath || '/'}`;
+      const dstUri = `${destRemote}:${destPath || '/'}`;
+      const isDelete = mode === 'mirror' ? true : deleteExtra;
+      const isTwoWay = (mode as string) === 'two_way';
+      return api.request<SyncPlanResponse>('POST', '/sync/plan', {
         body: {
-          source: `${sourceRemote}:${sourcePath}`,
-          destination: `${destRemote}:${destPath}`,
-          mode,
+          source_uri: srcUri,
+          dest_uri: dstUri,
+          source: srcUri,
+          destination: dstUri,
+          two_way: isTwoWay,
+          delete: isDelete,
+          delete_extra: isDelete,
+          conflict: conflictResolution,
           conflict_resolution: conflictResolution,
-          delete_extra: mode === 'mirror' ? true : deleteExtra,
+          mode,
           checksum,
         },
-      }),
+      });
+    },
     onSuccess: (data) => {
       setDiffPlan(data);
       setIsDiffOpen(true);
@@ -92,18 +114,28 @@ export function SyncPage() {
   });
 
   const startMutation = useMutation({
-    mutationFn: () =>
-      api.request('POST', '/sync/start', {
+    mutationFn: () => {
+      const srcUri = `${sourceRemote}:${sourcePath || '/'}`;
+      const dstUri = `${destRemote}:${destPath || '/'}`;
+      const isDelete = mode === 'mirror' ? true : deleteExtra;
+      const isTwoWay = (mode as string) === 'two_way';
+      return api.request('POST', '/sync/execute', {
         body: {
-          source: `${sourceRemote}:${sourcePath}`,
-          destination: `${destRemote}:${destPath}`,
-          mode,
+          source_uri: srcUri,
+          dest_uri: dstUri,
+          source: srcUri,
+          destination: dstUri,
+          two_way: isTwoWay,
+          delete: isDelete,
+          delete_extra: isDelete,
+          conflict: conflictResolution,
           conflict_resolution: conflictResolution,
-          delete_extra: mode === 'mirror' ? true : deleteExtra,
+          mode,
           checksum,
           workers,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       setIsDiffOpen(false);
